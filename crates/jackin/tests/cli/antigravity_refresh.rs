@@ -689,10 +689,15 @@ async fn mixed_refresh_lab(world: &World) -> Result<(Harness, Uuid), Failure> {
     Ok((cli, id))
 }
 
+fn is_command_line(line: &str) -> bool {
+    line.trim_start().starts_with("jackin ")
+}
+
 fn assert_summary_fits(stdout: &str, width: usize, id: Uuid) {
     assert!(!stdout.contains('\u{1b}'), "{stdout:?}");
     let wide: Vec<String> = stdout
         .lines()
+        .filter(|line| !is_command_line(line))
         .filter(|line| text::width(line) > width)
         .map(|line| format!("{:>3}  {line}", text::width(line)))
         .collect();

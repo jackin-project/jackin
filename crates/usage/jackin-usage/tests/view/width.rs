@@ -4,6 +4,7 @@
 use jackin_core::Timestamp;
 use jackin_testkit::assert_golden;
 use jackin_usage::view::render::{self, Ctx, Span, Tone};
+use jackin_usage::view::text::Part;
 use jackin_usage::view::{
     Feed, Note, Reading, Report, UsageView, ViewFilter, report, text as view_text,
 };
@@ -18,9 +19,18 @@ fn text(view: &UsageView, width: u16, kind: Report) -> String {
     render::plain(&report(view, &Ctx::new(width), kind))
 }
 
+fn is_atomic_line(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("jackin ")
+        || line
+            .split_whitespace()
+            .any(|word| uuid::Uuid::parse_str(word).is_ok())
+}
+
 fn assert_fits(text: &str, width: u16) {
     let wide: Vec<String> = text
         .lines()
+        .filter(|line| !is_atomic_line(line))
         .filter(|line| line.width() > usize::from(width))
         .map(|line| format!("{:>3}  {line}", line.width()))
         .collect();
@@ -199,7 +209,7 @@ fn zero_width_and_combining_characters_take_no_columns() {
 
 #[test]
 fn wrap_measures_display_width_for_wide_words() {
-    let parts = [("日本語日本語日本語".to_owned(), Tone::Plain)];
+    let parts = [Part::new("日本語日本語日本語", Tone::Plain)];
     let lines = view_text::wrap(vec![Span::plain("  ")], 2, &parts, 12);
     for line in &lines {
         let shown = render::plain(std::slice::from_ref(line));
@@ -213,4 +223,70 @@ fn spans_pad_to_the_same_column_whatever_their_script() {
     assert_eq!(padded("ascii"), 10);
     assert_eq!(padded("日本語"), 10);
     assert_eq!(padded("🙂ab"), 10);
+}
+
+const COMMAND_PREFIX: &str = "jackin account usage reconnect ";
+
+#[test]
+fn the_reconnect_command_stays_on_one_line_at_60_columns() -> Result<()> {
+    let seeded = Seeded::new()?;
+    let view = needing_sign_in(&seeded)?;
+    for kind in REPORTS {
+        let shown = text(&view, 60, kind);
+        let commands: Vec<&str> = shown
+            .lines()
+            .filter(|line| line.contains("usage reconnect"))
+            .collect();
+        assert!(!commands.is_empty(), "{shown}");
+        for line in commands {
+            let id = line
+                .trim()
+                .strip_prefix(COMMAND_PREFIX)
+                .ok_or_else(|| format!("command is broken across lines: {line:?}\n{shown}"))?;
+            assert!(
+                uuid::Uuid::parse_str(id).is_ok(),
+                "id is cut or broken: {line:?}\n{shown}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn a_full_uuid_at_the_deepest_indent_is_never_cut() {
+    let id = "6a4619d1-df83-42e0-bebc-20647a3e559d";
+    for columns in [60, 50, 40] {
+        let parts = [Part::new(format!("id {id}"), Tone::Dim).atom(id)];
+        let lines = view_text::wrap(vec![Span::plain(" ".repeat(23))], 23, &parts, columns);
+        let shown = render::plain(&lines);
+        assert!(shown.contains(id), "{columns}: {shown}");
+        assert!(!shown.contains('…'), "{columns}: {shown}");
+    }
+}
+
+#[test]
+fn an_atomic_command_overflows_instead_of_breaking_or_being_cut() {
+    let command = "jackin account usage reconnect 6a4619d1-df83-42e0-bebc-20647a3e559d";
+    let parts = [Part::new(format!("run: {command}"), Tone::Plain).atom(command)];
+    let lines = view_text::wrap(vec![Span::plain(" ".repeat(14))], 14, &parts, 60);
+    let shown = render::plain(&lines);
+    assert_eq!(shown.lines().count(), 2, "{shown}");
+    assert_eq!(
+        shown.lines().nth(1).map(str::trim),
+        Some(command),
+        "{shown}"
+    );
+}
+
+#[test]
+fn a_long_prose_token_is_still_truncated() {
+    let token = "x".repeat(70);
+    let parts = [Part::new(format!("error {token}"), Tone::Plain)];
+    let lines = view_text::wrap(vec![Span::plain(" ".repeat(14))], 14, &parts, 60);
+    let shown = render::plain(&lines);
+    assert!(shown.contains('…'), "{shown}");
+    assert!(!shown.contains(&token), "{shown}");
+    for line in shown.lines() {
+        assert!(line.width() <= 60, "{line}");
+    }
 }

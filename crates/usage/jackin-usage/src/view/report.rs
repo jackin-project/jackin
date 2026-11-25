@@ -4,7 +4,7 @@
 use super::card::{self, reset_phrase};
 use super::model::{AccountQuota, Attention, Reading, UsageView, short_id};
 use super::render::{Ctx, Depth, Line, Report, Span, Tone};
-use super::text;
+use super::text::{self, Part};
 
 const TAG_WIDTH: usize = 10;
 const DETAIL_INDENT: usize = 14;
@@ -19,6 +19,7 @@ pub struct AttentionText {
     pub tone: Tone,
     pub subject: String,
     pub detail: String,
+    pub command: Option<String>,
 }
 
 pub fn report(view: &UsageView, ctx: &Ctx, kind: Report) -> Vec<Line> {
@@ -79,10 +80,10 @@ pub fn title(view: &UsageView, kind: Report, ctx: &Ctx) -> Vec<Line> {
     let mut lines = Vec::new();
     for stamp in stamps {
         let parts = [
-            (word.to_owned(), Tone::Strong),
-            (format!("{stamp} ({offset})"), Tone::Plain),
-            (plural(view.account_count(), "account"), Tone::Plain),
-            (plural(view.groups.len(), "provider"), Tone::Plain),
+            Part::new(word, Tone::Strong),
+            Part::new(format!("{stamp} ({offset})"), Tone::Plain),
+            Part::new(plural(view.account_count(), "account"), Tone::Plain),
+            Part::new(plural(view.groups.len(), "provider"), Tone::Plain),
         ];
         lines = text::wrap(Vec::new(), TITLE_INDENT, &parts, ctx.columns());
         if lines.len() == 1 {
@@ -112,8 +113,8 @@ pub fn stale_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
         format!("{near} to {far}")
     };
     let parts = [
-        (format!("{who}, fetched {range} ago"), Tone::Plain),
-        (REFRESH_COMMAND.to_owned(), Tone::Plain),
+        Part::new(format!("{who}, fetched {range} ago"), Tone::Plain),
+        Part::new(REFRESH_COMMAND, Tone::Plain).atom(REFRESH_COMMAND),
     ];
     text::wrap(
         vec![Span::new(STALE_TAG, Tone::Warn), Span::plain("  ")],
@@ -155,7 +156,7 @@ pub fn attention_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
         lines.extend(text::wrap(
             vec![Span::plain(" ".repeat(DETAIL_INDENT))],
             DETAIL_INDENT,
-            &text::split_parts(&entry.detail, Tone::Plain),
+            &text::split_atomic(&entry.detail, Tone::Plain, entry.command.as_slice()),
             ctx.columns(),
         ));
     }
@@ -189,12 +190,13 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                 .then(|| account.short())
                 .into_iter()
                 .collect();
+            let mut command = None;
             let detail = match retry_at {
                 Some(_) if *reconnect => {
-                    format!(
-                        "{message} · run: {}",
-                        text::reconnect_command(account.id, text::IdForm::Hyphenated)
-                    )
+                    let run = text::reconnect_command(account.id, text::IdForm::Hyphenated);
+                    let detail = format!("{message} · run: {run}");
+                    command = Some(run);
+                    detail
                 }
                 Some(at) if *at <= view.now => format!(
                     "{message} · retry due since {}",
@@ -208,6 +210,7 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                 tone: Tone::Crit,
                 subject: subject(group.name, account, &shorts),
                 detail,
+                command,
             })
         }
         Attention::NearLimit { accounts, meter } => {
@@ -228,16 +231,19 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                     text::percent(found.fraction()),
                     reset_phrase(found.resets_at, view, true)
                 ),
+                command: None,
             })
         }
         Attention::Duplicate { accounts, remove } => {
             let (group, first) = view.account(*accounts.first()?)?;
             let shorts: Vec<String> = accounts.iter().copied().map(short_id).collect();
+            let command = format!("jackin account usage rm {}", remove.hyphenated());
             Some(AttentionText {
                 tag: "DUPLICATE",
                 tone: Tone::Warn,
                 subject: subject(group.name, first, &shorts),
-                detail: format!("jackin account usage rm {}", remove.hyphenated()),
+                detail: command.clone(),
+                command: Some(command),
             })
         }
     }

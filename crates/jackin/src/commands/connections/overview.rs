@@ -271,7 +271,8 @@ pub(super) fn refreshed(
                     lines.extend(view::text::wrap(
                         vec![Span::plain(" ".repeat(ENTRY_INDENT))],
                         ENTRY_INDENT,
-                        &[(format!("run: {command}"), Tone::Dim)],
+                        &[view::text::Part::new(format!("run: {command}"), Tone::Dim)
+                            .atom(command)],
                         columns,
                     ));
                 }
@@ -297,7 +298,7 @@ fn entry(tag: &str, tone: Tone, text: &str, columns: usize) -> Vec<Line> {
     view::text::wrap(
         vec![Span::new(tag, tone)],
         ENTRY_INDENT,
-        &[(text.to_owned(), Tone::Plain)],
+        &[view::text::Part::new(text, Tone::Plain)],
         columns,
     )
 }
