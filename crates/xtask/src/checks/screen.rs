@@ -204,6 +204,9 @@ fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
     let mut position = index + attribute.len();
     if tokens.get(position).is_some_and(|t| t.is_ident("pub")) {
         position += 1;
+        if tokens.get(position).is_some_and(|t| t.is_punct('(')) {
+            position = closing(tokens, position) + 1;
+        }
     }
     if !tokens.get(position)?.is_ident("mod") || tokens.get(position + 1)?.ident().is_none() {
         return None;
@@ -422,7 +425,7 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
 }
 
 fn buffer_names(tokens: &[Token]) -> Vec<&str> {
-    alias_names(tokens, "Buffer", "buffer", &["ratatui"])
+    alias_names(tokens, "Buffer", "buffer", &["ratatui"], &[])
 }
 
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {

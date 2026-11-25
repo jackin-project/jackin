@@ -22,9 +22,10 @@ impl Check for ErrorsCheck {
         for file in repo.files() {
             if file.kind() == FileKind::Rust && !file.is_third_party_source() {
                 let tokens = lex_rust(file.text()).tokens;
-                let paths = path_names(&tokens);
+                let roots = root_aliases(&tokens, &["std", "core"]);
                 let mut modules = module_names(&tokens, "path", &["std", "core"]);
-                modules.extend(root_aliases(&tokens, &["std", "core"]));
+                modules.extend(roots);
+                let paths = path_names(&tokens, &modules);
                 violations.extend(
                     (0..tokens.len())
                         .filter_map(|index| error_attribute(&tokens, index))
@@ -132,8 +133,8 @@ fn is_display_call(arguments: &[Token], index: usize) -> bool {
         && arguments.get(index + 3).is_some_and(|t| t.is_punct(')'))
 }
 
-fn path_names(tokens: &[Token]) -> Vec<&str> {
-    alias_names(tokens, "Path", "path", &["std", "core"])
+fn path_names<'a>(tokens: &'a [Token], modules: &[&str]) -> Vec<&'a str> {
+    alias_names(tokens, "Path", "path", &["std", "core"], modules)
 }
 
 fn is_qualified_display(
@@ -151,13 +152,16 @@ fn is_qualified_display(
         return false;
     };
     let named = |token: &Token| token.ident().is_some_and(|name| paths.contains(&name));
-    if !arguments[qualifier].is_punct('>') {
-        return named(&arguments[qualifier])
-            && (!arguments[qualifier].is_ident("Path")
-                || !is_path_separator(arguments, qualifier.wrapping_sub(2))
-                || leading_segment(arguments, qualifier).is_some_and(|first| {
+    let qualified = |at: usize| {
+        named(&arguments[at])
+            && (!arguments[at].is_ident("Path")
+                || !is_path_separator(arguments, at.wrapping_sub(2))
+                || leading_segment(arguments, at).is_some_and(|first| {
                     ["std", "core"].contains(&first) || modules.contains(&first)
-                }));
+                }))
+    };
+    if !arguments[qualifier].is_punct('>') {
+        return qualified(qualifier);
     }
     let mut depth = 0usize;
     let mut open = None;
@@ -176,7 +180,7 @@ fn is_qualified_display(
         return false;
     };
     if open >= 2 && is_path_separator(arguments, open - 2) {
-        return open >= 3 && named(&arguments[open - 3]);
+        return open >= 3 && qualified(open - 3);
     }
     let mut level = 0usize;
     let mut receiver: Vec<&Token> = Vec::new();

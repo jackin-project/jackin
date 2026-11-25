@@ -447,6 +447,11 @@ fn destructuring_a_buffer_fails() -> TestResult {
          fn r(b: Outer) { let Outer { content, .. } = b; }\n\
          fn q() -> ::ratatui::buffer::Buffer {\n\
          \x20   Default::default()\n\
+         }\n\
+         use ratatui::buffer as rb;\n\
+         #[cfg(test)]\n\
+         pub(crate) mod more_tests {\n\
+         \x20   fn t(b: Buffer) { let Buffer { content, .. } = b; }\n\
          }\n",
         &[
             ("C1", 3, "Buffer"),
@@ -462,6 +467,7 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 46, "destructures"),
             ("C1", 54, "destructures"),
             ("C1", 60, "destructures"),
+            ("C1", 64, "imports ratatui::buffer"),
         ],
     )
 }

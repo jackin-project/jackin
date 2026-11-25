@@ -352,6 +352,7 @@ pub(crate) fn alias_names<'a>(
     target: &'a str,
     module: &str,
     roots: &[&str],
+    modules: &[&str],
 ) -> Vec<&'a str> {
     let mut names = vec![target];
     loop {
@@ -359,10 +360,10 @@ pub(crate) fn alias_names<'a>(
         for (index, token) in tokens.iter().enumerate() {
             let imported = token.is_ident(target)
                 && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
-                && rooted_in(&use_tree_path(tokens, index), module, roots);
+                && rooted_in(&use_tree_path(tokens, index), module, roots, modules);
             let aliased = token.is_ident("type")
                 && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-                && alias_of_known(&tokens[index + 3..], module, roots, &names);
+                && alias_of_known(&tokens[index + 3..], module, roots, modules, &names);
             let alias = if imported {
                 tokens.get(index + 2).and_then(Token::ident)
             } else if aliased {
@@ -382,11 +383,23 @@ pub(crate) fn alias_names<'a>(
     }
 }
 
-fn rooted_in(path: &[&str], module: &str, roots: &[&str]) -> bool {
-    path.contains(&module) && path.last().is_some_and(|first| roots.contains(first))
+fn rooted_in(path: &[&str], module: &str, roots: &[&str], modules: &[&str]) -> bool {
+    let through_module = path
+        .iter()
+        .any(|segment| *segment == module || modules.contains(segment));
+    through_module
+        && path
+            .last()
+            .is_some_and(|first| roots.contains(first) || modules.contains(first))
 }
 
-fn alias_of_known(right: &[Token], module: &str, roots: &[&str], names: &[&str]) -> bool {
+fn alias_of_known(
+    right: &[Token],
+    module: &str,
+    roots: &[&str],
+    modules: &[&str],
+    names: &[&str],
+) -> bool {
     let path: Vec<&str> = right
         .iter()
         .take_while(|t| !t.is_punct(';'))
@@ -394,7 +407,12 @@ fn alias_of_known(right: &[Token], module: &str, roots: &[&str], names: &[&str])
         .collect();
     path.last().is_some_and(|last| names.contains(last))
         && (path.len() == 1
-            || (path.contains(&module) && path.first().is_some_and(|first| roots.contains(first))))
+            || (rooted_in(
+                &path.iter().rev().copied().collect::<Vec<_>>(),
+                module,
+                roots,
+                modules,
+            )))
 }
 
 pub(crate) fn leading_segment(tokens: &[Token], item: usize) -> Option<&str> {
@@ -443,9 +461,13 @@ pub(crate) fn root_aliases<'a>(tokens: &'a [Token], roots: &'a [&'a str]) -> Vec
     loop {
         let known = names.len();
         for (index, token) in tokens.iter().enumerate() {
-            if names.iter().any(|name| token.is_ident(name))
+            let path = use_tree_path(tokens, index);
+            let top_level = names.iter().any(|name| token.is_ident(name)) && path.is_empty();
+            let grouped = token.is_ident("self")
+                && path.len() == 1
+                && names.iter().any(|name| *name == path[0]);
+            if (top_level || grouped)
                 && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
-                && use_tree_path(tokens, index).is_empty()
                 && let Some(alias) = tokens.get(index + 2).and_then(Token::ident)
                 && !names.contains(&alias)
             {
