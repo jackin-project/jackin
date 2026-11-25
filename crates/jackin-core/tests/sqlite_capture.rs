@@ -225,6 +225,24 @@ async fn a_link_whose_target_never_reads_is_given_up_at_the_deadline() -> TestRe
 }
 
 #[tokio::test]
+async fn a_link_whose_target_cannot_be_read_is_unreadable_and_not_a_fall_through() -> TestResult {
+    let fs = fixture(&[("real.db", database(512))]).await?;
+    fs.link(&at("agent.db")?, &at("real.db")?);
+    fs.fail_at(
+        jackin_testkit::FsOp::Read,
+        1,
+        jackin_core::FsError::Io {
+            path: at("real.db")?,
+            kind: std::io::ErrorKind::PermissionDenied,
+            message: "denied".to_owned(),
+        },
+    );
+    let refused = capture(&fs, &at("agent.db")?, LIMITS).await.err();
+    assert_eq!(refused, Some(CaptureProblem::Unreadable));
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_hot_rollback_journal_makes_the_capture_retry_and_then_give_up() -> TestResult {
     let mut hot = vec![0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
     hot.resize(64, 0);

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -11,6 +10,7 @@ use zeroize::Zeroizing;
 
 use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError, Hold, RegularFileProblem};
 use crate::paths::{HostPath, RepoPath};
+use crate::preflight::{Slot, preflight_slot};
 
 pub const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
@@ -18,7 +18,6 @@ const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
 const ATTEMPTS: usize = 5;
 const RETRY_PAUSE: Duration = Duration::from_millis(40);
 const CAPTURE_SLOTS: usize = 2;
-const PREFLIGHT_SLOTS: usize = 4;
 const WAL_HEADER: usize = 32;
 const WAL_FRAME_HEADER: usize = 24;
 const WAL_MAGIC: u32 = 0x377f_0682;
@@ -99,41 +98,10 @@ enum Read {
     Absent,
 }
 
-type Slot = Arc<OwnedSemaphorePermit>;
 
 fn capture_slots() -> &'static Arc<Semaphore> {
     static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
     SLOTS.get_or_init(|| Arc::new(Semaphore::new(CAPTURE_SLOTS)))
-}
-
-fn preflight_slots() -> &'static Arc<Semaphore> {
-    static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    SLOTS.get_or_init(|| Arc::new(Semaphore::new(PREFLIGHT_SLOTS)))
-}
-
-async fn preflight_slot() -> Result<Slot, CaptureProblem> {
-    Arc::clone(preflight_slots())
-        .acquire_owned()
-        .await
-        .map(Arc::new)
-        .map_err(|_| CaptureProblem::Unreadable)
-}
-
-pub(crate) async fn within_preflight<T, Work, Running>(
-    deadline: Duration,
-    work: Work,
-) -> Result<T, CaptureProblem>
-where
-    Work: FnOnce(Hold) -> Running,
-    Running: Future<Output = T>,
-{
-    tokio::time::timeout(deadline, async {
-        let slot = preflight_slot().await?;
-        let hold: Hold = slot;
-        Ok(work(hold).await)
-    })
-    .await
-    .map_err(|_| CaptureProblem::TimedOut)?
 }
 
 fn is_wal_mode(header: &[u8]) -> bool {
@@ -213,7 +181,7 @@ async fn capture_pinned(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
-    let preflight = preflight_slot().await?;
+    let preflight = preflight_slot().await.ok_or(CaptureProblem::Unreadable)?;
     match fs
         .stat_holding(database, Arc::<OwnedSemaphorePermit>::clone(&preflight))
         .await
@@ -312,11 +280,13 @@ async fn capture_pinned(
 }
 
 async fn classify_link(fs: &dyn FileSystem, link: &HostPath, slot: &Slot) -> CaptureProblem {
-    let Ok(Some(target)) = fs
+    let target = match fs
         .canonicalize_holding(link, Arc::<OwnedSemaphorePermit>::clone(slot))
         .await
-    else {
-        return CaptureProblem::NotSqlite;
+    {
+        Ok(Some(target)) => target,
+        Ok(None) => return CaptureProblem::NotSqlite,
+        Err(_) => return CaptureProblem::Unreadable,
     };
     let (Some(dir), Some(name)) = (
         target.parent(),
@@ -333,7 +303,12 @@ async fn classify_link(fs: &dyn FileSystem, link: &HostPath, slot: &Slot) -> Cap
         .await
     {
         Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC) => CaptureProblem::Symlink,
-        _ => CaptureProblem::NotSqlite,
+        Ok(_)
+        | Err(FsError::Io {
+            kind: std::io::ErrorKind::NotFound,
+            ..
+        }) => CaptureProblem::NotSqlite,
+        Err(_) => CaptureProblem::Unreadable,
     }
 }
 

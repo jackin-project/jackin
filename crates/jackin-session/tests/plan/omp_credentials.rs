@@ -238,7 +238,10 @@ async fn an_oversized_selected_row_is_refused_and_never_replaced_by_an_older_one
         for newest in [64 * 1024 + 1, 100_000, 200_000] {
             let rows = [(1, key_row("fake-stale-key")), (2, "x".repeat(newest))];
             assert!(
-                key_of_rows(table, &rows).await?.is_err(),
+                matches!(
+                    key_of_rows(table, &rows).await?,
+                    Err(jackin_session::CredentialError::LoginUnreadable { .. })
+                ),
                 "{table}: {newest} bytes"
             );
         }

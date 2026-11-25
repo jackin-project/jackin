@@ -24,7 +24,7 @@ use crate::boundary::{
     LinkProblem, RegularFile, RegularFileProblem,
 };
 use crate::paths::{HostPath, RepoPath};
-use crate::sqlite_capture::within_preflight;
+use crate::preflight::within_preflight;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StdFileSystem {}

@@ -431,14 +431,17 @@ fn extract_opencode_credential(
             None
         } else {
             let id = row.get_ref(0).and_then(capped_text).map_err(|_| unreadable())?;
-            let value = row.get_ref(1).and_then(capped_text).map_err(|_| unreadable())?;
+            let value = row
+                .get_ref(1)
+                .and_then(capped_text)
+                .map_err(|_| unreadable())?
+                .map(Secret::new);
             id.zip(value)
         };
         let Some((id, value)) = cells else {
             oversized = oversized.max(Some((updated, created)));
             continue;
         };
-        let value = Secret::new(value);
         let kind = serde_json::from_str::<Value>(value.expose())
             .map_err(|_| Unresolved::Unreadable("the OpenCode credential is not valid JSON"))?;
         if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
