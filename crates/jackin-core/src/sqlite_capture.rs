@@ -168,12 +168,13 @@ async fn fence_of(
     dir: &HostPath,
     database: &HostPath,
     log: &HostPath,
+    slot: &Slot,
 ) -> Result<Fence, CaptureProblem> {
     Ok(Fence {
-        dir: identity_of(fs, dir).await?,
-        database: identity_of(fs, database).await?,
+        dir: identity_of(fs, dir, slot).await?,
+        database: identity_of(fs, database, slot).await?,
         log: fs
-            .identity(log)
+            .identity_holding(log, Arc::<OwnedSemaphorePermit>::clone(slot))
             .await
             .map_err(|_| CaptureProblem::Unreadable)?,
     })
@@ -190,7 +191,10 @@ async fn capture_pinned(
             .await
             .map_err(|_| CaptureProblem::Unreadable)?,
     );
-    match fs.stat(database).await {
+    match fs
+        .stat_holding(database, Arc::<OwnedSemaphorePermit>::clone(&preflight))
+        .await
+    {
         Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
         Ok(_) => {}
         Err(_) => return Err(CaptureProblem::Unreadable),
@@ -202,7 +206,7 @@ async fn capture_pinned(
         return Err(CaptureProblem::NotARegularFile);
     };
     let dir = fs
-        .canonicalize(&parent)
+        .canonicalize_holding(&parent, Arc::<OwnedSemaphorePermit>::clone(&preflight))
         .await
         .map_err(|_| CaptureProblem::Unreadable)?
         .ok_or(CaptureProblem::Missing)?;
@@ -236,7 +240,7 @@ async fn capture_pinned(
         if journal_is_hot(fs, &dir, &journal_name, &slot).await? {
             continue;
         }
-        let before = fence_of(fs, &dir, &target, &log_target).await?;
+        let before = fence_of(fs, &dir, &target, &log_target, &slot).await?;
         let Some((first, log)) = read_pair(fs, &dir, name, &log_name, limits, &slot).await? else {
             continue;
         };
@@ -263,7 +267,7 @@ async fn capture_pinned(
             }
             first
         };
-        if before != fence_of(fs, &dir, &target, &log_target).await? {
+        if before != fence_of(fs, &dir, &target, &log_target, &slot).await? {
             continue;
         }
         let image_bytes = limits.image_bytes;
@@ -429,8 +433,9 @@ async fn offload<T: Send + 'static>(
 async fn identity_of(
     fs: &dyn FileSystem,
     target: &HostPath,
+    slot: &Slot,
 ) -> Result<FileIdentity, CaptureProblem> {
-    fs.identity(target)
+    fs.identity_holding(target, Arc::<OwnedSemaphorePermit>::clone(slot))
         .await
         .map_err(|_| CaptureProblem::Unreadable)?
         .ok_or(CaptureProblem::Missing)

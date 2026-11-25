@@ -407,6 +407,38 @@ impl FileSystem for StdFileSystem {
         blocking(path, identity_of).await
     }
 
+    async fn stat_holding(&self, path: &HostPath, hold: Hold) -> Result<Option<FileKind>, FsError> {
+        blocking(path, move |p| {
+            let _hold = hold;
+            stat_kind(p)
+        })
+        .await
+    }
+
+    async fn canonicalize_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<HostPath>, FsError> {
+        blocking(path, move |p| {
+            let _hold = hold;
+            canonical_target(p)
+        })
+        .await
+    }
+
+    async fn identity_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<FileIdentity>, FsError> {
+        blocking(path, move |p| {
+            let _hold = hold;
+            identity_of(p)
+        })
+        .await
+    }
+
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         blocking(dir, sorted_entries).await
     }
