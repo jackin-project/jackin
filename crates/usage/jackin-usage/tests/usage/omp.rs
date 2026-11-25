@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -51,16 +51,6 @@ fn store(home: &Path, rows: &[(i64, &str)]) {
 
 fn key_json(key: &str) -> String {
     format!("{{\"key\":\"{key}\"}}")
-}
-
-fn unblock_fifo(fifo: PathBuf) {
-    for attempt in 0..30 {
-        let delay = if attempt == 0 { 2 } else { 1 };
-        std::thread::park_timeout(Duration::from_secs(delay));
-        if std::fs::write(&fifo, b"").is_ok() {
-            break;
-        }
-    }
 }
 
 struct Omp {
@@ -131,39 +121,14 @@ async fn an_omp_account_reads_the_key_of_its_store() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestResult {
+async fn cancelling_while_the_omp_store_read_stalls_stops_that_read() -> TestResult {
     guard(async {
-        let directory = tempfile::tempdir()?;
-        let store = directory.path().join(".omp").join("agent");
-        std::fs::create_dir_all(&store)?;
-        let fifo = store.join("agent.db");
-        let made = tokio::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .await?;
-        assert!(made.success(), "mkfifo failed");
-        let _releaser = std::thread::spawn({
-            let fifo = fifo.clone();
-            move || unblock_fifo(fifo)
-        });
         let harness = UsageHarness::new().await?;
-        harness.server.replace(
-            Provider::Zai,
-            Method::Get,
-            PATH,
-            Route::json(200, QUOTA).requires_header("authorization", KEY),
-        );
-        let host = {
-            let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
-                Arc::new(StdFileSystem::default()),
-                &harness.clock,
-            ));
-            harness.host_on(
-                fs,
-                host_path_of(&directory.path().join("state").join("usage")),
-                host_path_of(directory.path()),
-            )
-        };
+        harness
+            .put("/home/work/.omp/agent/agent.db", "SQLite format 3\0")
+            .await?;
+        let probe = harness.fs.stall_reads_of("agent.db");
+        let host = harness.host();
         let cancel = CancellationToken::new();
         let stopping = {
             let cancel = cancel.clone();
@@ -176,19 +141,10 @@ async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestRes
             accounts: vec![account("omp", Provider::Zai, CredentialSource::OmpHost)],
             refresh: Refresh::Cached,
         };
-        let reporting = tokio::spawn(async move { host.report(&request, &cancel).await });
-        let finished = tokio::time::timeout(Duration::from_millis(1500), reporting).await;
-        if finished.is_err() {
-            return Err("the OMP store blocked the console".into());
-        }
-        let released = tokio::task::spawn_blocking({
-            let fifo = fifo.clone();
-            move || std::fs::write(fifo, b"")
-        })
-        .await;
-        released??;
+        let finished =
+            tokio::time::timeout(Duration::from_secs(10), host.report(&request, &cancel)).await;
         stopping.abort();
-        match finished?? {
+        match finished.map_err(|_| "the cancelled report never returned")? {
             Err(UsageError::Cancelled) => {}
             Err(other) => panic!("expected cancellation, found {other:?}"),
             Ok(report) => panic!(
@@ -196,6 +152,56 @@ async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestRes
                 report.accounts.len()
             ),
         }
+        assert_eq!(probe.entered(), 1, "the store read never started");
+        assert_eq!(probe.abandoned(), 1, "the stalled read outlived the report");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_pipe_at_the_omp_store_is_refused_without_blocking_the_console() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let store = directory.path().join(".omp").join("agent");
+        std::fs::create_dir_all(&store)?;
+        let fifo = store.join("agent.db");
+        let made = tokio::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .await?;
+        assert!(made.success(), "mkfifo failed");
+        let harness = UsageHarness::new().await?;
+        let host = {
+            let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
+                Arc::new(StdFileSystem::default()),
+                &harness.clock,
+            ));
+            harness.host_on(
+                fs,
+                host_path_of(&directory.path().join("state").join("usage")),
+                host_path_of(directory.path()),
+            )
+        };
+        let request = UsageRequest {
+            accounts: vec![account("omp", Provider::Zai, CredentialSource::OmpHost)],
+            refresh: Refresh::Cached,
+        };
+        let cancel = CancellationToken::new();
+        let reporting = tokio::spawn(async move { host.report(&request, &cancel).await });
+        let finished = tokio::time::timeout(Duration::from_millis(1500), reporting).await;
+        let Ok(joined) = finished else {
+            return Err("the OMP store blocked the console".into());
+        };
+        let report = joined??;
+        assert!(
+            matches!(
+                unavailable(&report.accounts[0].outcome),
+                UnavailableReason::Provider(message) if message == "the OMP store could not be read"
+            ),
+            "{:?}",
+            report.accounts[0].outcome
+        );
         Ok(())
     })
     .await
@@ -293,7 +299,7 @@ async fn an_omp_store_that_is_recreated_with_a_reused_inode_is_fetched_again() -
 }
 
 #[tokio::test]
-async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_is_fetched_again()
+async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_keeps_its_cached_windows()
 -> TestResult {
     guard(async {
         let omp = started(&[(1, &key_json(KEY))]).await?;
@@ -317,10 +323,7 @@ async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_is_fetched
         store(omp.directory.path(), &[(1, &key_json(KEY))]);
         harness_failing(&omp);
         let outcome = omp.report_over(fs).await?;
-        assert!(
-            matches!(unavailable(&outcome), UnavailableReason::Provider(_)),
-            "the cached windows of the recreated store with unchanged rows were served"
-        );
+        assert_eq!(windows_of(&outcome).len(), 2);
         Ok(())
     })
     .await
@@ -458,7 +461,7 @@ impl ReplacingFs {
     fn new(inner: Arc<dyn FileSystem>, target: HostPath) -> ReplacingFs {
         ReplacingFs {
             inner,
-            target,
+            target: canonical_target(&target),
             identities: AtomicUsize::new(0),
         }
     }
@@ -558,7 +561,10 @@ impl std::fmt::Debug for ReusedInodeFs {
 
 impl ReusedInodeFs {
     fn new(inner: Arc<dyn FileSystem>, target: HostPath) -> ReusedInodeFs {
-        ReusedInodeFs { inner, target }
+        ReusedInodeFs {
+            inner,
+            target: canonical_target(&target),
+        }
     }
 }
 
@@ -643,6 +649,10 @@ impl FileSystem for ReusedInodeFs {
     }
 }
 
+fn canonical_target(target: &HostPath) -> HostPath {
+    host_path_of(&std::fs::canonicalize(target.as_path()).expect("the store exists"))
+}
+
 fn replace_store(live: &Path, key: &str) {
     let staged = live.with_extension("staged");
     let connection = Connection::open(&staged).expect("the staged store opens");
@@ -660,4 +670,165 @@ fn replace_store(live: &Path, key: &str) {
         .expect("the staged row");
     drop(connection);
     std::fs::rename(&staged, live).expect("the staged store replaces the live store");
+}
+
+fn wal_store(home: &Path, page_size: u32) -> Connection {
+    let directory = home.join(".omp").join("agent");
+    std::fs::create_dir_all(&directory).expect("the store directory");
+    let connection = Connection::open(directory.join("agent.db")).expect("the store opens");
+    connection
+        .execute_batch(&format!(
+            "PRAGMA page_size = {page_size}; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;
+             CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+             INSERT INTO auth_credentials (id, provider, credential_type, data) VALUES (1, 'zai', 'api_key', '{}');
+             PRAGMA wal_checkpoint(TRUNCATE);",
+            key_json(KEY)
+        ))
+        .expect("the log store");
+    connection
+        .execute(
+            "INSERT INTO auth_credentials (id, provider, credential_type, data) VALUES (2, 'zai', 'api_key', ?1)",
+            [key_json(KEY_REPLACED)],
+        )
+        .expect("the logged row");
+    connection
+}
+
+#[tokio::test]
+async fn a_committed_update_that_only_the_log_holds_is_read() -> TestResult {
+    guard(async {
+        let omp = started(&[]).await?;
+        std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
+        let _live = wal_store(omp.directory.path(), 4096);
+        omp.harness.server.replace(
+            Provider::Zai,
+            Method::Get,
+            PATH,
+            Route::json(200, QUOTA).requires_header("authorization", KEY_REPLACED),
+        );
+        let outcome = omp.report().await?;
+        assert_eq!(windows_of(&outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+const HANG: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, data TEXT);
+     WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r WHERE x < 400000) INSERT INTO auth_credentials (id, provider, data) SELECT x, 'zai', 'x' FROM r;
+     ALTER TABLE auth_credentials ADD COLUMN credential_type TEXT AS (CASE WHEN length(hex(zeroblob(60000 + id % 2))) > 0 THEN 'never' END);";
+
+async fn schema_report(
+    schema: &str,
+) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+    let omp = started(&[]).await?;
+    let directory = omp.directory.path().join(".omp").join("agent");
+    std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
+    std::fs::create_dir_all(&directory)?;
+    let connection = Connection::open(directory.join("agent.db"))?;
+    connection.execute_batch(schema)?;
+    drop(connection);
+    let finished = tokio::time::timeout(Duration::from_secs(30), omp.report()).await;
+    finished.map_err(|_| "the report did not finish")?
+}
+
+fn is_unreadable(outcome: &jackin_usage::UsageOutcome) -> bool {
+    matches!(
+        unavailable(outcome),
+        UnavailableReason::Provider(message) if message == "the OMP store could not be read"
+    )
+}
+
+#[tokio::test]
+async fn a_credential_query_that_never_finishes_is_given_up_on_and_frees_its_place() -> TestResult {
+    guard(async {
+        for _ in 0..3 {
+            let outcome = schema_report(HANG).await?;
+            assert!(is_unreadable(&outcome), "{outcome:?}");
+        }
+        let again = started(&[(1, &key_json(KEY))]).await?;
+        let outcome = tokio::time::timeout(Duration::from_secs(10), again.report())
+            .await
+            .map_err(|_| "the worker of an abandoned query still holds its place")??;
+        assert_eq!(windows_of(&outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_credential_view_is_refused_instead_of_run() -> TestResult {
+    guard(async {
+        for schema in [
+            "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'zai' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
+            "CREATE TABLE real (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+             INSERT INTO real VALUES (1, 'zai', 'api_key', '{\"key\":\"SECRET_TOKEN_OMP\"}');
+             CREATE VIEW auth_credentials AS SELECT * FROM real;",
+            "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'zai' AS provider, 'api_key' AS credential_type, '{\"key\":\"SECRET_TOKEN_OMP\"}' AS data;",
+            "CREATE VIEW auth_credentials AS SELECT DISTINCT a.column1 AS id, 'zai' AS provider, 'api_key' AS credential_type, '{\"key\":\"SECRET_TOKEN_OMP\"}' AS data FROM (VALUES (1),(2),(3)) a, (VALUES (1),(2),(3)) b;",
+            "CREATE VIRTUAL TABLE auth_credentials USING fts3(id, provider, credential_type, data);
+             INSERT INTO auth_credentials VALUES (1, 'zai', 'api_key', '{\"key\":\"SECRET_TOKEN_OMP\"}');",
+        ] {
+            let started = std::time::Instant::now();
+            let outcome = schema_report(schema).await?;
+            assert!(is_unreadable(&outcome), "{outcome:?}");
+            assert!(started.elapsed() < Duration::from_secs(4), "the view was run");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_value_that_a_query_builds_beyond_the_length_limit_is_refused() -> TestResult {
+    guard(async {
+        let table = |pad: u32| {
+            format!(
+                "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT AS (substr('{{\"key\":\"SECRET_TOKEN_OMP\"}}' || printf('%.*c', {pad}, 'x'), 1, 26)));
+                 INSERT INTO auth_credentials (id, provider, credential_type) VALUES (1, 'zai', 'api_key');"
+            )
+        };
+        let small = schema_report(&table(30)).await?;
+        assert_eq!(windows_of(&small).len(), 2);
+        let large = schema_report(&table(300_000)).await?;
+        assert!(is_unreadable(&large), "{large:?}");
+        Ok(())
+    })
+    .await
+}
+
+fn padded_key_json(total: usize) -> String {
+    let frame = key_json("");
+    let pad = total - frame.len() - KEY.len();
+    key_json(&format!("{KEY}{}", "k".repeat(pad)))
+}
+
+#[tokio::test]
+async fn a_credential_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unreadable()
+-> TestResult {
+    guard(async {
+        let exact = started(&[(1, &padded_key_json(64 * 1024))]).await?;
+        let padded = format!(
+            "{KEY}{}",
+            "k".repeat(64 * 1024 - key_json("").len() - KEY.len())
+        );
+        exact.harness.server.replace(
+            Provider::Zai,
+            Method::Get,
+            PATH,
+            Route::json(200, QUOTA).requires_header("authorization", &padded),
+        );
+        assert_eq!(windows_of(&exact.report().await?).len(), 2);
+
+        let over = started(&[(1, &padded_key_json(64 * 1024 + 1))]).await?;
+        let outcome = over.report().await?;
+        assert!(
+            matches!(
+                unavailable(&outcome),
+                UnavailableReason::Provider(message) if message == "the OMP store could not be read"
+            ),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
 }

@@ -471,3 +471,59 @@ pub(crate) fn unavailable(outcome: &UsageOutcome) -> &jackin_usage::UnavailableR
         }
     }
 }
+
+pub(crate) fn wal_checksum(
+    data: &[u8],
+    mut one: u32,
+    mut two: u32,
+    big_endian: bool,
+) -> (u32, u32) {
+    let (pairs, _) = data.as_chunks::<8>();
+    for pair in pairs {
+        let word = |bytes: &[u8]| {
+            let array: [u8; 4] = bytes.try_into().expect("four bytes");
+            if big_endian {
+                u32::from_be_bytes(array)
+            } else {
+                u32::from_le_bytes(array)
+            }
+        };
+        one = one.wrapping_add(word(&pair[0..4])).wrapping_add(two);
+        two = two.wrapping_add(word(&pair[4..8])).wrapping_add(one);
+    }
+    (one, two)
+}
+
+pub(crate) fn rewrite_pages(
+    wal: &[u8],
+    page_size: usize,
+    set: &dyn Fn(usize, u32, u32) -> (u32, u32),
+) -> Vec<u8> {
+    let big_endian = wal[3] & 1 == 1;
+    let mut out = wal.to_vec();
+    let header = wal[0..24].to_vec();
+    let (mut one, mut two) = wal_checksum(&header, 0, 0, big_endian);
+    let frame = 24 + page_size;
+    let mut index = 0;
+    let mut offset = 32;
+    while offset + frame <= out.len() && out[offset + 8..offset + 16] == wal[16..24] {
+        let page = u32::from_be_bytes(out[offset..offset + 4].try_into().expect("page"));
+        let commit = u32::from_be_bytes(out[offset + 4..offset + 8].try_into().expect("commit"));
+        let (page, commit) = set(index, page, commit);
+        out[offset..offset + 4].copy_from_slice(&page.to_be_bytes());
+        out[offset + 4..offset + 8].copy_from_slice(&commit.to_be_bytes());
+        let (next_one, next_two) = wal_checksum(&out[offset..offset + 8], one, two, big_endian);
+        let (next_one, next_two) = wal_checksum(
+            &out[offset + 24..offset + frame],
+            next_one,
+            next_two,
+            big_endian,
+        );
+        out[offset + 16..offset + 20].copy_from_slice(&next_one.to_be_bytes());
+        out[offset + 20..offset + 24].copy_from_slice(&next_two.to_be_bytes());
+        (one, two) = (next_one, next_two);
+        index += 1;
+        offset += frame;
+    }
+    out
+}

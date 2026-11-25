@@ -220,15 +220,21 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
         .ok_or_else(|| invalid(key))
 }
 
-pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> {
-    let connection =
-        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .ok()?;
-    let data: String = connection
+fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Secret> {
+    if !is_plain_table(connection, "auth_credentials") {
+        return None;
+    }
+    let data: Zeroizing<String> = connection
         .query_row(
             "SELECT data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
             [provider_id],
-            |row| row.get(0),
+            |row| {
+                let text = row.get_ref(0)?.as_str()?;
+                if text.len() > jackin_core::STORE_VALUE_MAX_BYTES {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+                Ok(Zeroizing::new(text.to_owned()))
+            },
         )
         .ok()?;
     let document = Document(serde_json::from_str(&data).ok()?);
@@ -240,16 +246,74 @@ pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> 
     }
 }
 
-pub fn read_omp_host_key(
-    _fs: &dyn FileSystem,
+fn omp_policy(context: rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization {
+    use rusqlite::hooks::{AuthAction, Authorization};
+    match context.action {
+        AuthAction::Select | AuthAction::Function { .. } | AuthAction::Read { .. }
+            if context.accessor.is_none() =>
+        {
+            Authorization::Allow
+        }
+        _ => Authorization::Deny,
+    }
+}
+
+fn is_plain_table(connection: &rusqlite::Connection, name: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT type, sql FROM sqlite_schema WHERE name = ?1 COLLATE NOCASE",
+            [name],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .is_ok_and(|(kind, sql)| {
+            kind == "table"
+                && !sql.is_some_and(|sql| {
+                    sql.trim_start()
+                        .to_ascii_uppercase()
+                        .starts_with("CREATE VIRTUAL")
+                })
+        })
+}
+
+fn omp_connection() -> rusqlite::Result<rusqlite::Connection> {
+    let connection = rusqlite::Connection::open_in_memory()?;
+    connection.execute_batch(jackin_core::STORE_PRAGMAS)?;
+    connection.set_limit(
+        rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+        jackin_core::STORE_LENGTH_LIMIT,
+    )?;
+    Ok(connection)
+}
+
+pub async fn read_omp_host_key(
+    fs: &dyn FileSystem,
     db_path: &HostPath,
     provider_id: &str,
 ) -> Result<Secret, CredentialError> {
-    extract_omp_api_key(db_path.as_path(), provider_id).ok_or_else(|| {
-        CredentialError::LoginUnreadable {
-            path: db_path.clone(),
-        }
+    let unreadable = || CredentialError::LoginUnreadable {
+        path: db_path.clone(),
+    };
+    let captured = jackin_core::capture(fs, db_path, jackin_core::OMP_CAPTURE_LIMITS)
+        .await
+        .map_err(|_| unreadable())?;
+    let connection = omp_connection().map_err(|_| unreadable())?;
+    let wanted = provider_id.to_owned();
+    let found = jackin_core::run_bounded(jackin_core::STORE_QUERY_DEADLINE, move |mut budget| {
+        let mut connection = connection;
+        connection
+            .progress_handler(jackin_core::STORE_QUERY_STEP, Some(move || budget.spent()))
+            .ok()?;
+        let mut image = captured.image;
+        let length = image.as_slice().len();
+        connection
+            .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
+            .ok()?;
+        image.wipe();
+        connection.authorizer(Some(omp_policy)).ok()?;
+        omp_key_of(&connection, &wanted)
     })
+    .await;
+    found.ok().flatten().ok_or_else(unreadable)
 }
 
 #[derive(Debug)]
@@ -1145,10 +1209,27 @@ pub async fn resolve_static_key(
         CredentialSource::OmpHost => {
             let db = HostPath::resolve(Path::new(jackin_core::OMP_HOST_STORE), &host.home)
                 .map_err(|_| missing())?;
-            read_omp_host_key(host.fs.as_ref(), &db, provider_id).map_err(|_| missing())
+            read_omp_host_key(host.fs.as_ref(), &db, provider_id)
+                .await
+                .map_err(|_| missing())
         }
         CredentialSource::OnePassword { .. }
         | CredentialSource::CodexLogin { .. }
         | CredentialSource::HostLogin { .. } => Err(missing()),
+    }
+}
+
+#[cfg(test)]
+mod store_connection_tests {
+    #[test]
+    fn an_omp_connection_distrusts_the_schema_and_limits_value_length() -> rusqlite::Result<()> {
+        let connection = super::omp_connection()?;
+        let trusted: i64 = connection.query_row("PRAGMA trusted_schema", [], |row| row.get(0))?;
+        assert_eq!(trusted, 0);
+        assert_eq!(
+            connection.limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH)?,
+            jackin_core::STORE_LENGTH_LIMIT
+        );
+        Ok(())
     }
 }
