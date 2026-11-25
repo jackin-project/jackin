@@ -45,17 +45,48 @@ fn is_cancelled(result: &Result<PurgeOutcome, PurgeError>, name: &SandboxName) -
     matches!(result, Err(PurgeError::Cancelled { sandbox }) if sandbox == name)
 }
 
+async fn forced(
+    rig: &Rig,
+    name: &SandboxName,
+    token: &CancellationToken,
+) -> Result<PurgeOutcome, PurgeError> {
+    rig.world
+        .session
+        .purge(&rig.config, name, PurgeMode::Forced, token)
+        .await
+}
+
+async fn held_at<A>(
+    rig: &Rig,
+    name: &SandboxName,
+    token: &CancellationToken,
+    op: GatewayOp,
+    act: A,
+) -> Result<Result<PurgeOutcome, PurgeError>, Box<dyn Error>>
+where
+    A: AsyncFnOnce(&Rig, &Trigger) -> TestResult,
+{
+    let hold = Trigger::Op(op);
+    rig.gateway().inject(Fault::HoldAt {
+        trigger: hold.clone(),
+    });
+    let purging = forced(rig, name, token);
+    let driver = async {
+        assert!(rig.gateway().until_held(&hold).await);
+        act(rig, &hold).await
+    };
+    let (result, driven) = tokio::join!(purging, driver);
+    driven?;
+    Ok(result)
+}
+
 #[tokio::test]
 async fn a_cancelled_purge_deletes_nothing_wherever_the_cancel_lands() -> TestResult {
     guard_within(WITHIN, async {
         let (rig, name) = launched().await?;
         let token = CancellationToken::new();
         token.cancel();
-        let before_any_lookup = rig
-            .world
-            .session
-            .purge(&rig.config, &name, PurgeMode::Forced, &token)
-            .await;
+        let before_any_lookup = forced(&rig, &name, &token).await;
         assert!(
             is_cancelled(&before_any_lookup, &name),
             "{before_any_lookup:?}"
@@ -63,20 +94,12 @@ async fn a_cancelled_purge_deletes_nothing_wherever_the_cancel_lands() -> TestRe
         assert!(rig.gateway().sandbox(&name).is_some());
 
         let (rig, name) = launched().await?;
-        let hold = Trigger::Op(GatewayOp::Program);
-        rig.gateway().inject(Fault::HoldAt {
-            trigger: hold.clone(),
-        });
         let token = CancellationToken::new();
-        let purging = rig
-            .world
-            .session
-            .purge(&rig.config, &name, PurgeMode::Forced, &token);
-        let driver = async {
-            assert!(rig.gateway().until_held(&hold).await);
+        let during_inspection = held_at(&rig, &name, &token, GatewayOp::Program, async |_, _| {
             token.cancel();
-        };
-        let (during_inspection, ()) = tokio::join!(purging, driver);
+            Ok(())
+        })
+        .await?;
         assert!(
             is_cancelled(&during_inspection, &name),
             "{during_inspection:?}"
@@ -84,23 +107,22 @@ async fn a_cancelled_purge_deletes_nothing_wherever_the_cancel_lands() -> TestRe
         assert!(rig.gateway().sandbox(&name).is_some());
 
         let (rig, name) = launched().await?;
-        rig.gateway().inject(Fault::HoldAt {
-            trigger: hold.clone(),
-        });
         let token = CancellationToken::new();
-        let purging = rig
-            .world
-            .session
-            .purge(&rig.config, &name, PurgeMode::Forced, &token);
-        let driver = async {
-            assert!(rig.gateway().until_held(&hold).await);
-            rig.gateway().inject(Fault::CancelAt {
-                trigger: Trigger::Op(GatewayOp::Find),
-                token: token.clone(),
-            });
-            rig.gateway().release(&hold);
-        };
-        let (at_the_second_lookup, ()) = tokio::join!(purging, driver);
+        let at_the_second_lookup = held_at(
+            &rig,
+            &name,
+            &token,
+            GatewayOp::Program,
+            async |rig, hold| {
+                rig.gateway().inject(Fault::CancelAt {
+                    trigger: Trigger::Op(GatewayOp::Find),
+                    token: token.clone(),
+                });
+                rig.gateway().release(hold);
+                Ok(())
+            },
+        )
+        .await?;
         assert!(
             is_cancelled(&at_the_second_lookup, &name),
             "{at_the_second_lookup:?}"
@@ -115,17 +137,8 @@ async fn a_cancelled_purge_deletes_nothing_wherever_the_cancel_lands() -> TestRe
 async fn a_delete_that_was_already_requested_is_not_abandoned_by_a_cancel() -> TestResult {
     guard_within(WITHIN, async {
         let (rig, name) = launched().await?;
-        let hold = Trigger::Op(GatewayOp::Delete);
-        rig.gateway().inject(Fault::HoldAt {
-            trigger: hold.clone(),
-        });
         let token = CancellationToken::new();
-        let purging = rig
-            .world
-            .session
-            .purge(&rig.config, &name, PurgeMode::Forced, &token);
-        let driver = async {
-            assert!(rig.gateway().until_held(&hold).await);
+        let purged = held_at(&rig, &name, &token, GatewayOp::Delete, async |rig, hold| {
             token.cancel();
             for _ in 0..8 {
                 tokio::task::yield_now().await;
@@ -134,9 +147,10 @@ async fn a_delete_that_was_already_requested_is_not_abandoned_by_a_cancel() -> T
                 rig.gateway().sandbox(&name).is_some(),
                 "the held delete must not have landed yet"
             );
-            rig.gateway().release(&hold);
-        };
-        let (purged, ()) = tokio::join!(purging, driver);
+            rig.gateway().release(hold);
+            Ok(())
+        })
+        .await?;
         assert!(
             matches!(&purged, Ok(PurgeOutcome::Deleted { sandbox, .. }) if *sandbox == name),
             "{purged:?}"
@@ -176,25 +190,20 @@ async fn a_sandbox_that_becomes_unmanaged_between_the_two_lookups_is_not_called_
 {
     guard_within(WITHIN, async {
         let (rig, name) = launched().await?;
-        let hold = Trigger::Op(GatewayOp::Program);
-        rig.gateway().inject(Fault::HoldAt {
-            trigger: hold.clone(),
-        });
-        let idle = CancellationToken::new();
-        let purging = rig
-            .world
-            .session
-            .purge(&rig.config, &name, PurgeMode::Forced, &idle);
-        let swapping = async {
-            assert!(rig.gateway().until_held(&hold).await);
-            rig.gateway().delete_sandbox(&name).await?;
-            rig.gateway()
-                .insert_unmanaged(&name, Labels::from_pairs([])?, Phase::Ready)?;
-            rig.gateway().release(&hold);
-            Ok::<(), Box<dyn Error>>(())
-        };
-        let (result, swapped) = tokio::join!(purging, swapping);
-        swapped?;
+        let result = held_at(
+            &rig,
+            &name,
+            &CancellationToken::new(),
+            GatewayOp::Program,
+            async |rig, hold| {
+                rig.gateway().delete_sandbox(&name).await?;
+                rig.gateway()
+                    .insert_unmanaged(&name, Labels::from_pairs([])?, Phase::Ready)?;
+                rig.gateway().release(hold);
+                Ok(())
+            },
+        )
+        .await?;
         assert!(
             matches!(&result, Err(PurgeError::Replaced { sandbox }) if *sandbox == name),
             "{result:?}"
@@ -241,16 +250,7 @@ async fn a_delete_whose_response_is_lost_is_settled_by_a_lookup() -> TestResult 
             op: GatewayOp::Delete,
             error: lost(GatewayOp::Delete),
         });
-        let gone = rig
-            .world
-            .session
-            .purge(
-                &rig.config,
-                &name,
-                PurgeMode::Forced,
-                &CancellationToken::new(),
-            )
-            .await?;
+        let gone = forced(&rig, &name, &CancellationToken::new()).await?;
         assert!(
             matches!(&gone, PurgeOutcome::Deleted { sandbox, .. } if *sandbox == name),
             "{gone:?}"
@@ -262,16 +262,7 @@ async fn a_delete_whose_response_is_lost_is_settled_by_a_lookup() -> TestResult 
             op: GatewayOp::Delete,
             error: lost(GatewayOp::Delete),
         });
-        let still_there = rig
-            .world
-            .session
-            .purge(
-                &rig.config,
-                &name,
-                PurgeMode::Forced,
-                &CancellationToken::new(),
-            )
-            .await;
+        let still_there = forced(&rig, &name, &CancellationToken::new()).await;
         assert!(
             matches!(
                 &still_there,
@@ -283,25 +274,22 @@ async fn a_delete_whose_response_is_lost_is_settled_by_a_lookup() -> TestResult 
         assert!(rig.gateway().sandbox(&name).is_some());
 
         let (rig, name) = launched().await?;
-        let hold = Trigger::Op(GatewayOp::Delete);
-        rig.gateway().inject(Fault::HoldAt {
-            trigger: hold.clone(),
-        });
-        let idle = CancellationToken::new();
-        let purging = rig
-            .world
-            .session
-            .purge(&rig.config, &name, PurgeMode::Forced, &idle);
-        let driver = async {
-            assert!(rig.gateway().until_held(&hold).await);
-            rig.gateway().force_phase(&name, Phase::Deleting);
-            rig.gateway().inject(Fault::FailNext {
-                op: GatewayOp::Delete,
-                error: lost(GatewayOp::Delete),
-            });
-            rig.gateway().release(&hold);
-        };
-        let (leaving, ()) = tokio::join!(purging, driver);
+        let leaving = held_at(
+            &rig,
+            &name,
+            &CancellationToken::new(),
+            GatewayOp::Delete,
+            async |rig, hold| {
+                rig.gateway().force_phase(&name, Phase::Deleting);
+                rig.gateway().inject(Fault::FailNext {
+                    op: GatewayOp::Delete,
+                    error: lost(GatewayOp::Delete),
+                });
+                rig.gateway().release(hold);
+                Ok(())
+            },
+        )
+        .await?;
         assert!(
             matches!(&leaving, Ok(PurgeOutcome::Deleted { sandbox, .. }) if *sandbox == name),
             "{leaving:?}"
@@ -390,28 +378,22 @@ async fn settled_after(
     change: impl AsyncFnOnce(&Rig, &SandboxName) -> TestResult,
 ) -> Result<Result<PurgeOutcome, PurgeError>, Box<dyn Error>> {
     let (rig, name) = launched().await?;
-    let hold = Trigger::Op(GatewayOp::Delete);
-    rig.gateway().inject(Fault::HoldAt {
-        trigger: hold.clone(),
-    });
-    let idle = CancellationToken::new();
-    let purging = rig
-        .world
-        .session
-        .purge(&rig.config, &name, PurgeMode::Forced, &idle);
-    let driver = async {
-        assert!(rig.gateway().until_held(&hold).await);
-        change(&rig, &name).await?;
-        rig.gateway().inject(Fault::FailNext {
-            op: GatewayOp::Delete,
-            error: lost(GatewayOp::Delete),
-        });
-        rig.gateway().release(&hold);
-        Ok::<(), Box<dyn Error>>(())
-    };
-    let (result, driven) = tokio::join!(purging, driver);
-    driven?;
-    Ok(result)
+    held_at(
+        &rig,
+        &name,
+        &CancellationToken::new(),
+        GatewayOp::Delete,
+        async |rig, hold| {
+            change(rig, &name).await?;
+            rig.gateway().inject(Fault::FailNext {
+                op: GatewayOp::Delete,
+                error: lost(GatewayOp::Delete),
+            });
+            rig.gateway().release(hold);
+            Ok(())
+        },
+    )
+    .await
 }
 
 #[tokio::test]

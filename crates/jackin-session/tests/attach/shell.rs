@@ -249,3 +249,34 @@ async fn a_shell_on_a_sandbox_jackin_does_not_manage_says_so() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_cancel_while_the_shell_terminal_is_being_opened_ends_the_call() -> TestResult {
+    guard_within(WITHIN, async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.sandbox_name(1)?;
+        let hold = Trigger::Op(GatewayOp::Terminal);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let opening = rig.world.session.open_shell(request(&name)?, &token);
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+        };
+        let (opened, ()) = tokio::join!(opening, driver);
+        assert!(
+            matches!(
+                opened,
+                Err(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            ),
+            "{opened:?}"
+        );
+        rig.gateway().release(&hold);
+        assert_eq!(rig.handle(1).await?.attachments(), 0);
+        Ok(())
+    })
+    .await
+}

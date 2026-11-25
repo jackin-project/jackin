@@ -78,11 +78,88 @@ async fn hold(
     Ok(())
 }
 
+async fn held(world: &World) -> Result<(Account, Vec<ProviderName>), Box<dyn std::error::Error>> {
+    let account = account(world, &world.config).await?;
+    hold(world, &account, &zai_agents(&account)).await?;
+    let provider_names = names(&account);
+    assert!(provider_names.len() > 1);
+    Ok((account, provider_names))
+}
+
+fn assert_only_the_deleted_one_was_restored(
+    world: &World,
+    provider_names: &[ProviderName],
+) -> TestResult {
+    let tokens: Vec<String> = provider_names
+        .iter()
+        .map(|name| token_of(world, name).ok_or("a provider is missing after the rollback"))
+        .collect::<Result<_, _>>()?;
+    let restored = tokens.iter().filter(|token| *token == ROTATED_KEY).count();
+    let untouched = tokens.iter().filter(|token| *token == FIRST_KEY).count();
+    assert_eq!(
+        (restored, untouched),
+        (1, tokens.len() - 1),
+        "only the provider whose delete landed is republished from the host's current login; the others keep what the gateway held: {tokens:?}"
+    );
+    Ok(())
+}
+
 fn token_of(world: &World, name: &ProviderName) -> Option<String> {
     world
         .gateway
         .provider(name)
         .map(|record| record.access_token)
+}
+
+async fn gateway_failure(
+    world: &World,
+    plan: jackin_session::AccountPlan,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let error = plan
+        .apply(
+            &Gateways::single(world.session.clone()),
+            &CancellationToken::new(),
+        )
+        .await
+        .err()
+        .ok_or("an edit with a failing gateway call succeeded")?;
+    assert!(
+        matches!(error, AccountEditError::OnGateway { .. }),
+        "{error:?}"
+    );
+    Ok(())
+}
+
+async fn config_failure(
+    world: &World,
+    plan: jackin_session::AccountPlan,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let error = plan
+        .apply(
+            &Gateways::single(world.session.clone()),
+            &CancellationToken::new(),
+        )
+        .await
+        .err()
+        .ok_or("an edit with a refused config write succeeded")?;
+    assert!(
+        matches!(error, AccountEditError::Config(ConfigError::Fs(_))),
+        "{error:?}"
+    );
+    Ok(())
+}
+
+fn refuse_the_config_write(fs: &MemFs) -> Result<(), Box<dyn std::error::Error>> {
+    fs.fail_at(
+        FsOp::Rename,
+        1,
+        FsError::Io {
+            path: HostPath::parse(Path::new("/config/jackin/config.toml"))?,
+            kind: std::io::ErrorKind::PermissionDenied,
+            message: "the config write is refused".to_owned(),
+        },
+    );
+    Ok(())
 }
 
 async fn removal(
@@ -101,45 +178,18 @@ async fn removal(
 async fn a_removal_that_fails_midway_restores_only_the_provider_it_deleted() -> TestResult {
     guard(async {
         let world = registered().await?;
-        let account = account(&world, &world.config).await?;
-        hold(&world, &account, &zai_agents(&account)).await?;
-        let provider_names = names(&account);
-        assert!(provider_names.len() > 1);
+        let (_, provider_names) = held(&world).await?;
         write_key(&world, ROTATED_KEY).await?;
         let plan = removal(&world, &world.config).await?;
-        world
-            .gateway
-            .inject(Fault::DeleteProviderFailsAfterWrite {
-                error: GatewayError::Protocol {
-                    message: "the first delete's reply was lost".to_owned(),
-                },
-            });
+        world.gateway.inject(Fault::DeleteProviderFailsAfterWrite {
+            error: GatewayError::Protocol {
+                message: "the first delete's reply was lost".to_owned(),
+            },
+        });
 
-        let error = plan
-            .apply(
-                &Gateways::single(world.session.clone()),
-                &CancellationToken::new(),
-            )
-            .await
-            .err()
-            .ok_or("a removal with a failing delete succeeded")?;
-        assert!(
-            matches!(error, AccountEditError::OnGateway { .. }),
-            "{error:?}"
-        );
+        gateway_failure(&world, plan).await?;
 
-        let mut tokens: Vec<String> = provider_names
-            .iter()
-            .map(|name| token_of(&world, name).ok_or("a provider is missing after the rollback"))
-            .collect::<Result<_, _>>()?;
-        tokens.sort();
-        let restored = tokens.iter().filter(|token| *token == ROTATED_KEY).count();
-        let untouched = tokens.iter().filter(|token| *token == FIRST_KEY).count();
-        assert_eq!(
-            (restored, untouched),
-            (1, tokens.len() - 1),
-            "only the provider whose delete landed is republished (from the host's current login); the others keep what the gateway held: {tokens:?}"
-        );
+        assert_only_the_deleted_one_was_restored(&world, &provider_names)?;
         assert!(world.config.load().await?.account(&work()?).is_some());
         Ok(())
     })
@@ -168,18 +218,7 @@ async fn the_rollback_of_a_provider_that_was_never_deleted_does_not_read_the_cre
             },
         });
 
-        let error = plan
-            .apply(
-                &Gateways::single(world.session.clone()),
-                &CancellationToken::new(),
-            )
-            .await
-            .err()
-            .ok_or("a removal with a failing delete succeeded")?;
-        assert!(
-            matches!(error, AccountEditError::OnGateway { .. }),
-            "{error:?}"
-        );
+        gateway_failure(&world, plan).await?;
         assert_eq!(token_of(&world, &provider).as_deref(), Some(FIRST_KEY));
         Ok(())
     })
@@ -221,28 +260,9 @@ async fn a_restore_after_a_landed_delete_publishes_the_hosts_current_login() -> 
         hold(&world, &account, &zai_agents(&account)).await?;
         write_key(&world, ROTATED_KEY).await?;
         let plan = removal(&world, &store).await?;
-        fs.fail_at(
-            FsOp::Rename,
-            1,
-            FsError::Io {
-                path: HostPath::parse(Path::new("/config/jackin/config.toml"))?,
-                kind: std::io::ErrorKind::PermissionDenied,
-                message: "the config write is refused".to_owned(),
-            },
-        );
+        refuse_the_config_write(&fs)?;
 
-        let error = plan
-            .apply(
-                &Gateways::single(world.session.clone()),
-                &CancellationToken::new(),
-            )
-            .await
-            .err()
-            .ok_or("a removal with a refused config write succeeded")?;
-        assert!(
-            matches!(error, AccountEditError::Config(ConfigError::Fs(_))),
-            "{error:?}"
-        );
+        config_failure(&world, plan).await?;
         for name in names(&account) {
             assert_eq!(token_of(&world, &name).as_deref(), Some(ROTATED_KEY));
         }
@@ -254,10 +274,7 @@ async fn a_restore_after_a_landed_delete_publishes_the_hosts_current_login() -> 
 
 async fn gateway_removal_rolls_back_only_what_it_deleted() -> TestResult {
     let world = registered().await?;
-    let account = account(&world, &world.config).await?;
-    hold(&world, &account, &zai_agents(&account)).await?;
-    let provider_names = names(&account);
-    assert!(provider_names.len() > 1);
+    let (_, provider_names) = held(&world).await?;
     write_key(&world, ROTATED_KEY).await?;
     let name = GatewayName::parse("fake-gateway")?;
     let connector = ScriptedConnector::new().gateway(
@@ -284,14 +301,7 @@ async fn gateway_removal_rolls_back_only_what_it_deleted() -> TestResult {
         matches!(error, AccountEditError::OnGateway { .. }),
         "{error:?}"
     );
-    let mut tokens: Vec<String> = provider_names
-        .iter()
-        .map(|name| token_of(&world, name).ok_or("a provider is missing after the rollback"))
-        .collect::<Result<_, _>>()?;
-    tokens.sort();
-    let restored = tokens.iter().filter(|token| *token == ROTATED_KEY).count();
-    let untouched = tokens.iter().filter(|token| *token == FIRST_KEY).count();
-    assert_eq!((restored, untouched), (1, tokens.len() - 1), "{tokens:?}");
+    assert_only_the_deleted_one_was_restored(&world, &provider_names)?;
     assert!(world.config.load().await?.gateway(&name).is_some());
     Ok(())
 }
@@ -350,18 +360,7 @@ async fn a_login_provider_that_could_not_be_deleted_keeps_the_gateway_material_w
             },
         });
 
-        let error = plan
-            .apply(
-                &Gateways::single(world.session.clone()),
-                &CancellationToken::new(),
-            )
-            .await
-            .err()
-            .ok_or("a replacement with a failing delete succeeded")?;
-        assert!(
-            matches!(error, AccountEditError::OnGateway { .. }),
-            "{error:?}"
-        );
+        gateway_failure(&world, plan).await?;
         assert_eq!(world.gateway.provider(&login_name), Some(held));
         Ok(())
     })
@@ -397,28 +396,9 @@ async fn a_rollback_puts_every_held_provider_of_a_changed_key_back_on_the_old_ke
             &CancellationToken::new(),
         )
         .await?;
-        fs.fail_at(
-            FsOp::Rename,
-            1,
-            FsError::Io {
-                path: HostPath::parse(Path::new("/config/jackin/config.toml"))?,
-                kind: std::io::ErrorKind::PermissionDenied,
-                message: "the config write is refused".to_owned(),
-            },
-        );
+        refuse_the_config_write(&fs)?;
 
-        let error = plan
-            .apply(
-                &Gateways::single(world.session.clone()),
-                &CancellationToken::new(),
-            )
-            .await
-            .err()
-            .ok_or("an edit with a refused config write succeeded")?;
-        assert!(
-            matches!(error, AccountEditError::Config(ConfigError::Fs(_))),
-            "{error:?}"
-        );
+        config_failure(&world, plan).await?;
         for name in names(&account) {
             assert_eq!(
                 token_of(&world, &name).as_deref(),
@@ -468,18 +448,7 @@ async fn a_held_provider_the_replacement_could_not_delete_keeps_the_gateway_mate
             },
         });
 
-        let error = plan
-            .apply(
-                &Gateways::single(world.session.clone()),
-                &CancellationToken::new(),
-            )
-            .await
-            .err()
-            .ok_or("a replacement with a failing delete succeeded")?;
-        assert!(
-            matches!(error, AccountEditError::OnGateway { .. }),
-            "{error:?}"
-        );
+        gateway_failure(&world, plan).await?;
         assert_eq!(world.gateway.provider(&claude), Some(held));
         Ok(())
     })

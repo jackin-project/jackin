@@ -23,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::launch::hooks::{self, HookRun};
 use crate::launch::{AttachTarget, LaunchEvent, LaunchEvents, LaunchStep, StepResult};
-use crate::service::{POLL, Session};
+use crate::service::{POLL, Session, read_until_cancelled};
 use crate::state::{EnvReadError, env_file, run_state};
 
 pub const REPAINT_NUDGE: Duration = Duration::from_millis(600);
@@ -428,6 +428,19 @@ fn not_found(sandbox: &SandboxName) -> GatewayError {
 }
 
 impl Session {
+    async fn open_until(
+        &self,
+        cancel: &CancellationToken,
+        request: &TerminalRequest,
+    ) -> Result<TerminalSession, GatewayError> {
+        read_until_cancelled(
+            cancel,
+            GatewayOp::Terminal,
+            self.deps.gateway.open_terminal(request),
+        )
+        .await
+    }
+
     pub async fn attach(
         &self,
         request: AttachRequest,
@@ -463,21 +476,25 @@ impl Session {
                     format!("/sandbox/.jackin/homes/{}", agent.as_str()),
                 );
                 let session = self
-                    .deps
-                    .gateway
-                    .open_terminal(&TerminalRequest {
-                        sandbox: sandbox.clone(),
-                        kind: TerminalKind::Exec {
-                            argv: crate::multi_session::instance_argv(agent, &spec.launch_argv()),
-                            workdir: jackin_core::SandboxPath::parse(&format!(
-                                "/sandbox/work/{}/project",
-                                agent.as_str()
-                            ))
-                            .map_err(|_| AttachError::NotFound(sandbox.clone()))?,
-                            env,
+                    .open_until(
+                        cancel,
+                        &TerminalRequest {
+                            sandbox: sandbox.clone(),
+                            kind: TerminalKind::Exec {
+                                argv: crate::multi_session::instance_argv(
+                                    agent,
+                                    &spec.launch_argv(),
+                                ),
+                                workdir: jackin_core::SandboxPath::parse(&format!(
+                                    "/sandbox/work/{}/project",
+                                    agent.as_str()
+                                ))
+                                .map_err(|_| AttachError::NotFound(sandbox.clone()))?,
+                                env,
+                            },
+                            size: request.size,
                         },
-                        size: request.size,
-                    })
+                    )
                     .await?;
                 let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
                 return Ok(AttachedTerminal {
@@ -490,16 +507,17 @@ impl Session {
             }
         }
         let session = self
-            .deps
-            .gateway
-            .open_terminal(&TerminalRequest {
-                sandbox: sandbox.clone(),
-                kind: TerminalKind::MainProcess {
-                    input: request.input,
-                    repaint: RepaintPolicy::NudgeAfter(REPAINT_NUDGE),
+            .open_until(
+                cancel,
+                &TerminalRequest {
+                    sandbox: sandbox.clone(),
+                    kind: TerminalKind::MainProcess {
+                        input: request.input,
+                        repaint: RepaintPolicy::NudgeAfter(REPAINT_NUDGE),
+                    },
+                    size: request.size,
                 },
-                size: request.size,
-            })
+            )
             .await?;
         let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
         Ok(AttachedTerminal {
@@ -541,15 +559,18 @@ impl Session {
             }
             .into());
         }
-        Ok(gateway
-            .open_terminal(&TerminalRequest {
-                sandbox: sandbox.clone(),
-                kind: TerminalKind::Shell {
-                    workdir: sandbox_layout::PROJECT.clone(),
-                    env: values,
+        Ok(self
+            .open_until(
+                cancel,
+                &TerminalRequest {
+                    sandbox: sandbox.clone(),
+                    kind: TerminalKind::Shell {
+                        workdir: sandbox_layout::PROJECT.clone(),
+                        env: values,
+                    },
+                    size: request.size,
                 },
-                size: request.size,
-            })
+            )
             .await?)
     }
 
