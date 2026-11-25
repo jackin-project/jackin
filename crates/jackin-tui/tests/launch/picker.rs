@@ -19,6 +19,7 @@ use super::support::{
     Stage, answer, console, dialog, direct_launch, labels, only, picker_account, stage, two_roles,
     until, until_route, until_shows,
 };
+use tokio_util::sync::CancellationToken;
 
 type Failure = Box<dyn std::error::Error>;
 
@@ -44,29 +45,32 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![
-                env_account("codex-env", Provider::Codex, "OPENAI_KEY")?,
-                ConfigEdit::AddAccount(Account::new(
-                    AccountName::parse("codex-local")?,
-                    Provider::Codex,
-                    CredentialSource::CodexLogin {
-                        home: rig.home.clone(),
-                        chatgpt_account_id: jackin_core::ChatgptAccountId::parse(
-                            jackin_testkit::ACCOUNT_ID,
-                        )?,
-                    },
-                )?),
-                ConfigEdit::AddAccount(Account::new(
-                    AccountName::parse("codex-op")?,
-                    Provider::Codex,
-                    CredentialSource::OnePassword {
-                        reference: OpReference::parse("op://vault/item/field")?,
-                        account: None,
-                    },
-                )?),
-                env_account("claude-env", Provider::Claude, "ANTHROPIC_KEY")?,
-                env_account("grok-env", Provider::Grok, "XAI_KEY")?,
-            ])
+            .edit(
+                vec![
+                    env_account("codex-env", Provider::Codex, "OPENAI_KEY")?,
+                    ConfigEdit::AddAccount(Account::new(
+                        AccountName::parse("codex-local")?,
+                        Provider::Codex,
+                        CredentialSource::CodexLogin {
+                            home: rig.home.clone(),
+                            chatgpt_account_id: jackin_core::ChatgptAccountId::parse(
+                                jackin_testkit::ACCOUNT_ID,
+                            )?,
+                        },
+                    )?),
+                    ConfigEdit::AddAccount(Account::new(
+                        AccountName::parse("codex-op")?,
+                        Provider::Codex,
+                        CredentialSource::OnePassword {
+                            reference: OpReference::parse("op://vault/item/field")?,
+                            account: None,
+                        },
+                    )?),
+                    env_account("claude-env", Provider::Claude, "ANTHROPIC_KEY")?,
+                    env_account("grok-env", Provider::Grok, "XAI_KEY")?,
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = console(&rig).await?;
         console.keys("down enter")?;
@@ -145,20 +149,23 @@ async fn a_git_sourced_role_launches_from_the_picker() -> TestResult {
         .await?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::RemoveRole(RoleName::parse("sentinel")?),
-                ConfigEdit::AddRole {
-                    name: RoleName::parse("sentinel")?,
-                    source: RoleSource::Git {
-                        url: RoleUrl::parse(url)?,
-                        rev: None,
+            .edit(
+                vec![
+                    ConfigEdit::RemoveRole(RoleName::parse("sentinel")?),
+                    ConfigEdit::AddRole {
+                        name: RoleName::parse("sentinel")?,
+                        source: RoleSource::Git {
+                            url: RoleUrl::parse(url)?,
+                            rev: None,
+                        },
                     },
-                },
-                ConfigEdit::SetWorkspaceDefaultRole {
-                    workspace: WorkspaceName::parse("platform-backend")?,
-                    role: Some(RoleName::parse("sentinel")?),
-                },
-            ])
+                    ConfigEdit::SetWorkspaceDefaultRole {
+                        workspace: WorkspaceName::parse("platform-backend")?,
+                        role: Some(RoleName::parse("sentinel")?),
+                    },
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = console(&rig).await?;
         console.keys("down enter")?;
@@ -194,7 +201,7 @@ async fn a_credential_changed_under_the_picker_is_refused_typed() -> TestResult 
                 credential: CredentialSource::Env {
                     var: EnvName::parse("OPENAI_KEY")?,
                 },
-            }])
+            }], &CancellationToken::new())
             .await?;
         let app = console.console().app();
         let world = &app.world;
@@ -272,13 +279,16 @@ async fn the_only_allowed_role_is_launched() -> TestResult {
         let workspace = WorkspaceName::parse("platform-backend")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceRoles {
-                workspace,
-                roles: AllowedRoles::Only(
-                    jackin_core::RoleSet::new([RoleName::parse("other")?])
-                        .ok_or("an empty role set")?,
-                ),
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceRoles {
+                    workspace,
+                    roles: AllowedRoles::Only(
+                        jackin_core::RoleSet::new([RoleName::parse("other")?])
+                            .ok_or("an empty role set")?,
+                    ),
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = console(&rig).await?;
         super::support::begin_role(&mut console, "other")?;
@@ -296,29 +306,35 @@ async fn a_role_removed_under_the_picker_is_refused() -> TestResult {
         let workspace = WorkspaceName::parse("platform-backend")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceDefaultRole {
-                workspace: workspace.clone(),
-                role: Some(RoleName::parse("sentinel")?),
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceDefaultRole {
+                    workspace: workspace.clone(),
+                    role: Some(RoleName::parse("sentinel")?),
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = console(&rig).await?;
         console.keys("down enter")?;
         until_shows(&mut console, "Launch · choose Agent").await?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::SetWorkspaceDefaultRole {
-                    workspace: workspace.clone(),
-                    role: None,
-                },
-                ConfigEdit::SetWorkspaceRoles {
-                    workspace,
-                    roles: AllowedRoles::Only(
-                        jackin_core::RoleSet::new([RoleName::parse("other")?])
-                            .ok_or("an empty role set")?,
-                    ),
-                },
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::SetWorkspaceDefaultRole {
+                        workspace: workspace.clone(),
+                        role: None,
+                    },
+                    ConfigEdit::SetWorkspaceRoles {
+                        workspace,
+                        roles: AllowedRoles::Only(
+                            jackin_core::RoleSet::new([RoleName::parse("other")?])
+                                .ok_or("an empty role set")?,
+                        ),
+                    },
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         console.keys("space enter")?;
         until_shows(&mut console, "does not allow role sentinel").await?;
@@ -410,9 +426,12 @@ async fn elsewhere_in(
     rig.world.seed_all(&rig.config).await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::SetDefaultAccount {
-            account: AccountName::parse("work")?,
-        }])
+        .edit(
+            vec![ConfigEdit::SetDefaultAccount {
+                account: AccountName::parse("work")?,
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     let console = ConsoleRig::builder(&rig.world)
         .size(160, 44)
@@ -579,15 +598,18 @@ async fn a_current_directory_reached_through_a_symlink_finds_the_saved_workspace
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::SetDefaultAccount {
-                    account: AccountName::parse("work")?,
-                },
-                ConfigEdit::AddWorkspace {
-                    name: WorkspaceName::parse("saved")?,
-                    workspace: jackin_core::Workspace::new(repo.root().clone(), false),
-                },
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::SetDefaultAccount {
+                        account: AccountName::parse("work")?,
+                    },
+                    ConfigEdit::AddWorkspace {
+                        name: WorkspaceName::parse("saved")?,
+                        workspace: jackin_core::Workspace::new(repo.root().clone(), false),
+                    },
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .size(160, 44)
@@ -741,13 +763,16 @@ async fn promoted_console_launch(
     if matches!(provider, Provider::Kimi | Provider::Mimo) {
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(Account::new(
-                AccountName::parse(account)?,
-                provider,
-                CredentialSource::File {
-                    path: jackin_core::HostPath::parse(&rig.home.as_path().join("zai.txt"))?,
-                },
-            )?)])
+            .edit(
+                vec![ConfigEdit::AddAccount(Account::new(
+                    AccountName::parse(account)?,
+                    provider,
+                    CredentialSource::File {
+                        path: jackin_core::HostPath::parse(&rig.home.as_path().join("zai.txt"))?,
+                    },
+                )?)],
+                &CancellationToken::new(),
+            )
             .await?;
     }
     let mut console = console(&rig).await?;

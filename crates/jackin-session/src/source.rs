@@ -216,6 +216,7 @@ impl SourceDesk {
                 | CredentialError::LoginTooLarge { .. }
                 | CredentialError::KeychainUnavailable
                 | CredentialError::KeychainLoginMissing
+                | CredentialError::Cancelled { .. }
                 | CredentialError::Fs(_)
                 | CredentialError::MissingStaticKey,
             ) => FolderFacts::Unreadable,

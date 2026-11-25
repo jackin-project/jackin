@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -26,7 +26,10 @@ pub trait Gateway: Send + Sync + Debug {
     async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError>;
     async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError>;
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError>;
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError>;
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError>;
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
@@ -104,6 +107,96 @@ pub enum ProfileSync {
 pub enum ProviderState {
     Absent,
     Present,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ProviderWriteEffect {
+    NoWrite,
+    Created,
+    Existing,
+    Unknown,
+}
+
+impl ProviderWriteEffect {
+    #[must_use]
+    pub fn after_failed_write(provider_held: bool, error: &GatewayError) -> ProviderWriteEffect {
+        if provider_held {
+            ProviderWriteEffect::Existing
+        } else if error.outcome_unknown() {
+            ProviderWriteEffect::Unknown
+        } else {
+            ProviderWriteEffect::NoWrite
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ProviderWriteError {
+    source: GatewayError,
+    effect: ProviderWriteEffect,
+}
+
+impl ProviderWriteError {
+    pub fn new(source: GatewayError, effect: ProviderWriteEffect) -> ProviderWriteError {
+        ProviderWriteError { source, effect }
+    }
+
+    pub fn effect(&self) -> ProviderWriteEffect {
+        self.effect
+    }
+
+    pub fn gateway_error(&self) -> &GatewayError {
+        &self.source
+    }
+
+    pub fn into_parts(self) -> (GatewayError, ProviderWriteEffect) {
+        (self.source, self.effect)
+    }
+}
+
+impl fmt::Display for ProviderWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.source, f)
+    }
+}
+
+impl std::error::Error for ProviderWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        std::error::Error::source(&self.source)
+    }
+}
+
+impl GatewayError {
+    #[must_use]
+    pub fn outcome_unknown(&self) -> bool {
+        match self {
+            GatewayError::Unreachable { .. }
+            | GatewayError::SandboxUnreachable { .. }
+            | GatewayError::Tls { .. }
+            | GatewayError::Timeout { .. }
+            | GatewayError::Cancelled { .. }
+            | GatewayError::Process(_)
+            | GatewayError::Transfer { .. }
+            | GatewayError::DownloadTooLarge { .. }
+            | GatewayError::NotRegularFile { .. }
+            | GatewayError::OutputTooLarge { .. }
+            | GatewayError::HostKeyMismatch
+            | GatewayError::TerminalRefused { .. }
+            | GatewayError::WriteUnconfirmed { .. }
+            | GatewayError::WriteNotDurable { .. }
+            | GatewayError::Protocol { .. } => true,
+            GatewayError::Unauthenticated
+            | GatewayError::PermissionDenied { .. }
+            | GatewayError::NotFound { .. }
+            | GatewayError::AlreadyExists { .. }
+            | GatewayError::NotReady { .. }
+            | GatewayError::MainProcessFailed { .. }
+            | GatewayError::FailedPrecondition { .. }
+            | GatewayError::ResourceExhausted { .. }
+            | GatewayError::InvalidArgument { .. }
+            | GatewayError::UnsafePath { .. } => false,
+        }
+    }
 }
 
 #[derive(Debug)]

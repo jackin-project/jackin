@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use jackin::{AppEnv, Deps, ExitClass, GrpcConnector, RawMode, Terminal, TerminalInput};
 use jackin_core::{
     Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
-    ProcessRunner, Provider,
+    ProcessRunner,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError, TermSize};
@@ -275,15 +275,7 @@ impl Terminal for ScriptedTerminal {
     }
 }
 
-pub(crate) const CLOSED_ORIGIN: &str = "http://127.0.0.1:1";
-
-pub(crate) fn closed_endpoints() -> ProviderEndpoints {
-    Provider::ALL
-        .into_iter()
-        .fold(ProviderEndpoints::real(), |endpoints, provider| {
-            endpoints.with(provider, CLOSED_ORIGIN.to_owned())
-        })
-}
+pub(crate) use jackin_testkit::{CLOSED_ORIGIN, closed_endpoints};
 
 pub(crate) async fn until(mut done: impl FnMut() -> bool) -> Result<(), Failure> {
     for _ in 0..400 {
@@ -303,7 +295,7 @@ pub(crate) struct Harness {
     pub(crate) cache_dir: HostPath,
     pub(crate) env: Vec<(String, String)>,
     pub(crate) usage_endpoints: ProviderEndpoints,
-    pub(crate) usage_vault: Option<Arc<dyn jackin_usage::accounts::CredentialVault>>,
+    pub(crate) usage_vault: Arc<dyn jackin_usage::accounts::CredentialVault>,
     pub(crate) console: Arc<ScriptedConsole>,
     host: HostPorts,
     engine: Arc<dyn ImageEngine>,
@@ -334,7 +326,7 @@ impl Harness {
                 world.home().as_path().display().to_string(),
             )],
             usage_endpoints: closed_endpoints(),
-            usage_vault: None,
+            usage_vault: Arc::new(jackin_testkit::MemoryVault::default()),
             console: Arc::new(ScriptedConsole::default()),
             host: HostPorts {
                 clock,
@@ -355,7 +347,7 @@ impl Harness {
             cache_dir: self.cache_dir.clone(),
             env: self.env.clone(),
             usage_endpoints: self.usage_endpoints.clone(),
-            usage_vault: self.usage_vault.clone(),
+            usage_vault: Arc::clone(&self.usage_vault),
             console: Arc::clone(&self.console),
             host: HostPorts {
                 clock: Arc::clone(&self.host.clock),
@@ -376,7 +368,7 @@ impl Harness {
             cache_dir: self.cache_dir.clone(),
             env: self.env.clone(),
             usage_endpoints: self.usage_endpoints.clone(),
-            usage_vault: self.usage_vault.clone(),
+            usage_vault: Arc::clone(&self.usage_vault),
             console: Arc::clone(&self.console),
             host: HostPorts {
                 clock: Arc::clone(&self.host.clock),
@@ -499,7 +491,7 @@ impl Invocation<'_> {
             connect,
             limits: default_limits(),
             usage_endpoints: harness.usage_endpoints.clone(),
-            usage_vault: harness.usage_vault.clone(),
+            usage_vault: Arc::clone(&harness.usage_vault),
             console: Arc::<ScriptedConsole>::clone(&harness.console),
         };
         let exit = jackin::run(env, deps).await;

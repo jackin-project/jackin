@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
 use std::{collections::BTreeMap, fmt};
 
 use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, UsageProvider};
@@ -103,14 +104,6 @@ impl From<InfoProduct> for InfoRow {
     }
 }
 
-fn plural(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
 fn duplicate_note(
     accounts: &[ConnectedAccount],
     identities: &BTreeMap<Uuid, String>,
@@ -166,14 +159,10 @@ fn cells(
     }
 }
 
-fn pad(text: &str, width: usize) -> String {
-    format!("{text:<width$}")
-}
-
 fn widest(cells: &[Cells], column: fn(&Cells) -> &str, header: &str) -> usize {
     cells
         .iter()
-        .map(|c| column(c).chars().count())
+        .map(|c| text::width(column(c)))
         .max()
         .unwrap_or(0)
         .max(header.len())
@@ -202,7 +191,7 @@ fn table(
         &text::split_parts(
             &format!(
                 "Providers · {tracked} tracked · {connected} connected · {}",
-                plural(total, "account")
+                text::plural(total, "account")
             ),
             Tone::Strong,
         ),
@@ -212,16 +201,16 @@ fn table(
         Line::blank(),
         Line::of(vec![Span::dim(format!(
             "{}  {}  {:>count_width$}  NOTE",
-            pad("PROVIDER", name_width),
-            pad("ID", id_width),
+            text::pad("PROVIDER", name_width),
+            text::pad("ID", id_width),
             "ACCOUNTS"
         ))]),
     ]);
     for cell in cells {
         let figure = format!("{:>count_width$}", cell.count);
         let mut spans = vec![
-            Span::strong(pad(cell.name, name_width)),
-            Span::plain(format!("  {}  ", pad(cell.id, id_width))),
+            Span::strong(text::pad(cell.name, name_width)),
+            Span::plain(format!("  {}  ", text::pad(cell.id, id_width))),
             if cell.connected {
                 Span::plain(figure)
             } else {
@@ -244,13 +233,16 @@ fn info_lines(ctx: Ctx) -> Vec<Line> {
         lines.extend(text::wrap(
             vec![Span::strong(INFO_TAG), Span::plain("  ")],
             INFO_INDENT,
-            &[(format!("{}: {}.", info.name, info.reason), Tone::Plain)],
+            &[text::Part::new(
+                format!("{}: {}.", info.name, info.reason),
+                Tone::Plain,
+            )],
             ctx.columns(),
         ));
         lines.extend(text::wrap(
             vec![Span::plain(" ".repeat(INFO_INDENT))],
             INFO_INDENT,
-            &[(info.hint.to_owned(), Tone::Plain)],
+            &[text::Part::new(info.hint, Tone::Plain)],
             ctx.columns(),
         ));
     }
@@ -271,12 +263,15 @@ fn footer() -> Vec<Line> {
 
 pub(crate) fn show(app: &mut App, id: Option<&str>, json: bool) -> Result<(), CommandError> {
     let selected = id.map(product).transpose()?;
-    let (accounts, identities) = AccountRegistry::open_read_only(&database(app)?)
-        .map_err(failure)?
-        .map(|db| Ok::<_, ConnectionError>((db.list()?, db.identities()?)))
-        .transpose()
-        .map_err(failure)?
-        .unwrap_or_default();
+    let (accounts, identities) = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?
+    .map(|db| Ok::<_, ConnectionError>((db.list()?, db.identities()?)))
+    .transpose()
+    .map_err(failure)?
+    .unwrap_or_default();
     let totals = catalog(accounts.iter().map(|a| a.provider));
     let rows: Vec<&ProviderRow> = totals
         .iter()

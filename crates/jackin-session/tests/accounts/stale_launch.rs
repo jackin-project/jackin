@@ -24,8 +24,11 @@ fn work() -> Result<AccountName, FixtureError> {
 async fn edit(rig: &Rig, edit: ConfigEdit) -> Result<Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&rig.world.desk(), vec![edit], &cancel).await?;
-    plan.apply(&Gateways::single(rig.world.session.clone()))
-        .await
+    plan.apply(
+        &Gateways::single(rig.world.session.clone()),
+        &CancellationToken::new(),
+    )
+    .await
 }
 
 async fn launch(rig: &Rig, plan: jackin_session::LaunchPlan) -> Outcome {
@@ -96,7 +99,7 @@ async fn a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_
                 &CancellationToken::new(),
             )
             .await?
-            .apply(&Gateways::single(session))
+            .apply(&Gateways::single(session), &CancellationToken::new())
             .await
         });
         assert!(
@@ -164,7 +167,7 @@ async fn a_launch_planned_before_gateway_rm_fails_and_creates_no_provider() -> T
             .config
             .edit(vec![ConfigEdit::RemoveGateway(GatewayName::parse(
                 "fake-gateway",
-            )?)])
+            )?)], &CancellationToken::new())
             .await?;
 
         let refused = refusal(&rig, launch(&rig, plan).await)?;
@@ -197,7 +200,9 @@ async fn a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_
             let cancel = CancellationToken::new();
             match plan_gateway_removal(&desk, &name, &cancel).await? {
                 GatewayRemoval::Online(plan) => plan.apply(&connector, &cancel).await,
-                GatewayRemoval::Offline(plan) => Ok::<_, AccountEditError>(plan.apply().await?),
+                GatewayRemoval::Offline(plan) => {
+                    Ok::<_, AccountEditError>(plan.apply(&CancellationToken::new()).await?)
+                }
             }
         });
         assert!(
@@ -240,7 +245,10 @@ async fn an_edit_that_leaves_the_account_and_the_gateway_alone_does_not_stop_a_p
         let plan = rig.plan(1)?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetDefaultAccount { account: work()? }])
+            .edit(
+                vec![ConfigEdit::SetDefaultAccount { account: work()? }],
+                &CancellationToken::new(),
+            )
             .await?;
 
         let outcome = launch(&rig, plan).await;

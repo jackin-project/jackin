@@ -20,10 +20,13 @@ pub(crate) async fn run(app: &mut App, command: WorkspaceCommand) -> Result<(), 
 async fn add(app: &App, args: WorkspaceAddArgs) -> Result<(), CommandError> {
     let workspace = Workspace::new(existing_dir(app, &args.path).await?, args.docker);
     app.store
-        .edit(vec![ConfigEdit::AddWorkspace {
-            name: args.name,
-            workspace,
-        }])
+        .edit(
+            vec![ConfigEdit::AddWorkspace {
+                name: args.name,
+                workspace,
+            }],
+            &app.cancel,
+        )
         .await?;
     Ok(())
 }
@@ -55,7 +58,7 @@ async fn rm(app: &App, arg: WorkspaceArg) -> Result<(), CommandError> {
         None
     };
     app.store
-        .edit(vec![ConfigEdit::RemoveWorkspace(arg.name)])
+        .edit(vec![ConfigEdit::RemoveWorkspace(arg.name)], &app.cancel)
         .await?;
     Ok(())
 }

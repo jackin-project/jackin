@@ -47,10 +47,13 @@ async fn source(app: &App, args: &RoleAddArgs) -> Result<RoleSource, CommandErro
 async fn add(app: &App, args: RoleAddArgs) -> Result<(), CommandError> {
     let source = source(app, &args).await?;
     app.store
-        .edit(vec![ConfigEdit::AddRole {
-            name: args.name,
-            source,
-        }])
+        .edit(
+            vec![ConfigEdit::AddRole {
+                name: args.name,
+                source,
+            }],
+            &app.cancel,
+        )
         .await?;
     Ok(())
 }
@@ -76,7 +79,7 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
 
 async fn rm(app: &App, arg: RoleArg) -> Result<(), CommandError> {
     app.store
-        .edit(vec![ConfigEdit::RemoveRole(arg.name)])
+        .edit(vec![ConfigEdit::RemoveRole(arg.name)], &app.cancel)
         .await?;
     Ok(())
 }

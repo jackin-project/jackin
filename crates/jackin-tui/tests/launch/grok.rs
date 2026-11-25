@@ -11,6 +11,7 @@ use jackin_core::{
 use jackin_testkit::{ConsoleRig, RoleFixture, TestResult, guard};
 
 use super::support::{direct_launch, only};
+use tokio_util::sync::CancellationToken;
 
 const ACCESS: &str = "FAKE-GROK-ACCESS-CONSOLE";
 const REFRESH: &str = "FAKE-GROK-REFRESH-CONSOLE";
@@ -37,23 +38,26 @@ async fn t03_console_offer_and_direct_launch_are_ready_with_host_session_auth() 
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::AddAccount(Account::new(
-                    AccountName::parse("grok-work")?,
-                    Provider::Grok,
-                    CredentialSource::HostLogin { path: login },
-                )?),
-                ConfigEdit::AddAccount(Account::new(
-                    AccountName::parse("grok-env")?,
-                    Provider::Grok,
-                    CredentialSource::Env {
-                        var: EnvName::parse("XAI_KEY")?,
+            .edit(
+                vec![
+                    ConfigEdit::AddAccount(Account::new(
+                        AccountName::parse("grok-work")?,
+                        Provider::Grok,
+                        CredentialSource::HostLogin { path: login },
+                    )?),
+                    ConfigEdit::AddAccount(Account::new(
+                        AccountName::parse("grok-env")?,
+                        Provider::Grok,
+                        CredentialSource::Env {
+                            var: EnvName::parse("XAI_KEY")?,
+                        },
+                    )?),
+                    ConfigEdit::SetDefaultAccount {
+                        account: AccountName::parse("work")?,
                     },
-                )?),
-                ConfigEdit::SetDefaultAccount {
-                    account: AccountName::parse("work")?,
-                },
-            ])
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .size(160, 44)

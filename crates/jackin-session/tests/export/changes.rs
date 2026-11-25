@@ -4,11 +4,13 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use jackin_core::{Phase, SandboxName, Sha256, TerminalText};
-use jackin_openshell::PowerAction;
+use jackin_openshell::{GatewayError, GatewayOp, PowerAction};
 use jackin_session::{
     ChangeHunk, ChangeLine, ChangeSet, ChangeStatus, ChangedFile, ChangesError, Unread,
 };
-use jackin_testkit::{RepoFixture, Rig, SandboxHandle, TestResult, guard};
+use jackin_testkit::{
+    Fault, RepoFixture, Rig, SandboxHandle, TestResult, Trigger, guard, guard_within,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::support::state;
@@ -372,6 +374,39 @@ async fn asking_for_the_changes_never_rewrites_the_sandbox_index() -> TestResult
 
         handle.git(&["status", "--porcelain"]).await?;
         assert_ne!(index_digest(&handle)?, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_interrupts_a_hung_lookup_before_listing_changes() -> TestResult {
+    guard_within(Duration::from_secs(20), async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.handle(1).await?.name();
+        let hold = Trigger::Op(GatewayOp::Find);
+        rig.world.gateway.inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let driver = async {
+            assert!(rig.world.gateway.until_held(&hold).await);
+            token.cancel();
+        };
+        let (result, ()) = tokio::join!(rig.world.session.changes(&name, &token), driver);
+        let error = result.err().ok_or("a cancelled listing succeeded")?;
+        assert!(
+            matches!(
+                error,
+                ChangesError::Gateway(GatewayError::Cancelled {
+                    op: GatewayOp::Find,
+                    ..
+                })
+            ),
+            "{error:?}"
+        );
+        rig.world.gateway.release(&hold);
         Ok(())
     })
     .await

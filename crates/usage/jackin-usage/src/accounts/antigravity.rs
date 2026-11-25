@@ -1,14 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{AccountRegistry, ConnectionError, vault};
+use super::{AccountRegistry, ConnectionError, CredentialVault};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use std::{path::Path, sync::Arc};
 use uuid::Uuid;
 
 impl AccountRegistry {
-    pub(crate) fn open_statusline(path: &Path) -> Result<Self, ConnectionError> {
-        Self::open_metadata(path, Arc::new(vault::SystemVault))
+    pub(crate) fn open_statusline(
+        path: &Path,
+        vault: Arc<dyn CredentialVault>,
+    ) -> Result<Self, ConnectionError> {
+        Self::open_metadata(path, vault)
     }
 
     pub(crate) fn start_enrollment(

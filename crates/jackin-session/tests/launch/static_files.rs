@@ -27,11 +27,14 @@ async fn add_zai_account(rig: &Rig) -> Result<AccountName, Box<dyn std::error::E
     let name = AccountName::parse("zai-work")?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddAccount(Account::new(
-            name.clone(),
-            Provider::Zai,
-            CredentialSource::File { path },
-        )?)])
+        .edit(
+            vec![ConfigEdit::AddAccount(Account::new(
+                name.clone(),
+                Provider::Zai,
+                CredentialSource::File { path },
+            )?)],
+            &CancellationToken::new(),
+        )
         .await?;
     Ok(name)
 }

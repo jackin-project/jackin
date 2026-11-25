@@ -24,7 +24,7 @@ async fn claude_confirmation_checks_fresh_grant_and_remembers_spent_selection() 
     let server = UsageServer::start().await?;
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
-    let login = OwnedLogin::new(path, server.endpoints(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, server.endpoints(), clock, vault);
     let org = "00000000-0000-4000-8000-0000000000a1";
     let bytes = SecretBytes::new(serde_json::to_vec(&(
         "access",
@@ -34,12 +34,12 @@ async fn claude_confirmation_checks_fresh_grant_and_remembers_spent_selection() 
     ))?);
     let snapshot = json!({"resets":[{"kind":"session","id":"a","remaining":2,"expiresAt":now.0+600,"usable":true,"clears":["five_hour"]}]});
     let id = db.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "work",
         &CandidateIdentity::OAuth(Some(format!("member/{org}"))),
         &bytes,
-        now.0,
-        &snapshot,
+        (now.0, &snapshot),
     )?;
     let selection = ResetSelection::from_snapshot(id, UsageProvider::Claude, &snapshot, 0, now)?;
     assert!(selection.description().contains("session"));
@@ -119,7 +119,7 @@ async fn chatgpt_ambiguous_consume_can_replay_without_selecting_another_credit()
     let server = UsageServer::start().await?;
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
-    let login = OwnedLogin::new(path, server.endpoints(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, server.endpoints(), clock, vault);
     let bytes = SecretBytes::new(serde_json::to_vec(&(
         "scoped",
         Option::<String>::None,
@@ -129,12 +129,12 @@ async fn chatgpt_ambiguous_consume_can_replay_without_selecting_another_credit()
     let expiry = now.0 + 1000;
     let snap = json!({"resets":[{"kind":"full","remaining":1,"expiresAt":expiry,"usable":true}]});
     let id = db.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::ChatGpt,
         "work",
         &CandidateIdentity::OAuth(Some("workspace/member".into())),
         &bytes,
-        now.0,
-        &snap,
+        (now.0, &snap),
     )?;
     let selection = ResetSelection::from_snapshot(id, UsageProvider::ChatGpt, &snap, 0, now)?;
     let p = Provider::Codex;
@@ -226,7 +226,7 @@ async fn zai_earliest_reset_is_rechecked_and_ambiguous_claim_is_never_retried() 
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
     let endpoints = server.endpoints();
-    let login = OwnedLogin::new(path, endpoints.clone(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, endpoints.clone(), clock, vault);
     let key = Secret::new("plan-only".into());
     let p = Provider::Zai;
     server.serve(
@@ -256,12 +256,12 @@ async fn zai_earliest_reset_is_rechecked_and_ambiguous_claim_is_never_retried() 
         .read_with_policy(&endpoints, &key, now, None, false)
         .await?;
     let id = db.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Zai,
         "work",
         &CandidateIdentity::api_key(&key),
         &KeyConnection::Zai.encode(&key)?,
-        now.0,
-        &snapshot,
+        (now.0, &snapshot),
     )?;
     assert_eq!(snapshot["resets"][0]["expiresAt"], now.0 + 3600);
     assert_eq!(snapshot["resources"]["rateLimitResets"]["available"], 3);
@@ -312,7 +312,7 @@ async fn mirrored_claude_claim_uses_hub_login_and_verified_organization() -> Res
     let server = UsageServer::start().await?;
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
-    let login = OwnedLogin::new(path, server.endpoints(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, server.endpoints(), clock, vault);
     let p = Provider::Claude;
     server.serve(
         p,

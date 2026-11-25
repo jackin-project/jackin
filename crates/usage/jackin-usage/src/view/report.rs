@@ -4,7 +4,7 @@
 use super::card::{self, reset_phrase};
 use super::model::{AccountQuota, Attention, Reading, UsageView, short_id};
 use super::render::{Ctx, Depth, Line, Report, Span, Tone};
-use super::text;
+use super::text::{self, Part};
 
 const TAG_WIDTH: usize = 10;
 const DETAIL_INDENT: usize = 14;
@@ -19,6 +19,7 @@ pub struct AttentionText {
     pub tone: Tone,
     pub subject: String,
     pub detail: String,
+    pub command: Option<String>,
 }
 
 pub fn report(view: &UsageView, ctx: &Ctx, kind: Report) -> Vec<Line> {
@@ -53,14 +54,6 @@ pub fn report(view: &UsageView, ctx: &Ctx, kind: Report) -> Vec<Line> {
     lines
 }
 
-fn plural(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
 pub fn title(view: &UsageView, kind: Report, ctx: &Ctx) -> Vec<Line> {
     let word = match kind {
         Report::Usage => "Usage",
@@ -79,10 +72,10 @@ pub fn title(view: &UsageView, kind: Report, ctx: &Ctx) -> Vec<Line> {
     let mut lines = Vec::new();
     for stamp in stamps {
         let parts = [
-            (word.to_owned(), Tone::Strong),
-            (format!("{stamp} ({offset})"), Tone::Plain),
-            (plural(view.account_count(), "account"), Tone::Plain),
-            (plural(view.groups.len(), "provider"), Tone::Plain),
+            Part::new(word, Tone::Strong),
+            Part::new(format!("{stamp} ({offset})"), Tone::Plain),
+            Part::new(text::plural(view.account_count(), "account"), Tone::Plain),
+            Part::new(text::plural(view.groups.len(), "provider"), Tone::Plain),
         ];
         lines = text::wrap(Vec::new(), TITLE_INDENT, &parts, ctx.columns());
         if lines.len() == 1 {
@@ -112,35 +105,40 @@ pub fn stale_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
         format!("{near} to {far}")
     };
     let parts = [
-        (format!("{who}, fetched {range} ago"), Tone::Plain),
-        (REFRESH_COMMAND.to_owned(), Tone::Plain),
+        Part::new(format!("{who}, fetched {range} ago"), Tone::Plain),
+        Part::new(REFRESH_COMMAND, Tone::Plain).atom(REFRESH_COMMAND),
     ];
     text::wrap(
         vec![Span::new(STALE_TAG, Tone::Warn), Span::plain("  ")],
-        STALE_TAG.len() + 2,
+        text::width(STALE_TAG) + 2,
         &parts,
         ctx.columns(),
     )
 }
 
-pub fn attention_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
-    let entries: Vec<AttentionText> = view
-        .attention
+pub fn attention_entries(view: &UsageView) -> impl Iterator<Item = AttentionText> + '_ {
+    view.attention
         .iter()
         .filter_map(|item| attention_text(view, item))
-        .collect();
+}
+
+pub fn attention_heading(count: usize) -> String {
+    format!("Needs attention ({count})")
+}
+
+pub fn attention_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
+    let entries: Vec<AttentionText> = attention_entries(view).collect();
     if entries.is_empty() {
         return Vec::new();
     }
-    let mut lines = vec![Line::of(vec![Span::strong(format!(
-        "Needs attention ({})",
-        entries.len()
+    let mut lines = vec![Line::of(vec![Span::strong(attention_heading(
+        entries.len(),
     ))])];
     for entry in entries {
         lines.extend(text::wrap(
             vec![
                 Span::plain("  "),
-                Span::new(format!("{:<TAG_WIDTH$}", entry.tag), entry.tone),
+                Span::new(text::pad(entry.tag, TAG_WIDTH), entry.tone),
                 Span::plain("  "),
             ],
             DETAIL_INDENT,
@@ -150,7 +148,7 @@ pub fn attention_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
         lines.extend(text::wrap(
             vec![Span::plain(" ".repeat(DETAIL_INDENT))],
             DETAIL_INDENT,
-            &text::split_parts(&entry.detail, Tone::Plain),
+            &text::split_atomic(&entry.detail, Tone::Plain, entry.command.as_slice()),
             ctx.columns(),
         ));
     }
@@ -184,9 +182,13 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                 .then(|| account.short())
                 .into_iter()
                 .collect();
+            let mut command = None;
             let detail = match retry_at {
                 Some(_) if *reconnect => {
-                    format!("{message} · {}", text::reconnect_command(account.id))
+                    let run = text::reconnect_command(account.id, text::IdForm::Hyphenated);
+                    let detail = format!("{message} · run: {run}");
+                    command = Some(run);
+                    detail
                 }
                 Some(at) if *at <= view.now => format!(
                     "{message} · retry due since {}",
@@ -200,6 +202,7 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                 tone: Tone::Crit,
                 subject: subject(group.name, account, &shorts),
                 detail,
+                command,
             })
         }
         Attention::NearLimit { accounts, meter } => {
@@ -220,16 +223,19 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                     text::percent(found.fraction()),
                     reset_phrase(found.resets_at, view, true)
                 ),
+                command: None,
             })
         }
         Attention::Duplicate { accounts, remove } => {
             let (group, first) = view.account(*accounts.first()?)?;
             let shorts: Vec<String> = accounts.iter().copied().map(short_id).collect();
+            let command = text::remove_command(*remove, text::IdForm::Hyphenated);
             Some(AttentionText {
                 tag: "DUPLICATE",
                 tone: Tone::Warn,
                 subject: subject(group.name, first, &shorts),
-                detail: format!("jackin account usage rm {}", remove.hyphenated()),
+                detail: command.clone(),
+                command: Some(command),
             })
         }
     }

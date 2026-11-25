@@ -155,7 +155,7 @@ impl Fleet {
                 .map_err(AccountEditError::Connect)?,
             AccountPlan::Offline(_) => Gateways::single(self.world.session.clone()),
         };
-        plan.apply(&gateways).await
+        plan.apply(&gateways, &CancellationToken::new()).await
     }
 
     fn holders(&self) -> Result<[bool; 3], Box<dyn std::error::Error>> {
@@ -365,7 +365,7 @@ async fn a_new_account_plan_connects_no_peer_and_publishes_on_the_home_gateway()
         );
         assert_eq!(connector.calls(&GatewayName::parse("second")?), 0);
         assert_eq!(connector.calls(&GatewayName::parse("third")?), 0);
-        plan.apply(&gateways).await?;
+        plan.apply(&gateways, &CancellationToken::new()).await?;
         let other_provider = ProviderName::parse("jackin-other-codex")?;
         assert!(fleet.world.gateway.provider(&other_provider).is_some());
         assert!(fleet.second.provider(&other_provider).is_none());
@@ -399,7 +399,7 @@ async fn a_removal_plan_connects_every_peer_and_forgets_the_provider_on_each() -
         assert_eq!(gateways.names().len(), 3);
         assert_eq!(connector.calls(&GatewayName::parse("second")?), 1);
         assert_eq!(connector.calls(&GatewayName::parse("third")?), 1);
-        plan.apply(&gateways).await?;
+        plan.apply(&gateways, &CancellationToken::new()).await?;
         assert_eq!(fleet.holders()?, [false, false, false]);
         Ok(())
     })
@@ -457,7 +457,10 @@ async fn a_home_failure_still_fails_a_new_account_and_writes_nothing() -> TestRe
         .await?;
 
         let refused = plan
-            .apply(&Gateways::single(fleet.world.session.clone()))
+            .apply(
+                &Gateways::single(fleet.world.session.clone()),
+                &CancellationToken::new(),
+            )
             .await;
 
         assert!(
@@ -496,15 +499,21 @@ async fn a_gateway_added_after_a_home_only_plan_refuses_the_apply_and_undoes_the
             .clone();
         fleet
             .store
-            .edit(vec![ConfigEdit::AddGateway {
-                name: GatewayName::parse("zulu")?,
-                entry,
-            }])
+            .edit(
+                vec![ConfigEdit::AddGateway {
+                    name: GatewayName::parse("zulu")?,
+                    entry,
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let before = fleet.store.load().await?;
 
         let refused = plan
-            .apply(&Gateways::single(fleet.world.session.clone()))
+            .apply(
+                &Gateways::single(fleet.world.session.clone()),
+                &CancellationToken::new(),
+            )
             .await;
 
         assert!(
@@ -538,14 +547,18 @@ async fn a_peer_removed_after_a_home_only_plan_refuses_the_apply_and_undoes_the_
         .await?;
         fleet
             .store
-            .edit(vec![ConfigEdit::RemoveGateway(GatewayName::parse(
-                "third",
-            )?)])
+            .edit(
+                vec![ConfigEdit::RemoveGateway(GatewayName::parse("third")?)],
+                &CancellationToken::new(),
+            )
             .await?;
         let before = fleet.store.load().await?;
 
         let refused = plan
-            .apply(&Gateways::single(fleet.world.session.clone()))
+            .apply(
+                &Gateways::single(fleet.world.session.clone()),
+                &CancellationToken::new(),
+            )
             .await;
 
         assert!(
@@ -593,12 +606,15 @@ async fn the_home_entry_changed_after_a_home_only_plan_refuses_the_apply_and_und
                     name: home,
                     entry: moved,
                 },
-            ])
+            ], &CancellationToken::new())
             .await?;
         let before = fleet.store.load().await?;
 
         let refused = plan
-            .apply(&Gateways::single(fleet.world.session.clone()))
+            .apply(
+                &Gateways::single(fleet.world.session.clone()),
+                &CancellationToken::new(),
+            )
             .await;
 
         assert!(
@@ -645,12 +661,15 @@ async fn a_peer_entry_changed_after_a_home_only_plan_refuses_the_apply_and_undoe
                     name: second,
                     entry: changed,
                 },
-            ])
+            ], &CancellationToken::new())
             .await?;
         let before = fleet.store.load().await?;
 
         let refused = plan
-            .apply(&Gateways::single(fleet.world.session.clone()))
+            .apply(
+                &Gateways::single(fleet.world.session.clone()),
+                &CancellationToken::new(),
+            )
             .await;
 
         assert!(
@@ -723,7 +742,10 @@ async fn a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached(
             .clone();
         fleet
             .store
-            .edit(vec![ConfigEdit::RemoveGateway(third.clone())])
+            .edit(
+                vec![ConfigEdit::RemoveGateway(third.clone())],
+                &CancellationToken::new(),
+            )
             .await?;
         let held = hold_account(&fleet.world, "work").await?;
 
@@ -736,7 +758,10 @@ async fn a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached(
             until_polling(&fleet.world, 1).await;
             fleet
                 .store
-                .edit(vec![ConfigEdit::AddGateway { name: third, entry }])
+                .edit(
+                    vec![ConfigEdit::AddGateway { name: third, entry }],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held);
             Ok::<(), Box<dyn std::error::Error>>(())
@@ -765,7 +790,7 @@ async fn gateways_connected_before_a_gateway_was_added_are_refused_and_nothing_c
         )
         .await?;
 
-        let refused = plan.apply(&gateways).await;
+        let refused = plan.apply(&gateways, &CancellationToken::new()).await;
 
         assert!(
             matches!(
@@ -789,10 +814,13 @@ async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publi
         let fleet = fleet([false, false, false]).await?;
         fleet
             .store
-            .edit(vec![
-                ConfigEdit::RemoveGateway(GatewayName::parse("second")?),
-                ConfigEdit::RemoveAccountClearingBindings(name("work")?),
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::RemoveGateway(GatewayName::parse("second")?),
+                    ConfigEdit::RemoveAccountClearingBindings(name("work")?),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let gateways = Gateways::single(session_on(&fleet.world, &fleet.second));
         let plan = plan_account_edits(
@@ -802,7 +830,7 @@ async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publi
         )
         .await?;
 
-        let refused = plan.apply(&gateways).await;
+        let refused = plan.apply(&gateways, &CancellationToken::new()).await;
 
         assert!(
             matches!(
@@ -1034,7 +1062,7 @@ async fn removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_
             &cancel,
         )
         .await?;
-        let after = plan.apply(&gateways).await?;
+        let after = plan.apply(&gateways, &CancellationToken::new()).await?;
 
         assert!(after.account(work.name()).is_none());
         assert_eq!(after.account(other.name()), Some(&other));
@@ -1052,6 +1080,78 @@ async fn removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_
             other_providers.each_ref().map(|name| second.provider(name)),
             other_peer
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_rollback_never_gives_a_peer_the_login_provider_of_the_account_it_replaced() -> TestResult
+{
+    guard(async {
+        let fleet = fleet([true, false, false]).await?;
+        let path = jackin_core::HostPath::parse(&fleet.world.home().as_path().join("work.key"))?;
+        fleet
+            .world
+            .fs
+            .write_new(&path, b"KEY-SECRET-1", jackin_core::FileMode(0o600))
+            .await?;
+        let keyed = Account::new(
+            name("work")?,
+            jackin_core::Provider::Zai,
+            jackin_core::CredentialSource::File { path },
+        )?;
+        let replace = |account: Account| {
+            vec![
+                ConfigEdit::RemoveAccountClearingBindings(account.name().clone()),
+                ConfigEdit::AddAccount(account),
+            ]
+        };
+        let store = fleet.store.clone();
+        store
+            .edit(replace(keyed.clone()), &CancellationToken::new())
+            .await?;
+        session_on(&fleet.world, &fleet.second)
+            .sync_account(&keyed, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await?;
+        store
+            .edit(replace(fleet.account.clone()), &CancellationToken::new())
+            .await?;
+        let omp = ProviderName::parse("jackin-work-omp")?;
+        assert_eq!(fleet.holders()?, [true, false, false]);
+        assert!(fleet.second.provider(&omp).is_some());
+
+        let token = CancellationToken::new();
+        fleet.second.inject(Fault::CancelAt {
+            trigger: jackin_testkit::Trigger::Op(GatewayOp::Profile),
+            token: token.clone(),
+        });
+        let plan = plan_account_edits(
+            &fleet.world.desk(),
+            replace(keyed),
+            &CancellationToken::new(),
+        )
+        .await?;
+        let AccountPlan::Gateway(gateway) = &plan else {
+            return Err("the replacement needs the gateways".into());
+        };
+        let gateways = fleet
+            .dial(gateway.config(), &[&fleet.second, &fleet.third])
+            .await?;
+        let failed = plan.apply(&gateways, &token).await;
+
+        assert!(
+            matches!(
+                &failed,
+                Err(AccountEditError::Config(
+                    jackin_core::ConfigError::Cancelled
+                ))
+            ),
+            "{failed:?}"
+        );
+        assert_eq!(fleet.holders()?, [true, false, false]);
+        assert!(fleet.second.provider(&omp).is_some());
+        assert!(fleet.world.gateway.provider(&omp).is_none());
         Ok(())
     })
     .await

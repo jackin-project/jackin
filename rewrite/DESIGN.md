@@ -543,4 +543,4 @@ For pull requests that this program creates, the executor merges the pull reques
 
 A retry with the same launch ID continues at the observed state. Jackin starts Codex again only on an explicit request: `jackin load` with the same launch ID, or `jackin attach --restart` (ADR-008).
 
-If the operator cancels, jackin keeps the sandbox and reports it as a restore candidate.
+A cancelled launch reports what the gateway could confirm: the sandbox, no sandbox, several sandboxes, or an outcome it could not confirm.

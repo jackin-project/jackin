@@ -4,6 +4,7 @@
 use jackin_console::world::TrustKind;
 use jackin_core::{Config, ConfigEdit, RoleName};
 use jackin_testkit::{ConsoleRig, TestResult, World, guard};
+use tokio_util::sync::CancellationToken;
 
 const BASE: &str = "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n";
 
@@ -66,10 +67,13 @@ async fn trust_row_updates_after_role_removal() -> TestResult {
         console.skip_intro();
         world
             .config
-            .edit(vec![
-                ConfigEdit::RemoveRole(RoleName::parse("one")?),
-                ConfigEdit::RemoveRole(RoleName::parse("two")?),
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::RemoveRole(RoleName::parse("one")?),
+                    ConfigEdit::RemoveRole(RoleName::parse("two")?),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         for _ in 0..8 {
             console.elapse(1);

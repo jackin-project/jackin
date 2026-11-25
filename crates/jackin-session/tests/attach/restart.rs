@@ -4,10 +4,13 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{AttemptId, EnvName, HookKind, Phase, SupervisorState, sandbox_layout};
+use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{
     LaunchEvent, LaunchStep, LineDelivery, RestartError, StepResult, launch_events,
 };
-use jackin_testkit::{ProgramScript, Rig, TestResult, default_limits, guard};
+use jackin_testkit::{
+    Fault, ProgramScript, Rig, TestResult, Trigger, default_limits, guard, guard_within,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::tap::{Tap, file};
@@ -299,6 +302,49 @@ async fn concurrent_restarts_of_one_sandbox_are_serialized_by_a_per_sandbox_lock
                 "{failed:?}"
             );
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_interrupts_a_hung_lookup_before_a_restart_and_requests_nothing() -> TestResult {
+    guard_within(std::time::Duration::from_secs(20), async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        handle.exit_codex(3);
+        let start = handle.file(&sandbox_layout::RUN_START);
+        let hold = Trigger::Op(GatewayOp::Find);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+        };
+        let (events, _feed) = launch_events(LineDelivery::Reliable);
+        let name = handle.name();
+        let (result, ()) = tokio::join!(
+            rig.world
+                .session
+                .restart_agent(&name, events, token.clone()),
+            driver
+        );
+        let error = result.err().ok_or("a cancelled restart succeeded")?;
+        assert!(
+            matches!(
+                error,
+                RestartError::Gateway(GatewayError::Cancelled {
+                    op: GatewayOp::Find,
+                    ..
+                })
+            ),
+            "{error:?}"
+        );
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), start);
+        rig.gateway().release(&hold);
         Ok(())
     })
     .await

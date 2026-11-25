@@ -19,8 +19,9 @@ use jackin_core::{
     SecretBytes, StdFileSystem, Timestamp, UNBOUNDED_READ, poll_until, write_atomic,
 };
 use jackin_testkit::{
-    CapturedFile, FakeClock, FsOp, HostSnapshot, HostState, MemFs, ProcessEffect, ProcessReply,
-    RepoFixture, ScriptedProcessRunner, ScriptedProgram, SeenEnv, SeenStdin, TestRunner,
+    CapturedFile, FakeClock, FsFault, FsOp, HostSnapshot, HostState, MemFs, ProcessEffect,
+    ProcessReply, RepoFixture, ScriptedProcessRunner, ScriptedProgram, SeenEnv, SeenStdin,
+    TestRunner, WorkingFs,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -1390,6 +1391,29 @@ async fn a_scripted_program_records_a_file_stdin_with_its_path_and_offset() -> T
     };
     runner.run(&call, None, &CancellationToken::new()).await?;
     assert_eq!(runner.seen()[0].stdin, SeenStdin::File { path, offset: 12 });
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_working_fs_cancel_hook_fires_once_at_the_armed_operation_and_lets_it_finish()
+-> TestResult {
+    let clock = Arc::new(FakeClock::new());
+    let dir = tempfile::tempdir()?;
+    let root = HostPath::parse(&std::fs::canonicalize(dir.path())?)?;
+    for armed in [FsFault::WriteNew, FsFault::Rename, FsFault::SyncDir] {
+        let fs = WorkingFs::new(Arc::new(StdFileSystem::default()), &clock);
+        let token = CancellationToken::new();
+        fs.cancel_next(armed, &token);
+        let target = child(&root, &format!("{armed:?}.txt"))?;
+        write_atomic(&fs, &target, b"done", FileMode(0o600)).await?;
+        assert!(token.is_cancelled(), "{armed:?}");
+        assert_eq!(std::fs::read(target.as_path())?, b"done");
+    }
+    let untouched = WorkingFs::new(Arc::new(StdFileSystem::default()), &clock);
+    let token = CancellationToken::new();
+    untouched.cancel_next(FsFault::SyncDir, &token);
+    untouched.read(&child(&root, "WriteNew.txt")?).await?;
+    assert!(!token.is_cancelled());
     Ok(())
 }
 
