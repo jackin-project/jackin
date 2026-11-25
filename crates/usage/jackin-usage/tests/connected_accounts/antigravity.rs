@@ -195,3 +195,49 @@ async fn untouched_antigravity_sessions_hide_their_future_reset_and_pace() -> Re
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn account_summary_surfaces_a_limiting_fourth_window_and_counts_visible_extras() -> Result<()>
+{
+    use jackin_usage::accounts::AccountPreferences;
+    use jackin_usage::presentation;
+
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let email = "viewer@example.com";
+    let pending = begin(&service, email, None, &CancellationToken::new()).await?;
+    assert!(update(&service, email, None, now)?);
+    let account = pending.await??;
+    let registry = AccountRegistry::open(&path)?;
+    registry.put_snapshot(
+        account,
+        registry.version(account)?,
+        now,
+        &json!({"resources": {
+            "gemini-5h": {"kind":"window", "remaining_percent":99},
+            "gemini-weekly": {"kind":"window", "remaining_percent":95},
+            "gemini-argon-wtu-weekly": {"kind":"window", "remaining_percent":68},
+            "3p-5h": {"kind":"window", "remaining_percent":97},
+            "3p-weekly": {"kind":"window", "remaining_percent":0.5},
+        }}),
+    )?;
+    let mut prefs = AccountPreferences::default();
+    prefs.hidden.insert("gemini-argon-wtu-weekly".into());
+    registry.set_preferences(account, &prefs)?;
+    let entry = presentation::entries(&service)?
+        .pop()
+        .ok_or("Antigravity account missing")?;
+    assert_eq!(
+        entry.summary,
+        [
+            "Claude weekly · <1% remaining",
+            "Gemini 5h · 99% remaining",
+            "Gemini weekly · 95% remaining",
+            "1 more metric",
+        ]
+    );
+    Ok(())
+}

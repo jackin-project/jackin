@@ -472,9 +472,68 @@ pub(crate) fn account_detail_lines(
     lines
 }
 
+pub(crate) fn account_summary_lines(
+    account: &ConnectedAccount,
+    body: &Value,
+    settings: &DashboardSettings,
+    now: i64,
+) -> Vec<String> {
+    let mut metrics = ordered_measures(body, &account.preferences.metric_order);
+    metrics.retain(|(id, _)| !account.preferences.hidden.contains(id));
+    metrics.sort_by_cached_key(|(_, measure)| {
+        match measure.metrics(settings, now, None).severity {
+            Severity::Critical => 0,
+            Severity::Warning => 1,
+            Severity::Normal if measure.kind == "history" => 3,
+            Severity::Normal => 2,
+        }
+    });
+    let additional = metrics.len().saturating_sub(3);
+    let mut lines: Vec<_> = metrics
+        .into_iter()
+        .take(3)
+        .map(|(id, measure)| {
+            let mut line =
+                crate::presentation::caption(&measure.label, measure.caption(settings.remaining));
+            if let Some(at) = visible_reset(account.provider, &id, &measure, now) {
+                let reset = reading::reset_text(at, now, settings.exact_resets);
+                line = crate::presentation::caption(
+                    line,
+                    crate::presentation::reset_caption(&reset, settings.exact_resets),
+                );
+            }
+            line
+        })
+        .collect();
+    match additional {
+        0 => {}
+        1 => lines.push("1 more metric".into()),
+        _ => lines.push(format!("{additional} more metrics")),
+    }
+    lines
+}
+
 impl DashboardRow {
-    pub(crate) fn quantity_details(&self) -> Vec<String> {
-        self.reading.quantity_details()
+    pub(crate) fn supplemental_quantities(&self, remaining: bool) -> Vec<String> {
+        let label = if remaining { "Used" } else { "Remaining" };
+        self.reading
+            .bounded()
+            .then(|| crate::presentation::caption(label, self.reading.display(!remaining)))
+            .into_iter()
+            .chain(
+                self.reading
+                    .inspector_limit(false)
+                    .map(|limit| crate::presentation::caption("Limit", limit)),
+            )
+            .collect()
+    }
+
+    pub(crate) fn inspector_limit(&self) -> Option<String> {
+        self.reading.inspector_limit(true)
+    }
+
+    pub(crate) fn compact_value(&self, remaining: bool) -> String {
+        self.reading.compact_display(remaining)
     }
 
     pub fn display_fraction(&self, remaining: bool) -> Option<f64> {

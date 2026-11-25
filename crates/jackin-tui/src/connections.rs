@@ -84,6 +84,7 @@ fn entries(service: &OwnedLogin) -> Result<Vec<UsageEntry>, ConnectionError> {
             id: a.id,
             provider: a.provider,
             label: a.label,
+            summary: a.summary.into_boxed_slice(),
             details: a.details,
             hub: a.hub,
             region: a.region,

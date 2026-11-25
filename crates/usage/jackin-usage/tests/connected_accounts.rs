@@ -570,3 +570,154 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
     }
     Ok(())
 }
+
+#[test]
+fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<()> {
+    use jackin_testkit::FakeClock;
+    use jackin_usage::dashboard::{Dashboard, DashboardMemory};
+    use jackin_usage::{ProviderEndpoints, onboarding::OwnedLogin, presentation};
+
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let mut registry = db(&path, &vault)?;
+    let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
+        .with_vault(vault);
+    let now = login.now().0;
+    for (label, remaining, reset) in [("Work", 12, 3600), ("Personal", 100, 7200)] {
+        registry.add_with_snapshot(
+            UsageProvider::Claude,
+            label,
+            &CandidateIdentity::OAuth(Some(label.to_owned())),
+            &bytes(label),
+            now,
+            &json!({
+                "resources": {
+                    "session": {"kind":"window", "remaining_percent":remaining, "resetsAt":now + reset},
+                    "webSearches": {"kind":"quota", "unit":"searches", "used":0, "limit":50},
+                    "credits": {"kind":"balance", "unit":"credits"},
+                },
+                "history": {"ranges": {"today": {"totals": {"tokens": 100, "inputTokens": 50}}}},
+            }),
+        )?;
+    }
+
+    let mut settings = registry.dashboard_settings()?;
+    settings.remaining = false;
+    registry.set_dashboard_settings(&settings)?;
+    let entries = presentation::entries(&login)?;
+    for (label, expected_session) in [
+        ("Work", "Session · 88% used · resets in 1h 0m"),
+        ("Personal", "Session · 0% used · resets in 2h 0m"),
+    ] {
+        let entry = entries
+            .iter()
+            .find(|entry| entry.label == label)
+            .ok_or(label)?;
+        assert!(entry.summary.iter().any(|line| line == expected_session));
+        assert!(
+            entry
+                .summary
+                .iter()
+                .any(|line| line == "Web searches · 0 searches used")
+        );
+        assert!(
+            entry
+                .summary
+                .iter()
+                .any(|line| line == "Credits · Unavailable")
+        );
+        assert!(entry.summary.iter().all(|line| !line.contains("tokens")));
+        assert!(entry.details.iter().any(|line| line == "50 input tokens"));
+    }
+
+    let data = Dashboard::load(&registry, &mut DashboardMemory::default(), now)?;
+    let metric = |key| data.all.iter().find(|row| row.metric == key).ok_or(key);
+    assert!(presentation::metric_inspector(metric("session")?).is_empty());
+    assert_eq!(
+        presentation::metric_inspector(metric("webSearches")?),
+        ["Limit · 50 searches"]
+    );
+    assert!(presentation::metric_inspector(metric("today")?).is_empty());
+    assert!(
+        presentation::metric_details(metric("today")?, false)
+            .iter()
+            .any(|line| line == "50 input tokens")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values() -> Result<()> {
+    use jackin_testkit::FakeClock;
+    use jackin_usage::dashboard::{Dashboard, DashboardMemory};
+    use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
+
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let mut registry = db(&path, &vault)?;
+    let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
+        .with_vault(vault);
+    let now = login.now();
+    registry.add_with_snapshot(
+        UsageProvider::Mimo,
+        "Work",
+        &CandidateIdentity::api_key(&Secret::new("fixture".into())),
+        &bytes("fixture"),
+        now.0,
+        &json!({"resources": {
+            "tokenPlan": {"kind":"quota", "unit":"credits", "used":1, "limit":50_474_251_079_i64, "available":50_474_251_078_i64},
+            "booster": {"kind":"balance", "unit":"cny", "exponent":6, "available":125},
+            "monthlyChargeUsed": {"kind":"amount", "unit":"usd", "amount":999_994_000},
+            "monthlyChargeLimit": {"kind":"amount", "unit":"usd", "amount":999_996_000},
+            "webSearches": {"kind":"amount", "unit":"provider units", "amount":999_996_000},
+            "session": {"kind":"window", "remaining_percent":99.5},
+            "weekly": {"kind":"window", "remaining_percent":0.5},
+        }}),
+    )?;
+    let board = Dashboard::load(&registry, &mut DashboardMemory::default(), now.0)?;
+    for (id, compact, exact) in [
+        (
+            "tokenPlan",
+            "50.47B credits remaining",
+            "50474251078 credits remaining",
+        ),
+        ("booster", "0.000125 cny", "0.000125 cny"),
+        ("monthlyChargeUsed", "999.99M usd", "999994000 usd"),
+        ("monthlyChargeLimit", "1B usd", "999996000 usd"),
+        (
+            "webSearches",
+            "999996000 provider units",
+            "999996000 provider units",
+        ),
+        ("session", ">99% remaining", ">99% remaining"),
+        ("weekly", "<1% remaining", "<1% remaining"),
+    ] {
+        let row = board.all.iter().find(|row| row.metric == id).ok_or(id)?;
+        assert_eq!(presentation::metric_value(row, true), compact);
+        assert_eq!(presentation::exact_metric_value(row, true), exact);
+    }
+    let mut orders = AccountPreferences::default();
+    orders.metric_order.push("tokenPlan".into());
+    let snapshot = registry.snapshots()?.pop().ok_or("missing snapshot")?;
+    registry.set_preferences(snapshot.0.id, &orders)?;
+    let entry = presentation::entries(&login)?
+        .pop()
+        .ok_or("missing account")?;
+    assert!(
+        entry
+            .summary
+            .iter()
+            .any(|line| line == "Token Plan · 50.47B credits remaining")
+    );
+    let cli = export::details_account(snapshot, 0, &registry.dashboard_settings()?, None, now);
+    let cli_lines: Vec<String> = serde_json::from_value(cli["details"].clone())?;
+    assert!(
+        cli_lines
+            .iter()
+            .any(|line| line == "Token Plan · 50474251078 credits")
+    );
+    Ok(())
+}

@@ -213,7 +213,10 @@ fn metric(
         .as_deref()
         .map(|text| display::reset_caption(text, settings.exact_resets));
     let value = display::metric_value(&row, remaining);
-    let details = display::metric_details(&row);
+    let exact_value = display::exact_metric_value(&row, remaining);
+    let details = display::metric_details(&row, remaining);
+    let inspector = display::metric_inspector(&row);
+    let bounded = bar.is_some();
     BoardMetric {
         member_preferences: if row.account.is_none() {
             row.members
@@ -243,12 +246,16 @@ fn metric(
             Vec::new()
         },
         provider: row.provider.to_string(),
-        title: display::caption(row.label, row.metric_label),
+        title: display::caption(row.label, &row.metric_label),
+        label: plain(row.metric_label),
         value,
+        exact_value,
         metric: row.metric,
         group,
+        inspector,
         details,
         pinned: row.pinned,
+        bounded,
         bar,
         severity,
         reset,

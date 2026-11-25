@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::owned_usage::{FixtureVault, activate};
+use super::owned_usage::{BOARD, FixtureVault, activate, focus};
 use super::support::Lab;
 use jackin_console::screens::Go;
 use jackin_core::{Clock, Secret, SecretBytes};
@@ -62,15 +62,19 @@ async fn moved_history_row_stays_above_the_balance_after_reopening() -> TestResu
         &json!({"resources":{"balance":{"kind":"balance","available":4,"unit":"usd"}}, "period_spend":{"today":{"spend":3}}}),
     )?;
     open_all(&mut lab).await?;
-    lab.step("down enter").await?;
+    activate(&mut lab, BOARD, "save").await?;
+    focus(&mut lab, BOARD, "readings").await?;
+    lab.step("down").await?;
+    activate(&mut lab, BOARD, "save").await?;
     let details = lab.console.screen_at(150, 65);
     assert!(details.contains("Everyday · Today"), "{details}");
     activate(&mut lab, "usage.connected_board", "up").await?;
     lab.step("esc").await?;
     open_all(&mut lab).await?;
+    activate(&mut lab, BOARD, "save").await?;
     let screen = lab.console.screen_at(150, 65);
-    let today = screen.find("Everyday · Today").ok_or("missing today")?;
-    let balance = screen.find("Everyday · Balance").ok_or("missing balance")?;
+    let today = screen.find("Today").ok_or("missing today")?;
+    let balance = screen.find("Balance").ok_or("missing balance")?;
     assert!(today < balance, "{screen}");
     Ok(())
 }
@@ -104,10 +108,9 @@ async fn concealed_account_keeps_its_alias_across_dashboard_and_management() -> 
         screen.contains("Account 2 · Weekly") && !screen.contains("Secret Beta"),
         "{screen}"
     );
-    let codex = screen.find("ChatGPT").ok_or("missing ChatGPT")?;
     let codex_alias = screen.find("Account 2 · Weekly").ok_or("missing alias")?;
-    let claude = screen.find("Claude").ok_or("missing Claude")?;
-    assert!(codex < codex_alias && codex_alias < claude, "{screen}");
+    let claude_alias = screen.find("Account 1 · Weekly").ok_or("missing alias")?;
+    assert!(codex_alias < claude_alias, "{screen}");
     lab.step("esc").await?;
     lab.console
         .console()
@@ -167,7 +170,8 @@ async fn unified_hide_and_undo_restore_each_members_original_setting() -> TestRe
     assert!(hidden.iter().all(
         |a| a.preferences.hidden.contains("weekly") && !a.preferences.pinned.contains("weekly")
     ));
-    activate(&mut lab, "usage.connected_board", "undo").await?;
+    activate(&mut lab, BOARD, "more").await?;
+    activate(&mut lab, BOARD, "undo").await?;
     assert_eq!(
         db.list()?
             .into_iter()
@@ -175,14 +179,17 @@ async fn unified_hide_and_undo_restore_each_members_original_setting() -> TestRe
             .collect::<Vec<_>>(),
         original
     );
-    activate(&mut lab, "usage.connected_board", "save").await?;
-    activate(&mut lab, "usage.connected_board", "pin").await?;
+    focus(&mut lab, BOARD, "row").await?;
+    lab.step("home").await?;
+    activate(&mut lab, BOARD, "save").await?;
+    activate(&mut lab, BOARD, "pin").await?;
     assert!(
         db.list()?
             .iter()
             .all(|a| !a.preferences.pinned.contains("weekly"))
     );
-    activate(&mut lab, "usage.connected_board", "undo").await?;
+    activate(&mut lab, BOARD, "more").await?;
+    activate(&mut lab, BOARD, "undo").await?;
     assert_eq!(
         db.list()?
             .into_iter()
