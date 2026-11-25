@@ -922,9 +922,13 @@ async fn an_empty_minimax_or_mimo_folder_fails_the_check() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
         let before = lab.console.config_text().await?;
-        for (wanted, name) in [
-            (Provider::Minimax, "minimax-empty"),
-            (Provider::Mimo, "mimo-empty"),
+        for (wanted, name, refusal) in [
+            (
+                Provider::Minimax,
+                "minimax-empty",
+                "native minimax login is invalid",
+            ),
+            (Provider::Mimo, "mimo-empty", "cannot read the login"),
         ] {
             let index = provider_index(&AccountForm::openshell(), wanted)?;
             tokio::fs::create_dir_all(lab.code.join(name)).await?;
@@ -934,7 +938,7 @@ async fn an_empty_minimax_or_mimo_folder_fails_the_check() -> TestResult {
             lab.step("tab tab enter").await?;
             let screen = lab.console.screen();
             assert!(!screen.contains("✓ material"), "{wanted:?}: {screen}");
-            assert!(screen.contains("login is invalid"), "{wanted:?}: {screen}");
+            assert!(screen.contains(refusal), "{wanted:?}: {screen}");
             assert_eq!(lab.console.config_text().await?, before, "{wanted:?}");
         }
         Ok(())
