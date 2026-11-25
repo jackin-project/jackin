@@ -1763,7 +1763,15 @@ fn scan_script_of_the_derived_stage(
         "{script}"
     );
     assert_eq!(script.matches("> /verdict").count(), 1, "{script}");
+    assert!(
+        script.contains("/trusted-docker/usr/local/bin/docker"),
+        "{script}"
+    );
     let script = script
+        .replace(
+            "/trusted-docker",
+            &format!("{}/trusted-docker", dir.display()),
+        )
         .replace(
             "/bin/sh /jackin-scan",
             &format!("/bin/sh '{}'", recorder.display()),

@@ -177,7 +177,7 @@ impl Fixture {
             gid: meta.gid(),
             absent: scan_absent_paths()?,
         };
-        for name in ["find", "tr", "cmp", "ls"] {
+        for name in ["find", "tr", "cmp", "ls", "awk"] {
             fx.tool(name)?;
         }
         fx.stub("getcap", NO_GETCAP)?;
@@ -1939,5 +1939,47 @@ fn scan_fails_closed_when_ls_is_missing_while_it_looks_for_hard_links() -> TestR
     fx.drop_tool("ls")?;
     let out = fx.scan_read_write(&["/sandbox"])?;
     assert!(!out.ok, "a missing ls passed");
+    assert!(
+        out.lines()
+            .contains(&"find or ls failed while looking for hard links"),
+        "{}",
+        out.stderr
+    );
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/shared", b"data", 0o644)?;
+    fx.dir("/opt", 0o755)?;
+    fs::hard_link(fx.image("/sandbox/shared"), fx.image("/opt/other"))?;
+    fx.drop_tool("awk")?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert!(!out.ok, "a missing awk passed");
+    assert!(
+        out.lines()
+            .contains(&"awk failed while looking for hard links"),
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_reads_the_hard_links_of_names_with_spaces_and_of_very_different_inode_widths() -> TestResult
+{
+    let fx = Fixture::new()?;
+    fx.dir("/opt", 0o755)?;
+    for index in 0..40 {
+        fx.file(&format!("/opt/filler {index}"), b"x", 0o644)?;
+    }
+    fx.file("/sandbox/ lead and trail ", b"data", 0o644)?;
+    fs::hard_link(
+        fx.image("/sandbox/ lead and trail "),
+        fx.image("/opt/ outside name "),
+    )?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/opt/ outside name ")],
+        "{}",
+        out.stderr
+    );
     Ok(())
 }

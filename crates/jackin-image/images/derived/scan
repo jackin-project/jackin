@@ -230,58 +230,63 @@ check_read_write() {
         fi
         [ -e "$root$prefix" ] || return 0
     done
-    present="$present$newline$1"
 }
 
 linked_files() {
-    find "$1" ! -type d ! -type l -links +1 -exec ls -di {} +
+    find "$root" ! -type d ! -type l -links +1 -exec ls -di {} +
 }
 
-inside_read_write() {
-    while IFS= read -r listed; do
-        [ -n "$listed" ] || continue
-        case $1 in
-            "$listed" | "$listed"/*) return 0 ;;
-        esac
-    done <<EOF
-$read_write
-EOF
-    return 1
-}
-
-split_link() {
-    link_line=${1#"${1%%[! ]*}"}
-    link_inode=${link_line%% *}
-    link_path=${link_line#* }
-    link_path=${link_path#"$root"}
+shared_outside() {
+    RW=$read_write ROOT=$root awk '
+        BEGIN {
+            count = split(ENVIRON["RW"], parts, "\n")
+            root = ENVIRON["ROOT"]
+        }
+        {
+            line = $0
+            sub(/^ +/, "", line)
+            at = index(line, " ")
+            inode = substr(line, 1, at - 1)
+            path = substr(line, at + 1)
+            if (index(path, root) == 1) path = substr(path, length(root) + 1)
+            inside = 0
+            for (i = 1; i <= count; i++) {
+                listed = parts[i]
+                if (listed != "" && (path == listed || index(path, listed "/") == 1)) {
+                    inside = 1
+                    break
+                }
+            }
+            if (inside) {
+                held[inode] = 1
+            } else {
+                outside[++total] = path
+                outside_inode[total] = inode
+            }
+        }
+        END {
+            for (i = 1; i <= total; i++) {
+                if (outside_inode[i] in held) print outside[i]
+            }
+        }'
 }
 
 check_hard_links() {
-    inodes=" "
-    while IFS= read -r path; do
-        [ -n "$path" ] || continue
-        inside=$(linked_files "$root$path") || report "find or ls failed while looking for hard links below a read_write path: $(show "$path")"
-        [ -n "$inside" ] || continue
-        while IFS= read -r line; do
-            split_link "$line"
-            inodes="$inodes$link_inode "
-        done <<EOF
-$inside
-EOF
-    done <<EOF
-$present
-EOF
-    [ "$inodes" != " " ] || return 0
-    everywhere=$(linked_files "$root") || report "find or ls failed while looking for hard links"
+    [ -n "$read_write" ] || return 0
+    linked=$(linked_files) || {
+        report "find or ls failed while looking for hard links"
+        return 0
+    }
+    [ -n "$linked" ] || return 0
+    shared=$(printf '%s\n' "$linked" | shared_outside) || {
+        report "awk failed while looking for hard links"
+        return 0
+    }
+    [ -n "$shared" ] || return 0
     while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        split_link "$line"
-        inside_read_write "$link_path" && continue
-        case $inodes in
-            *" $link_inode "*) report "file of a read_write path of the role policy is hard linked outside the writable set: $(show "$link_path")" ;;
-        esac
+        report "file of a read_write path of the role policy is hard linked outside the writable set: $(show "$line")"
     done <<EOF
-$everywhere
+$shared
 EOF
 }
 
@@ -322,7 +327,6 @@ data=
 absent=
 read_write=
 no_read_write=0
-present=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --owner)

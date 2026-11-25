@@ -75,6 +75,8 @@ fn options() -> Result<Options, Box<dyn Error>> {
         calls: 2,
         read_write: PolicyDocument::parse("version: 1\n")?.effective_read_write_paths()?,
     };
+    let mut explicit = 0usize;
+    let mut cleared = false;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         let mut value = |name: &str| args.next().ok_or_else(|| format!("{name} needs a value"));
@@ -85,10 +87,22 @@ fn options() -> Result<Options, Box<dyn Error>> {
             "--work-dir" => options.work_dir = PathBuf::from(value("--work-dir")?),
             "--calls" => options.calls = value("--calls")?.parse()?,
             "--rebuild" => options.rebuild = Rebuild::Yes,
-            "--no-read-write" => options.read_write.clear(),
-            "--read-write" => options
-                .read_write
-                .push(SandboxPath::parse(&value("--read-write")?)?),
+            "--no-read-write" => {
+                if explicit > 0 {
+                    return Err("--no-read-write cannot follow --read-write".into());
+                }
+                options.read_write.clear();
+                cleared = true;
+            }
+            "--read-write" => {
+                if cleared {
+                    return Err("--read-write cannot follow --no-read-write".into());
+                }
+                explicit += 1;
+                options
+                    .read_write
+                    .push(SandboxPath::parse(&value("--read-write")?)?);
+            }
             other => return Err(format!("unknown argument {other}").into()),
         }
     }
