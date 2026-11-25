@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
+use jackin::WriteFate;
 use jackin_core::{Clock, CriticalWrite, Provider, SecretBytes};
 use jackin_testkit::{Method, Route, TestResult, UsageServer, World};
 use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, CredentialVault, UsageProvider};
@@ -36,7 +37,7 @@ fn drive_returns_while_a_blocking_task_is_stuck() -> TestResult {
             u8::from(started && abandoned)
         });
         done_tx
-            .send(output.unwrap_or(u8::MAX))
+            .send(output.map_or(u8::MAX, |driven| driven.output))
             .map_err(|_| "the test stopped listening")
     });
     let outcome = done_rx.recv_timeout(BOUND);
@@ -180,7 +181,8 @@ fn drive_lets_a_rotation_stuck_in_the_keychain_store_its_tokens() -> TestResult 
             refreshed = service.refresh(&account, &cancel) => drop(refreshed),
         }
         Ok::<(), Failure>(())
-    })??;
+    })?
+    .output?;
     assert!(
         started.elapsed() > Duration::from_secs(3),
         "the rotation was not in flight when drive ended"
@@ -191,5 +193,50 @@ fn drive_lets_a_rotation_stuck_in_the_keychain_store_its_tokens() -> TestResult 
     let text = String::from_utf8(stored.expose().to_vec())?;
     assert!(text.contains("new-access"), "the new tokens were lost");
     assert!(text.contains("new-refresh"), "the new tokens were lost");
+    Ok(())
+}
+
+fn kill_self(signal: &str) -> bool {
+    std::process::Command::new("kill")
+        .args([signal, &std::process::id().to_string()])
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[test]
+fn drive_abandons_a_stuck_write_when_interrupted_during_the_wait() -> TestResult {
+    let (release, parked) = mpsc::channel::<()>();
+    let started = Instant::now();
+    let driven = jackin::drive(async move {
+        let write = CriticalWrite::begin();
+        drop(tokio::task::spawn_blocking(move || {
+            let _held = parked.recv().is_err();
+            drop(write);
+        }));
+        drop(std::thread::spawn(|| {
+            pause(Duration::from_millis(1500));
+            kill_self("-INT")
+        }));
+    })?;
+    drop(release);
+    assert_eq!(driven.writes, WriteFate::Abandoned);
+    assert!(started.elapsed() < Duration::from_secs(10));
+    Ok(())
+}
+
+#[test]
+fn drive_does_not_replay_the_interrupt_that_ended_the_run() -> TestResult {
+    let driven = jackin::drive(async move {
+        let write = CriticalWrite::begin();
+        drop(tokio::task::spawn_blocking(move || {
+            pause(Duration::from_millis(1500));
+            drop(write);
+        }));
+        let sent = tokio::task::spawn_blocking(|| kill_self("-INT")).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        sent.unwrap_or(false)
+    })?;
+    assert!(driven.output, "the interrupt was not sent");
+    assert_eq!(driven.writes, WriteFate::Settled);
     Ok(())
 }

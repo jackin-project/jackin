@@ -23,7 +23,7 @@ fn fail(message: &str) -> ExitCode {
 
 fn main() -> ExitCode {
     match jackin::drive(start()) {
-        Ok(code) => code,
+        Ok(driven) => driven.exit_code(),
         Err(error) => fail(&error.to_string()),
     }
 }

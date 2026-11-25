@@ -4,6 +4,7 @@
 use std::io::{self, Read, Write};
 use std::num::{NonZeroU8, NonZeroU16, NonZeroUsize};
 use std::path::Path;
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,7 +24,8 @@ use tokio::signal::unix::{Signal, SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::error::CommandError;
+use crate::error::{CommandError, ExitClass};
+use crate::signals::Signals;
 use crate::terminal::{RawMode, Terminal, TerminalInput};
 
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
@@ -37,31 +39,62 @@ const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 const PANE_INBOX_BYTES: usize = 1024 * 1024;
 const UNIX_SCHEME: &str = "unix://";
 
-pub fn drive<F: Future>(future: F) -> io::Result<F::Output> {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WriteFate {
+    #[default]
+    Settled,
+    Abandoned,
+    GaveUp,
+}
+
+#[derive(Debug)]
+pub struct Driven<T> {
+    pub output: T,
+    pub writes: WriteFate,
+}
+
+impl Driven<ExitCode> {
+    pub fn exit_code(self) -> ExitCode {
+        match self.writes {
+            WriteFate::Settled => self.output,
+            WriteFate::Abandoned => ExitCode::from(ExitClass::Cancelled.code()),
+            WriteFate::GaveUp => ExitCode::from(ExitClass::Failure.code()),
+        }
+    }
+}
+
+pub fn drive<F: Future>(future: F) -> io::Result<Driven<F::Output>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let output = runtime.block_on(future);
-    runtime.block_on(finish_critical_writes(
-        &mut io::stderr(),
-        CRITICAL_WRITE_NOTICE,
-        CRITICAL_WRITE_LIMIT,
-        interrupted(),
-    ));
+    let mut interrupts = {
+        let _entered = runtime.enter();
+        Signals::install().ok()
+    };
+    let driven = runtime.block_on(async {
+        let output = future.await;
+        if let Some(interrupts) = interrupts.as_mut() {
+            interrupts.discard_pending();
+        }
+        let writes = finish_critical_writes(
+            &mut io::stderr(),
+            CRITICAL_WRITE_NOTICE,
+            CRITICAL_WRITE_LIMIT,
+            interrupted(interrupts.as_mut()),
+        )
+        .await;
+        Driven { output, writes }
+    });
     runtime.shutdown_timeout(SHUTDOWN_GRACE);
-    Ok(output)
+    Ok(driven)
 }
 
-async fn interrupted() {
-    let (Ok(mut interrupt), Ok(mut terminate)) = (
-        signal(SignalKind::interrupt()),
-        signal(SignalKind::terminate()),
-    ) else {
-        return std::future::pending().await;
-    };
-    tokio::select! {
-        _ = interrupt.recv() => {}
-        _ = terminate.recv() => {}
+async fn interrupted(signals: Option<&mut Signals>) {
+    match signals {
+        Some(signals) => {
+            signals.next().await;
+        }
+        None => std::future::pending().await,
     }
 }
 
@@ -76,34 +109,35 @@ async fn finish_critical_writes(
     notice_after: Duration,
     limit: Duration,
     interrupt: impl Future<Output = ()>,
-) {
+) -> WriteFate {
     if settle_critical_writes(Duration::ZERO) {
-        return;
+        return WriteFate::Settled;
     }
     tokio::pin!(interrupt);
-    let first = tokio::select! {
-        settled = settle(notice_after) => Some(settled),
-        () = &mut interrupt => None,
-    };
-    if first == Some(true) {
-        return;
-    }
-    if first.is_some() {
-        drop(out.write_all(b"jackin: finishing a credential write (Ctrl-C abandons it)...\n"));
-        let rest = tokio::select! {
-            settled = settle(limit.saturating_sub(notice_after)) => Some(settled),
-            () = &mut interrupt => None,
-        };
-        match rest {
-            Some(true) => return,
-            Some(false) => {
-                drop(out.write_all(b"jackin: gave up waiting for a credential write\n"));
-                return;
+    tokio::select! {
+        settled = settle(notice_after) => {
+            if settled {
+                return WriteFate::Settled;
             }
-            None => {}
         }
+        () = &mut interrupt => return abandoned(out),
     }
+    drop(out.write_all(b"jackin: finishing a credential write (Ctrl-C abandons it)...\n"));
+    tokio::select! {
+        settled = settle(limit.saturating_sub(notice_after)) => {
+            if settled {
+                return WriteFate::Settled;
+            }
+            drop(out.write_all(b"jackin: gave up waiting for a credential write\n"));
+            WriteFate::GaveUp
+        }
+        () = &mut interrupt => abandoned(out),
+    }
+}
+
+fn abandoned(out: &mut impl Write) -> WriteFate {
     drop(out.write_all(b"jackin: abandoned the credential write\n"));
+    WriteFate::Abandoned
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -364,6 +398,7 @@ mod tests {
     use super::*;
 
     const NOTICE: &str = "jackin: finishing a credential write (Ctrl-C abandons it)...\n";
+    const ABANDONED: &str = "jackin: abandoned the credential write\n";
 
     fn pause(length: Duration) {
         let (_hold, wait) = mpsc::channel::<()>();
@@ -374,52 +409,55 @@ mod tests {
         notice_after: Duration,
         limit: Duration,
         interrupt: impl Future<Output = ()>,
-    ) -> String {
+    ) -> (String, WriteFate) {
         let mut out = Vec::new();
-        finish_critical_writes(&mut out, notice_after, limit, interrupt).await;
-        String::from_utf8_lossy(&out).into_owned()
+        let fate = finish_critical_writes(&mut out, notice_after, limit, interrupt).await;
+        (String::from_utf8_lossy(&out).into_owned(), fate)
     }
 
     #[tokio::test]
     async fn nothing_is_printed_when_no_write_is_in_flight() {
-        let text = report(
+        let report = report(
             Duration::from_millis(50),
             Duration::from_secs(5),
             std::future::pending(),
         )
         .await;
-        assert_eq!(text, "");
+        assert_eq!(report, (String::new(), WriteFate::Settled));
     }
 
     #[tokio::test]
-    async fn a_slow_write_prints_one_notice_and_no_give_up_line() {
+    async fn a_slow_write_prints_one_notice_and_settles() {
         let write = CriticalWrite::begin();
         let releaser = std::thread::spawn(move || {
             pause(Duration::from_millis(300));
             drop(write);
         });
-        let text = report(
+        let report = report(
             Duration::from_millis(50),
             Duration::from_secs(10),
             std::future::pending(),
         )
         .await;
-        assert_eq!(text, NOTICE);
+        assert_eq!(report, (NOTICE.to_owned(), WriteFate::Settled));
         assert_eq!(releaser.join().ok(), Some(()));
     }
 
     #[tokio::test]
     async fn a_write_that_never_ends_is_reported_as_given_up() {
         let _stuck = CriticalWrite::begin();
-        let text = report(
+        let report = report(
             Duration::from_millis(20),
             Duration::from_millis(200),
             std::future::pending(),
         )
         .await;
         assert_eq!(
-            text,
-            format!("{NOTICE}jackin: gave up waiting for a credential write\n")
+            report,
+            (
+                format!("{NOTICE}jackin: gave up waiting for a credential write\n"),
+                WriteFate::GaveUp
+            )
         );
     }
 
@@ -427,15 +465,15 @@ mod tests {
     async fn an_interrupt_during_the_wait_abandons_the_write_promptly() {
         let _stuck = CriticalWrite::begin();
         let started = Instant::now();
-        let text = report(
+        let report = report(
             Duration::from_millis(20),
             Duration::from_secs(60),
             tokio::time::sleep(Duration::from_millis(150)),
         )
         .await;
         assert_eq!(
-            text,
-            format!("{NOTICE}jackin: abandoned the credential write\n")
+            report,
+            (format!("{NOTICE}{ABANDONED}"), WriteFate::Abandoned)
         );
         assert!(started.elapsed() < Duration::from_secs(5));
     }
@@ -443,43 +481,101 @@ mod tests {
     #[tokio::test]
     async fn an_interrupt_before_the_notice_still_abandons_the_write() {
         let _stuck = CriticalWrite::begin();
-        let text = report(
+        let report = report(
             Duration::from_secs(60),
             Duration::from_secs(120),
             std::future::ready(()),
         )
         .await;
-        assert_eq!(text, "jackin: abandoned the credential write\n");
+        assert_eq!(report, (ABANDONED.to_owned(), WriteFate::Abandoned));
     }
 
-    #[tokio::test]
-    async fn a_real_sigint_during_the_wait_abandons_the_write() {
+    #[test]
+    fn an_abandoned_or_given_up_write_overrides_a_clean_exit() {
+        let exit = |writes| {
+            format!(
+                "{:?}",
+                Driven {
+                    output: ExitCode::SUCCESS,
+                    writes,
+                }
+                .exit_code()
+            )
+        };
+        assert_eq!(exit(WriteFate::Settled), format!("{:?}", ExitCode::SUCCESS));
+        assert_eq!(
+            exit(WriteFate::Abandoned),
+            format!("{:?}", ExitCode::from(ExitClass::Cancelled.code()))
+        );
+        assert_eq!(
+            exit(WriteFate::GaveUp),
+            format!("{:?}", ExitCode::from(ExitClass::Failure.code()))
+        );
+    }
+
+    async fn signalled_during_the_wait(signal: &str) {
+        let mut signals = Signals::install().expect("signal listeners");
         let _stuck = CriticalWrite::begin();
         let pid = std::process::id().to_string();
+        let name = signal.to_owned();
         let sender = std::thread::spawn(move || {
-            pause(Duration::from_millis(300));
             std::process::Command::new("kill")
-                .args(["-INT", &pid])
+                .args([name.as_str(), &pid])
                 .status()
                 .map(|status| status.success())
                 .ok()
         });
         let started = Instant::now();
-        let text = tokio::time::timeout(
+        let report = tokio::time::timeout(
             Duration::from_secs(5),
             report(
                 Duration::from_millis(20),
                 Duration::from_secs(60),
-                interrupted(),
+                interrupted(Some(&mut signals)),
             ),
         )
         .await
         .unwrap_or_default();
-        assert_eq!(
-            text,
-            format!("{NOTICE}jackin: abandoned the credential write\n")
-        );
+        assert!(report.0.ends_with(ABANDONED), "{}", report.0);
+        assert_eq!(report.1, WriteFate::Abandoned);
         assert!(started.elapsed() < Duration::from_secs(5));
         assert_eq!(sender.join().ok().flatten(), Some(true));
+    }
+
+    #[tokio::test]
+    async fn a_real_sigint_during_the_wait_abandons_the_write() {
+        signalled_during_the_wait("-INT").await;
+    }
+
+    #[tokio::test]
+    async fn a_real_sigterm_during_the_wait_abandons_the_write() {
+        signalled_during_the_wait("-TERM").await;
+    }
+
+    #[tokio::test]
+    async fn a_real_sighup_during_the_wait_abandons_the_write() {
+        signalled_during_the_wait("-HUP").await;
+    }
+
+    #[tokio::test]
+    async fn a_signal_received_before_the_wait_is_discarded() {
+        let mut signals = Signals::install().expect("signal listeners");
+        let pid = std::process::id().to_string();
+        let sent = std::process::Command::new("kill")
+            .args(["-INT", &pid])
+            .status()
+            .map(|status| status.success())
+            .ok();
+        assert_eq!(sent, Some(true));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        signals.discard_pending();
+        let _stuck = CriticalWrite::begin();
+        let report = report(
+            Duration::from_millis(20),
+            Duration::from_millis(200),
+            interrupted(Some(&mut signals)),
+        )
+        .await;
+        assert_eq!(report.1, WriteFate::GaveUp);
     }
 }
