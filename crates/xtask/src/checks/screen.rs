@@ -459,11 +459,21 @@ fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
 }
 
 fn opens_fields(tokens: &[Token], start: usize) -> bool {
-    let skipped = tokens[start..]
-        .iter()
-        .take_while(|t| t.is_ident("ref") || t.is_ident("mut"))
-        .count();
-    let first = start + skipped;
+    let mut first = start;
+    loop {
+        if tokens.get(first).is_some_and(|t| t.is_punct('#'))
+            && tokens.get(first + 1).is_some_and(|t| t.is_punct('['))
+        {
+            first = closing(tokens, first + 1) + 1;
+        } else if tokens
+            .get(first)
+            .is_some_and(|t| t.is_ident("ref") || t.is_ident("mut"))
+        {
+            first += 1;
+        } else {
+            break;
+        }
+    }
     let named = tokens.get(first).is_some_and(|t| t.ident().is_some())
         && tokens
             .get(first + 1)
@@ -489,10 +499,18 @@ fn is_type_position(tokens: &[Token], index: usize) -> bool {
     let Some(before) = start.checked_sub(1).map(|at| &tokens[at]) else {
         return false;
     };
+    if opens_for_loop_pattern(tokens, index) {
+        return false;
+    }
     (before.is_punct('>') && start >= 2 && tokens[start - 2].is_punct('-'))
         || NON_PATTERN_KEYWORDS
             .iter()
             .any(|keyword| before.is_ident(keyword))
+}
+
+fn opens_for_loop_pattern(tokens: &[Token], name: usize) -> bool {
+    let close = closing(tokens, name + 1);
+    tokens.get(close + 1).is_some_and(|t| t.is_ident("in"))
 }
 
 fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {

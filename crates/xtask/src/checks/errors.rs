@@ -22,10 +22,11 @@ impl Check for ErrorsCheck {
         for file in repo.files() {
             if file.kind() == FileKind::Rust && !file.is_third_party_source() {
                 let tokens = lex_rust(file.text()).tokens;
+                let paths = path_names(&tokens);
                 violations.extend(
                     (0..tokens.len())
                         .filter_map(|index| error_attribute(&tokens, index))
-                        .flat_map(|attribute| attribute_problems(&attribute))
+                        .flat_map(|attribute| attribute_problems(&attribute, &paths))
                         .map(|(line, message)| {
                             Violation::at_line(self.step(), file.path(), line, message)
                         }),
@@ -80,7 +81,7 @@ fn ends_expression(token: &Token) -> bool {
         || token.is_punct(']')
 }
 
-fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
+fn attribute_problems(attribute: &ErrorAttribute<'_>, paths: &[&str]) -> Vec<(u32, String)> {
     let arguments = attribute.arguments;
     let mut problems = Vec::new();
     for (index, token) in arguments.iter().enumerate() {
@@ -89,7 +90,7 @@ fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
                 problems.push((token.line, message));
             }
         } else if (token.is_punct('.') && is_display_call(arguments, index))
-            || is_qualified_display(arguments, index)
+            || is_qualified_display(arguments, index, paths)
         {
             if !inside_plain(arguments, index) {
                 problems.push((token.line, display_message()));
@@ -125,8 +126,39 @@ fn is_display_call(arguments: &[Token], index: usize) -> bool {
         && arguments.get(index + 3).is_some_and(|t| t.is_punct(')'))
 }
 
-fn is_qualified_display(arguments: &[Token], index: usize) -> bool {
-    arguments[index].is_ident("display") && is_path_separator(arguments, index.wrapping_sub(2))
+fn path_names(tokens: &[Token]) -> Vec<&str> {
+    let mut names = vec!["Path"];
+    for (index, token) in tokens.iter().enumerate() {
+        if token.is_ident("Path")
+            && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
+            && let Some(alias) = tokens.get(index + 2).and_then(Token::ident)
+        {
+            names.push(alias);
+        }
+    }
+    names
+}
+
+fn is_qualified_display(arguments: &[Token], index: usize, paths: &[&str]) -> bool {
+    if !(arguments[index].is_ident("display")
+        && is_path_separator(arguments, index.wrapping_sub(2)))
+    {
+        return false;
+    }
+    let Some(qualifier) = index.checked_sub(3) else {
+        return false;
+    };
+    if arguments[qualifier].is_punct('>') {
+        return arguments[..qualifier]
+            .iter()
+            .rposition(|token| token.is_punct('<'))
+            .and_then(|open| arguments.get(open + 1))
+            .and_then(Token::ident)
+            .is_some_and(|name| paths.contains(&name));
+    }
+    arguments[qualifier]
+        .ident()
+        .is_some_and(|name| paths.contains(&name))
 }
 
 fn is_path_separator(arguments: &[Token], index: usize) -> bool {

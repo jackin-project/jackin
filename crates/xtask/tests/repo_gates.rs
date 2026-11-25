@@ -1963,6 +1963,7 @@ mod error_paths {
     #[test]
     fn a_qualified_display_call_and_a_multi_line_attribute_are_reported() -> TestResult {
         let source = text(&[
+            "use std::path::Path as P;",
             "enum E {",
             "    #[error(\"qualified {}\", Path::display(.path.as_path()))] // p_qualified",
             "    A { path: PathBuf },",
@@ -1977,6 +1978,10 @@ mod error_paths {
             "    D { path: PathBuf },",
             "    #[error(\"mapped {}\", .paths.iter().map(Path::display).count())] // p_mapped",
             "    F { paths: Vec<PathBuf> },",
+            "    #[error(\"unrelated {}\", Label::display(.0))]",
+            "    H(Label),",
+            "    #[error(\"unrelated qualified {}\", <Sanitized as Render>::display(.0))]",
+            "    I(Label),",
             "    #[error(\"aliased {}\", P::display(.0.as_path()))] // p_aliased",
             "    E(PathBuf),",
             "    #[error(\"ufcs {}\", <Path>::display(.0.as_path()))] // p_ufcs",
