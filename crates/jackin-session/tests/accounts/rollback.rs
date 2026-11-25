@@ -6,11 +6,13 @@ use std::sync::Arc;
 
 use jackin_core::{
     Account, AccountName, Agent, Clock, Config, ConfigEdit, ConfigError, ConfigStore,
-    CredentialSource, FileMode, FileSystem, FsError, HostPath, Provider, ProviderName,
+    CredentialSource, FileMode, FileSystem, FsError, GatewayName, HostPath, Provider, ProviderName,
 };
-use jackin_openshell::GatewayError;
-use jackin_session::{AccountEditError, Gateways, plan_account_edits};
-use jackin_testkit::{Fault, FsOp, MemFs, World};
+use jackin_openshell::{GatewayError, GatewayOp};
+use jackin_session::{
+    AccountEditError, GatewayRemoval, Gateways, plan_account_edits, plan_gateway_removal,
+};
+use jackin_testkit::{Fault, FsOp, MemFs, ScriptedConnector, World};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{TestResult, guard, registered};
@@ -245,6 +247,184 @@ async fn a_restore_after_a_landed_delete_publishes_the_hosts_current_login() -> 
             assert_eq!(token_of(&world, &name).as_deref(), Some(ROTATED_KEY));
         }
         assert!(store.load().await?.account(&work()?).is_some());
+        Ok(())
+    })
+    .await
+}
+
+async fn gateway_removal_rolls_back_only_what_it_deleted() -> TestResult {
+    let world = registered().await?;
+    let account = account(&world, &world.config).await?;
+    hold(&world, &account, &zai_agents(&account)).await?;
+    let provider_names = names(&account);
+    assert!(provider_names.len() > 1);
+    write_key(&world, ROTATED_KEY).await?;
+    let name = GatewayName::parse("fake-gateway")?;
+    let connector = ScriptedConnector::new().gateway(
+        Arc::<jackin_testkit::FakeGateway>::clone(&world.gateway),
+        Vec::new(),
+    );
+    let cancel = CancellationToken::new();
+    let GatewayRemoval::Online(plan) = plan_gateway_removal(&world.desk(), &name, &cancel).await?
+    else {
+        return Err("an account with providers needs the gateway".into());
+    };
+    world.gateway.inject(Fault::DeleteProviderFailsAfterWrite {
+        error: GatewayError::Protocol {
+            message: "the first delete's reply was lost".to_owned(),
+        },
+    });
+
+    let error = plan
+        .apply(&connector, &cancel)
+        .await
+        .err()
+        .ok_or("a gateway removal with a failing delete succeeded")?;
+    assert!(
+        matches!(error, AccountEditError::OnGateway { .. }),
+        "{error:?}"
+    );
+    let mut tokens: Vec<String> = provider_names
+        .iter()
+        .map(|name| token_of(&world, name).ok_or("a provider is missing after the rollback"))
+        .collect::<Result<_, _>>()?;
+    tokens.sort();
+    let restored = tokens.iter().filter(|token| *token == ROTATED_KEY).count();
+    let untouched = tokens.iter().filter(|token| *token == FIRST_KEY).count();
+    assert_eq!((restored, untouched), (1, tokens.len() - 1), "{tokens:?}");
+    assert!(world.config.load().await?.gateway(&name).is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_gateway_removal_that_fails_midway_restores_only_the_provider_it_deleted() -> TestResult {
+    guard(gateway_removal_rolls_back_only_what_it_deleted()).await
+}
+
+#[tokio::test]
+async fn a_login_provider_that_could_not_be_deleted_keeps_the_gateway_material_when_the_edit_rolls_back()
+-> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let mut login = super::support::login_json();
+        let home = super::support::Home::new(&login).await?;
+        let account = super::support::codex_account(&home.path, super::support::ACCOUNT_ID)?;
+        world
+            .config
+            .edit(
+                vec![ConfigEdit::AddAccount(account.clone())],
+                &CancellationToken::new(),
+            )
+            .await?;
+        world
+            .session
+            .sync_account(&account, Agent::Codex, &CancellationToken::new())
+            .await?;
+        let login_name = ProviderName::for_account(account.name(), Agent::Codex);
+        let held = world
+            .gateway
+            .provider(&login_name)
+            .ok_or("no login provider")?;
+        login["tokens"]["refresh_token"] = serde_json::json!("ROTATED-ON-THE-HOST");
+        home.write(&login).await?;
+        let key = HostPath::parse(&world.home().as_path().join("held.key"))?;
+        world
+            .fs
+            .write_new(&key, b"HELD-KEY", FileMode(0o600))
+            .await?;
+        let plan = plan_account_edits(
+            &world.desk(),
+            vec![ConfigEdit::SetAccountCredential {
+                account: account.name().clone(),
+                credential: CredentialSource::File { path: key },
+            }],
+            &CancellationToken::new(),
+        )
+        .await?;
+        world.gateway.inject(Fault::FailAfter {
+            op: GatewayOp::Provider,
+            calls: 1,
+            error: GatewayError::Protocol {
+                message: "the login provider could not be deleted".to_owned(),
+            },
+        });
+
+        let error = plan
+            .apply(
+                &Gateways::single(world.session.clone()),
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .ok_or("an edit with a failing delete succeeded")?;
+        assert!(
+            matches!(error, AccountEditError::OnGateway { .. }),
+            "{error:?}"
+        );
+        assert_eq!(world.gateway.provider(&login_name), Some(held));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_rollback_puts_every_held_provider_of_a_changed_key_back_on_the_old_key() -> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let (fs, store) = failing_store(&world).await?;
+        let account = account(&world, &world.config).await?;
+        store
+            .edit(
+                vec![ConfigEdit::AddAccount(account.clone())],
+                &CancellationToken::new(),
+            )
+            .await?;
+        let agents = zai_agents(&account);
+        assert!(agents.len() > 2);
+        hold(&world, &account, &agents).await?;
+        let replacement = HostPath::parse(&world.home().as_path().join("work-new.key"))?;
+        world
+            .fs
+            .write_new(&replacement, ROTATED_KEY.as_bytes(), FileMode(0o600))
+            .await?;
+        let plan = plan_account_edits(
+            &world.desk_over(store.clone()),
+            vec![ConfigEdit::SetAccountCredential {
+                account: account.name().clone(),
+                credential: CredentialSource::File { path: replacement },
+            }],
+            &CancellationToken::new(),
+        )
+        .await?;
+        fs.fail_at(
+            FsOp::Rename,
+            1,
+            FsError::Io {
+                path: HostPath::parse(Path::new("/config/jackin/config.toml"))?,
+                kind: std::io::ErrorKind::PermissionDenied,
+                message: "the config write is refused".to_owned(),
+            },
+        );
+
+        let error = plan
+            .apply(
+                &Gateways::single(world.session.clone()),
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .ok_or("an edit with a refused config write succeeded")?;
+        assert!(
+            matches!(error, AccountEditError::Config(ConfigError::Fs(_))),
+            "{error:?}"
+        );
+        for name in names(&account) {
+            assert_eq!(
+                token_of(&world, &name).as_deref(),
+                Some(FIRST_KEY),
+                "{name}"
+            );
+        }
         Ok(())
     })
     .await
