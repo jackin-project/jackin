@@ -333,6 +333,43 @@ async fn read_regular_holds_a_file_in_one_allocation_near_its_own_size() -> Test
     Ok(())
 }
 
+#[test]
+fn a_holding_read_keeps_its_hold_until_the_blocking_work_ends() -> TestResult {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .enable_time()
+        .build()?;
+    runtime.block_on(async {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(dir.path().join("file"), b"data")?;
+        let base = HostPath::parse(&std::fs::canonicalize(dir.path())?)?;
+        let (release, parked) = std::sync::mpsc::channel::<()>();
+        let blocker = tokio::task::spawn_blocking(move || parked.recv());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let hold = std::sync::Arc::new(());
+        let fs = StdFileSystem::default();
+        let name = RepoPath::parse("file")?;
+        let held: jackin_core::Hold = std::sync::Arc::<()>::clone(&hold);
+        let waited = tokio::time::timeout(
+            Duration::from_millis(100),
+            fs.read_regular_holding(&base, &name, 16, held),
+        )
+        .await;
+        assert!(waited.is_err(), "the read finished while the pool was busy");
+        assert_eq!(std::sync::Arc::strong_count(&hold), 2);
+        release.send(())?;
+        blocker.await??;
+        for _ in 0..500 {
+            if std::sync::Arc::strong_count(&hold) == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(std::sync::Arc::strong_count(&hold), 1);
+        Ok(())
+    })
+}
+
 fn lock_within_ten_seconds(
     path: &HostPath,
 ) -> Result<Result<(), FsError>, std::sync::mpsc::RecvTimeoutError> {

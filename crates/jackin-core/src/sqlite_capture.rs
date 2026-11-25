@@ -212,7 +212,7 @@ async fn capture_pinned(
         if attempt > 0 {
             tokio::time::sleep(RETRY_PAUSE * u32::try_from(attempt).unwrap_or(1)).await;
         }
-        if journal_is_hot(fs, &dir, &journal_name).await? {
+        if journal_is_hot(fs, &dir, &journal_name, &slot).await? {
             continue;
         }
         let before = fence_of(fs, &dir, &target, &log_target).await?;
@@ -222,7 +222,7 @@ async fn capture_pinned(
         if !first.starts_with(SQLITE_MAGIC) {
             return Err(CaptureProblem::NotSqlite);
         }
-        if journal_is_hot(fs, &dir, &journal_name).await? {
+        if journal_is_hot(fs, &dir, &journal_name, &slot).await? {
             continue;
         }
         let first = if first.get(18) == Some(&WAL_FORMAT_VERSION) {
@@ -370,9 +370,14 @@ async fn journal_is_hot(
     fs: &dyn FileSystem,
     dir: &HostPath,
     name: &str,
+    slot: &Slot,
 ) -> Result<bool, CaptureProblem> {
     let file = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
-    match fs.read_regular(dir, &file, JOURNAL_MAGIC.len()).await {
+    let hold: Hold = Arc::<OwnedSemaphorePermit>::clone(slot);
+    match fs
+        .read_regular_holding(dir, &file, JOURNAL_MAGIC.len(), hold)
+        .await
+    {
         Ok(Ok(head)) => Ok(head.bytes.starts_with(JOURNAL_MAGIC)),
         Ok(Err(RegularFileProblem::Missing))
         | Err(FsError::Io {
@@ -600,13 +605,19 @@ pub async fn run_bounded<T: Send + 'static>(
 ) -> Result<T, CaptureProblem> {
     let stopped = Arc::new(AtomicBool::new(false));
     let _stop = StopOnDrop(Arc::clone(&stopped));
+    let (Some(ends), Some(patience)) = (
+        Instant::now().checked_add(deadline),
+        deadline.checked_add(STORE_QUERY_GRACE),
+    ) else {
+        return Err(CaptureProblem::TimedOut);
+    };
     let budget = QueryBudget {
-        deadline: Instant::now() + deadline,
+        deadline: ends,
         stopped,
         steps: 0,
     };
     let task = tokio::task::spawn_blocking(move || work(budget));
-    match tokio::time::timeout(deadline + STORE_QUERY_GRACE, task).await {
+    match tokio::time::timeout(patience, task).await {
         Ok(Ok(output)) => Ok(output),
         Ok(Err(_)) => Err(CaptureProblem::Unreadable),
         Err(_) => Err(CaptureProblem::TimedOut),
