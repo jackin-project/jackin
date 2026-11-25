@@ -705,3 +705,75 @@ async fn removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_
     })
     .await
 }
+
+#[tokio::test]
+async fn a_rollback_never_gives_a_peer_the_login_provider_of_the_account_it_replaced() -> TestResult
+{
+    guard(async {
+        let fleet = fleet([true, false, false]).await?;
+        let path = jackin_core::HostPath::parse(&fleet.world.home().as_path().join("work.key"))?;
+        fleet
+            .world
+            .fs
+            .write_new(&path, b"KEY-SECRET-1", jackin_core::FileMode(0o600))
+            .await?;
+        let keyed = Account::new(
+            name("work")?,
+            jackin_core::Provider::Zai,
+            jackin_core::CredentialSource::File { path },
+        )?;
+        let replace = |account: Account| {
+            vec![
+                ConfigEdit::RemoveAccountClearingBindings(account.name().clone()),
+                ConfigEdit::AddAccount(account),
+            ]
+        };
+        let store = fleet.store.clone();
+        store
+            .edit(replace(keyed.clone()), &CancellationToken::new())
+            .await?;
+        session_on(&fleet.world, &fleet.second)
+            .sync_account(&keyed, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await?;
+        store
+            .edit(replace(fleet.account.clone()), &CancellationToken::new())
+            .await?;
+        let omp = ProviderName::parse("jackin-work-omp")?;
+        assert_eq!(fleet.holders()?, [true, false, false]);
+        assert!(fleet.second.provider(&omp).is_some());
+
+        let token = CancellationToken::new();
+        fleet.second.inject(Fault::CancelAt {
+            trigger: jackin_testkit::Trigger::Op(GatewayOp::Profile),
+            token: token.clone(),
+        });
+        let plan = plan_account_edits(
+            &fleet.world.desk(),
+            replace(keyed),
+            &CancellationToken::new(),
+        )
+        .await?;
+        let AccountPlan::Gateway(gateway) = &plan else {
+            return Err("the replacement needs the gateways".into());
+        };
+        let gateways = fleet
+            .dial(gateway.config(), &[&fleet.second, &fleet.third])
+            .await?;
+        let failed = plan.apply(&gateways, &token).await;
+
+        assert!(
+            matches!(
+                &failed,
+                Err(AccountEditError::Config(
+                    jackin_core::ConfigError::Cancelled
+                ))
+            ),
+            "{failed:?}"
+        );
+        assert_eq!(fleet.holders()?, [true, false, false]);
+        assert!(fleet.second.provider(&omp).is_some());
+        assert!(fleet.world.gateway.provider(&omp).is_none());
+        Ok(())
+    })
+    .await
+}
