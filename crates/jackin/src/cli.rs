@@ -52,7 +52,7 @@ pub enum Command {
     #[command(about = "List the jackin sandboxes")]
     Ls(JsonArg),
     #[command(about = "Show the limit windows of each account")]
-    Usage(JsonArg),
+    Usage(UsageArgs),
     #[command(about = "Show a sandbox, its labels, providers, and policy status")]
     Inspect(InspectArgs),
     #[command(subcommand, about = "Manage role sources")]
@@ -87,6 +87,8 @@ pub enum GatewayCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum AccountCommand {
+    #[command(subcommand, about = "Manage usage connections on this host")]
+    Usage(UsageAccountCommand),
     #[command(about = "Add an account")]
     Add(AccountAddArgs),
     #[command(about = "List the accounts")]
@@ -99,6 +101,127 @@ pub enum AccountCommand {
     Default(AccountDefaultArgs),
     #[command(about = "Bind an account to a role or a workspace")]
     Bind(BindArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct UsageArgs {
+    #[command(subcommand)]
+    pub command: Option<UsageCommand>,
+    #[arg(long, help = "Print JSON")]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UsageCommand {
+    #[command(about = "Set the usage proxy interactively, or disable it")]
+    Proxy {
+        #[arg(long, help = "Remove the usage proxy")]
+        off: bool,
+    },
+    #[command(about = "Read usage for execution-account credential sources on this host")]
+    Host(JsonArg),
+    #[command(about = "Print a redacted usage report for sharing")]
+    Share,
+
+    #[command(about = "Read saved usage without accessing providers or credentials")]
+    Snapshot(UsageFilter),
+    #[command(about = "Refresh connected accounts from their providers")]
+    Refresh(UsageFilter),
+    #[command(about = "Confirm and spend one available reset from the account's saved inventory")]
+    Redeem {
+        #[arg(help = "Stable usage account ID")]
+        account: uuid::Uuid,
+        #[arg(help = "Reset number from the account inventory, starting at 1")]
+        reset: std::num::NonZeroUsize,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct UsageFilter {
+    #[arg(long, help = "Select a provider")]
+    pub provider: Option<String>,
+    #[arg(long, help = "Select a usage account by its stable ID")]
+    pub account: Option<uuid::Uuid>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UsageAccountCommand {
+    #[command(
+        subcommand,
+        about = "Manage CLIProxyAPI hubs and their mirrored usage accounts"
+    )]
+    Hub(HubCommand),
+    #[command(about = "List usage connections")]
+    Ls(JsonArg),
+    #[command(about = "Connect a usage account interactively")]
+    Connect {
+        #[arg(help = "Usage provider ID")]
+        provider: String,
+        #[arg(long, help = "Provider cluster for a regional account")]
+        region: Option<String>,
+        #[arg(
+            long,
+            help = "Kimi or MiniMax authentication method (key or device); device requires a registered OAuth client ID"
+        )]
+        auth: Option<jackin_usage::onboarding::UsageAuth>,
+    },
+    #[command(about = "Sign in again and keep the account settings")]
+    Reconnect {
+        #[arg(help = "Stable usage account ID")]
+        id: uuid::Uuid,
+        #[arg(long, help = "Provider cluster for a regional account")]
+        region: Option<String>,
+        #[arg(
+            long,
+            help = "Kimi or MiniMax authentication method (key or device); device requires a registered OAuth client ID"
+        )]
+        auth: Option<jackin_usage::onboarding::UsageAuth>,
+    },
+    #[command(about = "Replace the API key for a usage account")]
+    ReplaceKey {
+        #[arg(help = "Stable usage account ID")]
+        id: uuid::Uuid,
+        #[arg(long, help = "Provider cluster for a regional account")]
+        region: Option<String>,
+    },
+    #[command(about = "Set the display name of a usage account")]
+    Rename {
+        #[arg(help = "Stable usage account ID")]
+        id: uuid::Uuid,
+        #[arg(help = "New display name")]
+        label: String,
+    },
+    #[command(about = "Remove a local usage connection")]
+    Rm {
+        #[arg(help = "Stable usage account ID")]
+        id: uuid::Uuid,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum HubCommand {
+    #[command(about = "List connected hubs")]
+    Ls,
+    #[command(about = "Connect a CLIProxyAPI hub and mirror its accounts")]
+    Connect {
+        #[arg(help = "CLIProxyAPI server address")]
+        address: String,
+    },
+    #[command(about = "Validate and replace a hub management key")]
+    ReplaceKey {
+        #[arg(help = "Stable hub ID")]
+        id: uuid::Uuid,
+    },
+    #[command(about = "Reconcile the local accounts with a hub")]
+    Sync {
+        #[arg(help = "Stable hub ID")]
+        id: uuid::Uuid,
+    },
+    #[command(about = "Remove a local hub connection and its mirrored accounts")]
+    Rm {
+        #[arg(help = "Stable hub ID")]
+        id: uuid::Uuid,
+    },
 }
 
 #[derive(Debug, Subcommand)]

@@ -22,6 +22,10 @@ pub async fn fetch(
     let body = http
         .get(&format!("{base}/usages"), Auth::Bearer(&token), &[])
         .await?;
+    windows(&body)
+}
+
+fn windows(body: &Value) -> Result<Vec<Bucket>, ProviderError> {
     let usages = body.get("usages").filter(|value| value.is_object());
     let mut out = Vec::new();
     for (key, kind, label) in [
@@ -71,3 +75,7 @@ fn login_token(login: &str, now: i64) -> Result<String, ProviderError> {
     }
     Ok(token.to_owned())
 }
+
+mod account;
+
+pub use account::*;

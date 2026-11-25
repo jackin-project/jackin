@@ -14,7 +14,7 @@ use crate::violation::{Violation, sorted};
 
 pub const BASELINE_URL: &str = "https://github.com/tailrocks/terminal-components-baseline";
 
-pub const BASELINE_BRANCH: &str = "feature/openshell-native";
+pub const BASELINE_BRANCH: &str = "feature/jackin-usage-accounts";
 
 const TERMPANE_URL: &str = "https://github.com/tailrocks/termpane";
 

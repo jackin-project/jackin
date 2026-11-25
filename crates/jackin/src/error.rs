@@ -20,6 +20,7 @@ use thiserror::Error;
 pub enum ExitClass {
     Ok,
     Failure,
+    NoUsageSnapshot,
     Usage,
     Refused,
     Cancelled,
@@ -32,6 +33,7 @@ impl ExitClass {
             ExitClass::Failure => 1,
             ExitClass::Usage => 2,
             ExitClass::Refused => 3,
+            ExitClass::NoUsageSnapshot => 4,
             ExitClass::Cancelled => 130,
         }
     }
@@ -39,6 +41,8 @@ impl ExitClass {
 
 #[derive(Debug, Error)]
 pub enum CommandError {
+    #[error("no usage has been fetched")]
+    NoUsageSnapshot,
     #[error("{}", plain(.0))]
     Argument(String),
     #[error("provider {} with an API key needs --agent omp", .provider.as_str())]
@@ -158,6 +162,7 @@ impl From<ConnectError> for CommandError {
 impl CommandError {
     pub fn class(&self) -> ExitClass {
         match self {
+            CommandError::NoUsageSnapshot => ExitClass::NoUsageSnapshot,
             CommandError::Argument(_)
             | CommandError::ApiKeyNeedsAgent { .. }
             | CommandError::EnvValue { .. }

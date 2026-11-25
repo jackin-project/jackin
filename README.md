@@ -17,7 +17,7 @@ Documentation: <https://jackin.tailrocks.com/>
 - Uploads your project as a working tree and a git bundle. Your host `.git` directory and your working tree stay untouched.
 - Gives each sandbox a placeholder instead of your Codex login. The gateway holds the real token.
 - Fetches the work of a sandbox back into your repository as git branches with `jackin export`.
-- Tracks your accounts and shows the usage limits of each one with `jackin usage`.
+- Connects subscription and coding-plan accounts from Accounts → Add Account. Read their cached limits with `jackin usage` or contact the providers with `jackin usage refresh`. [Usage accounts and CLI](docs/usage/cli.md)
 - Gives a sandbox access to a Docker engine only when a role or a workspace turns on the Docker capability.
 
 ## Install

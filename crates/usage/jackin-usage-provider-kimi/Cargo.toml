@@ -12,8 +12,16 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+jackin-core = { workspace = true }
+url = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+tokio-util = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+jackin-testkit = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true

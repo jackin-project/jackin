@@ -6,6 +6,7 @@ mod bridge;
 mod changes;
 mod checks;
 mod clipboard;
+mod connections;
 mod console;
 mod crashed;
 mod doctor;
