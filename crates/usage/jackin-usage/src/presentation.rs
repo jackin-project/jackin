@@ -437,19 +437,13 @@ pub fn covered_keys(account: &AccountQuota) -> Vec<&str> {
 }
 
 pub fn attention_notices(view: &UsageView) -> Vec<String> {
-    view.attention
-        .iter()
-        .filter_map(|item| view::report::attention_text(view, item))
+    view::report::attention_entries(view)
         .map(|item| format!("{} · {} · {}", item.tag, item.subject, item.detail))
         .collect()
 }
 
 pub fn attention_summary(view: &UsageView) -> Option<String> {
-    let count = view
-        .attention
-        .iter()
-        .filter(|item| view::report::attention_text(view, item).is_some())
-        .count();
+    let count = view::report::attention_entries(view).count();
     (count > 0).then(|| view::report::attention_heading(count))
 }
 

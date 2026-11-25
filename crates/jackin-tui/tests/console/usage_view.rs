@@ -591,7 +591,7 @@ async fn a_duplicate_only_registry_does_not_claim_all_clear() -> TestResult {
     );
     assert_eq!(
         priority.summary,
-        "Needs attention (1)",
+        jackin_usage::view::report::attention_heading(1),
         "{}",
         dump(&priority)
     );

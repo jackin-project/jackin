@@ -123,16 +123,18 @@ pub fn stale_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     )
 }
 
+pub fn attention_entries(view: &UsageView) -> impl Iterator<Item = AttentionText> + '_ {
+    view.attention
+        .iter()
+        .filter_map(|item| attention_text(view, item))
+}
+
 pub fn attention_heading(count: usize) -> String {
     format!("Needs attention ({count})")
 }
 
 pub fn attention_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
-    let entries: Vec<AttentionText> = view
-        .attention
-        .iter()
-        .filter_map(|item| attention_text(view, item))
-        .collect();
+    let entries: Vec<AttentionText> = attention_entries(view).collect();
     if entries.is_empty() {
         return Vec::new();
     }
