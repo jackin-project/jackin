@@ -8,7 +8,7 @@ use super::model::{
     AccountQuota, Feed, Meter, Note, Reading, ResetStatus, TodayTokens, UsageView, Used,
 };
 use super::render::{Ctx, Depth, Line, Span, Tone};
-use super::text;
+use super::text::{self, Part};
 
 const MAIN_INDENT: usize = 4;
 const MAIN_NAME: usize = 16;
@@ -228,7 +228,10 @@ fn note_block(note: &Note, view: &UsageView, ctx: Ctx) -> Vec<Line> {
         "{:SIDE_INDENT$}{name:<SIDE_NAME$} ",
         ""
     ))];
-    let parts: Vec<(String, Tone)> = parts.into_iter().map(|part| (part, Tone::Plain)).collect();
+    let parts: Vec<Part> = parts
+        .into_iter()
+        .map(|part| Part::new(part, Tone::Plain))
+        .collect();
     text::wrap(prefix, SUB_INDENT, &parts, ctx.columns())
 }
 
@@ -355,18 +358,13 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
     let mut parts = Vec::new();
     match retry_at {
         Some(at) => {
-            parts.push((
+            parts.push(Part::new(
                 format!("{}! refresh failed: {message}", " ".repeat(MAIN_INDENT)),
                 Tone::Crit,
             ));
             if *reconnect {
-                parts.push((
-                    format!(
-                        "run: {}",
-                        text::reconnect_command(account.id, text::IdForm::Hyphenated)
-                    ),
-                    Tone::Plain,
-                ));
+                let command = text::reconnect_command(account.id, text::IdForm::Hyphenated);
+                parts.push(Part::new(format!("run: {command}"), Tone::Plain).atom(command));
             } else {
                 let retry = if *at <= view.now {
                     format!(
@@ -376,10 +374,10 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
                 } else {
                     format!("next retry in {}", text::rel(at.0 - view.now.0))
                 };
-                parts.push((retry, Tone::Dim));
+                parts.push(Part::new(retry, Tone::Dim));
             }
         }
-        None => parts.push((
+        None => parts.push(Part::new(
             format!("{}! {message}", " ".repeat(MAIN_INDENT)),
             Tone::Crit,
         )),

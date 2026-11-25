@@ -375,10 +375,94 @@ pub fn pad(text: &str, columns: usize) -> String {
     format!("{text}{}", " ".repeat(columns.saturating_sub(width(text))))
 }
 
-pub fn split_parts(text: &str, tone: Tone) -> Vec<(String, Tone)> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Part {
+    text: String,
+    tone: Tone,
+    atoms: Vec<String>,
+}
+
+impl Part {
+    pub fn new(text: impl Into<String>, tone: Tone) -> Part {
+        Part {
+            text: text.into(),
+            tone,
+            atoms: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn atom(mut self, atom: impl Into<String>) -> Part {
+        self.atoms.push(atom.into());
+        self
+    }
+}
+
+pub fn split_parts(text: &str, tone: Tone) -> Vec<Part> {
+    split_atomic(text, tone, &[])
+}
+
+pub fn split_atomic(text: &str, tone: Tone, atoms: &[String]) -> Vec<Part> {
     text.split(SEPARATOR)
-        .map(|part| (part.to_owned(), tone))
+        .map(|part| {
+            let mut found = Part::new(part, tone);
+            found.atoms = atoms
+                .iter()
+                .filter(|atom| !atom.is_empty() && part.contains(atom.as_str()))
+                .cloned()
+                .collect();
+            found
+        })
         .collect()
+}
+
+struct Token<'a> {
+    text: &'a str,
+    atomic: bool,
+    spaced: bool,
+}
+
+fn tokens<'a>(text: &'a str, atoms: &[String]) -> Vec<Token<'a>> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    let mut spaced = false;
+    while !rest.is_empty() {
+        let next = atoms
+            .iter()
+            .filter(|atom| !atom.is_empty())
+            .filter_map(|atom| rest.find(atom.as_str()).map(|at| (at, atom.len())))
+            .min_by_key(|(at, _)| *at);
+        let (prose, atom, after) = match next {
+            Some((at, len)) => {
+                let (head, tail) = rest.split_at_checked(at).unwrap_or((rest, ""));
+                let (atom, after) = tail.split_at_checked(len).unwrap_or((tail, ""));
+                (head, Some(atom), after)
+            }
+            None => (rest, None, ""),
+        };
+        spaced |= prose.starts_with(char::is_whitespace);
+        for word in prose.split_whitespace() {
+            out.push(Token {
+                text: word,
+                atomic: false,
+                spaced,
+            });
+            spaced = true;
+        }
+        if !prose.is_empty() {
+            spaced = prose.ends_with(char::is_whitespace);
+        }
+        if let Some(atom) = atom {
+            out.push(Token {
+                text: atom,
+                atomic: true,
+                spaced,
+            });
+            spaced = false;
+        }
+        rest = after;
+    }
+    out
 }
 
 struct Flow {
@@ -415,7 +499,23 @@ impl Flow {
         }
     }
 
-    fn put(&mut self, text: &str, tone: Tone) {
+    fn blank(&self) -> bool {
+        self.spans.iter().all(|span| span.text.trim().is_empty())
+    }
+
+    fn relocate(&mut self, width: usize) {
+        let hang = if self.indent + width <= self.columns || width > self.columns {
+            self.indent
+        } else {
+            0
+        };
+        self.spans = vec![Span::plain(" ".repeat(hang))];
+        self.used = hang;
+        self.started = false;
+    }
+
+    fn put(&mut self, part: &Part) {
+        let (text, tone) = (part.text.as_str(), part.tone);
         if self.used + width(text) <= self.columns {
             self.push(text.to_owned(), tone);
             return;
@@ -432,13 +532,32 @@ impl Flow {
         }
         let mut chunk = " ".repeat(text.len() - text.trim_start().len());
         let mut empty = true;
-        for word in text.split_whitespace() {
-            let gap = usize::from(!empty);
-            let reach = self.used + width(&chunk) + gap + width(word);
+        let mut after_atom = false;
+        for token in tokens(text, &part.atoms) {
+            if !empty && !token.spaced && after_atom {
+                chunk.push_str(token.text);
+                after_atom = token.atomic;
+                continue;
+            }
+            let gap = usize::from(!empty && token.spaced);
+            let reach = self.used + width(&chunk) + gap + width(token.text);
             if reach <= self.columns {
                 chunk.push_str(&" ".repeat(gap));
-                chunk.push_str(word);
+                chunk.push_str(token.text);
                 empty = false;
+                after_atom = token.atomic;
+                continue;
+            }
+            if token.atomic {
+                if !empty || !self.blank() {
+                    self.push(std::mem::take(&mut chunk), tone);
+                    self.turn();
+                }
+                chunk.clear();
+                self.relocate(width(token.text));
+                chunk.push_str(token.text);
+                empty = false;
+                after_atom = true;
                 continue;
             }
             if !empty {
@@ -446,8 +565,9 @@ impl Flow {
                 self.turn();
             }
             let room = self.columns.saturating_sub(self.used + width(&chunk));
-            chunk.push_str(&truncate(word, room));
+            chunk.push_str(&truncate(token.text, room));
             empty = false;
+            after_atom = false;
         }
         if !chunk.is_empty() {
             self.push(chunk, tone);
@@ -455,12 +575,7 @@ impl Flow {
     }
 }
 
-pub fn wrap(
-    prefix: Vec<Span>,
-    indent: usize,
-    parts: &[(String, Tone)],
-    columns: usize,
-) -> Vec<Line> {
+pub fn wrap(prefix: Vec<Span>, indent: usize, parts: &[Part], columns: usize) -> Vec<Line> {
     let used = prefix.iter().map(Span::width).sum();
     let mut flow = Flow {
         lines: Vec::new(),
@@ -470,16 +585,16 @@ pub fn wrap(
         columns,
         started: false,
     };
-    for (position, (text, tone)) in parts.iter().enumerate() {
-        let size = width(text);
+    for (position, part) in parts.iter().enumerate() {
+        let size = width(&part.text);
         if position == 0 {
-            flow.put(text, *tone);
+            flow.put(part);
         } else if flow.used + width(SEPARATOR) + size <= columns {
-            flow.push(format!("{SEPARATOR}{text}"), *tone);
+            flow.push(format!("{SEPARATOR}{}", part.text), part.tone);
         } else {
             flow.turn();
             flow.dedent(size);
-            flow.put(text, *tone);
+            flow.put(part);
         }
     }
     flow.lines.push(Line::of(flow.spans));

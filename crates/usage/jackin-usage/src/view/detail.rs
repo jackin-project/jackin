@@ -8,7 +8,7 @@ use super::model::{
     Unit, UsageView, Used, UsedFraction,
 };
 use super::render::{Ctx, Line, Span, Tone};
-use super::text;
+use super::text::{self, Part};
 
 const SUB_INDENT: usize = 21;
 const NESTED_INDENT: usize = 23;
@@ -18,6 +18,7 @@ const STATUS_WIDTH: usize = 11;
 const MIN_KIND_WIDTH: usize = 6;
 const TOP_MODELS: usize = 3;
 const DETAILS_JSON: (&str, &str) = ("per-day counts:", "jackin usage details --json");
+const REDEEM_COMMAND: &str = "jackin usage redeem <id> <n>";
 const REDEEM: &str = "redeem a reset: jackin usage redeem <id> <n>";
 const UNKNOWN_FETCH: &str = "not fetched yet";
 
@@ -73,20 +74,24 @@ pub fn note_lines(_account: &AccountQuota, note: &Note, view: &UsageView, ctx: &
 
 pub fn footer(account: &AccountQuota, view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     let ctx = *ctx;
-    let mut lines = foot(format!("id {}", account.id.hyphenated()), ctx);
-    lines.extend(foot(fetched_text(account, view), ctx));
+    let id = account.id.hyphenated().to_string();
+    let mut lines = foot(format!("id {id}"), &[id], ctx);
+    lines.extend(foot(fetched_text(account, view), &[], ctx));
     let redeemable = account.notes.iter().any(
         |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.status == ResetStatus::Ready)),
     );
     if redeemable {
-        lines.extend(foot(REDEEM.to_owned(), ctx));
+        lines.extend(foot(REDEEM.to_owned(), &[REDEEM_COMMAND.to_owned()], ctx));
     }
     lines.extend(fact_lines(&account.facts, view, ctx));
     lines
 }
 
 fn sub(parts: &[String], indent: usize, ctx: Ctx) -> Vec<Line> {
-    let parts: Vec<(String, Tone)> = parts.iter().map(|part| (part.clone(), Tone::Dim)).collect();
+    let parts: Vec<Part> = parts
+        .iter()
+        .map(|part| Part::new(part.clone(), Tone::Dim))
+        .collect();
     text::wrap(
         vec![Span::plain(" ".repeat(indent))],
         indent,
@@ -95,11 +100,11 @@ fn sub(parts: &[String], indent: usize, ctx: Ctx) -> Vec<Line> {
     )
 }
 
-fn foot(text: String, ctx: Ctx) -> Vec<Line> {
+fn foot(text: String, atoms: &[String], ctx: Ctx) -> Vec<Line> {
     text::wrap(
         vec![Span::plain(" ".repeat(FOOT_INDENT))],
         FOOT_INDENT,
-        &text::split_parts(&text, Tone::Dim),
+        &text::split_atomic(&text, Tone::Dim, atoms),
         ctx.columns(),
     )
 }
@@ -229,6 +234,15 @@ fn fitted((first, second): (impl AsRef<str>, impl AsRef<str>), ctx: Ctx) -> Vec<
     }
 }
 
+fn command_note((lead, command): (&str, &str), ctx: Ctx) -> Vec<Line> {
+    text::wrap(
+        vec![Span::plain(" ".repeat(SUB_INDENT))],
+        SUB_INDENT,
+        &[Part::new(format!("{lead} {command}"), Tone::Dim).atom(command)],
+        ctx.columns(),
+    )
+}
+
 fn balance_lines(amount: f64, unit: Unit, approx: Option<(f64, Currency)>, ctx: Ctx) -> Vec<Line> {
     let exact = exact_amount(amount, unit);
     if approx.is_none() && exact == text::amount(amount, unit) {
@@ -339,7 +353,7 @@ fn token_lines(yesterday: Option<&Activity>, last30: Option<&Activity>, ctx: Ctx
             lines.extend(sub(&parts, SUB_INDENT, ctx));
         }
     }
-    lines.extend(fitted(DETAILS_JSON, ctx));
+    lines.extend(command_note(DETAILS_JSON, ctx));
     lines
 }
 
@@ -436,12 +450,15 @@ fn fact_lines(facts: &[Fact], view: &UsageView, ctx: Ctx) -> Vec<Line> {
     if !inline.is_empty() {
         lines.extend(foot_wrapped(&inline, ctx));
     }
-    lines.extend(apart.into_iter().flat_map(|(_, text)| foot(text, ctx)));
+    lines.extend(apart.into_iter().flat_map(|(_, text)| foot(text, &[], ctx)));
     lines
 }
 
 fn foot_wrapped(parts: &[String], ctx: Ctx) -> Vec<Line> {
-    let parts: Vec<(String, Tone)> = parts.iter().map(|part| (part.clone(), Tone::Dim)).collect();
+    let parts: Vec<Part> = parts
+        .iter()
+        .map(|part| Part::new(part.clone(), Tone::Dim))
+        .collect();
     text::wrap(
         vec![Span::plain(" ".repeat(FOOT_INDENT))],
         FOOT_INDENT,

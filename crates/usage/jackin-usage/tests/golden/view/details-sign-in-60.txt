@@ -213,8 +213,8 @@ Antigravity (Google AI)                           2 accounts
                      exact 0.28%
     ! refresh failed:
       the credential is missing; sign in again
-      run: jackin account usage reconnect
-      a0000014-0000-4000-8000-000000000014
+      run:
+      jackin account usage reconnect a0000014-0000-4000-8000-000000000014
     ! also connected as #a0000013 (same provider and label)
     id a0000014-0000-4000-8000-000000000014
     fetched Mon 23 Nov 17:06 · fresh until Mon 17:16

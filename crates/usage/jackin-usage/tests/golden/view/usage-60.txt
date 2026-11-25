@@ -13,8 +13,7 @@ Needs attention (4)
               Thu 06:19
   DUPLICATE   Antigravity (Google AI)
               personal@example.com #a0000013 #a0000014
-              jackin account usage rm
-              a0000014-0000-4000-8000-000000000014
+jackin account usage rm a0000014-0000-4000-8000-000000000014
 Stale  all 14 readings, fetched 13h 57m to 1d 7h ago
        jackin usage refresh
 

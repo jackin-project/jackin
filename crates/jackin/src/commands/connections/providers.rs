@@ -244,13 +244,16 @@ fn info_lines(ctx: Ctx) -> Vec<Line> {
         lines.extend(text::wrap(
             vec![Span::strong(INFO_TAG), Span::plain("  ")],
             INFO_INDENT,
-            &[(format!("{}: {}.", info.name, info.reason), Tone::Plain)],
+            &[text::Part::new(
+                format!("{}: {}.", info.name, info.reason),
+                Tone::Plain,
+            )],
             ctx.columns(),
         ));
         lines.extend(text::wrap(
             vec![Span::plain(" ".repeat(INFO_INDENT))],
             INFO_INDENT,
-            &[(info.hint.to_owned(), Tone::Plain)],
+            &[text::Part::new(info.hint, Tone::Plain)],
             ctx.columns(),
         ));
     }

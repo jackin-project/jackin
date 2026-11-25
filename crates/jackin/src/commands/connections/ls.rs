@@ -189,20 +189,24 @@ fn count(number: usize, noun: &str) -> String {
     }
 }
 
-fn flagged(text: &str, tone: Tone, ctx: Ctx) -> Vec<Line> {
+const RECONNECT_HINT: &str = "jackin account usage reconnect <id>";
+const LS_WIDE: &str = "jackin account usage ls --wide";
+const RM_HINT: &str = "jackin account usage rm <id>";
+
+fn flagged(text: &str, atoms: &[String], tone: Tone, ctx: Ctx) -> Vec<Line> {
     text::wrap(
         Vec::new(),
         FLAG_INDENT,
-        &text::split_parts(text, tone),
+        &text::split_atomic(text, tone, atoms),
         ctx.columns(),
     )
 }
 
-fn indented(text: &str, tone: Tone, ctx: Ctx) -> Vec<Line> {
+fn indented(text: &str, atoms: &[String], tone: Tone, ctx: Ctx) -> Vec<Line> {
     text::wrap(
         vec![Span::plain(NOTE_LEAD)],
         NOTE_INDENT,
-        &text::split_parts(text, tone),
+        &text::split_atomic(text, tone, atoms),
         ctx.columns(),
     )
 }
@@ -239,7 +243,7 @@ fn summary(view: &UsageView, ctx: Ctx) -> Vec<Line> {
         0,
         &parts
             .into_iter()
-            .map(|part| (part, Tone::Dim))
+            .map(|part| text::Part::new(part, Tone::Dim))
             .collect::<Vec<_>>(),
         ctx.columns(),
     )
@@ -263,6 +267,7 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
         };
         lines.extend(flagged(
             &format!("! {}: {} is connected {times}.", group.name, quota.label),
+            &[],
             Tone::Warn,
             ctx,
         ));
@@ -275,8 +280,10 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
             } else {
                 "Remove one"
             };
+            let command = format!("jackin account usage rm {}", remove.hyphenated());
             lines.extend(indented(
-                &format!("{which}: jackin account usage rm {}", remove.hyphenated()),
+                &format!("{which}: {command}"),
+                &[command],
                 Tone::Plain,
                 ctx,
             ));
@@ -289,12 +296,10 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
         .collect();
     if wide {
         for quota in &signing_in {
+            let command = text::reconnect_command(quota.id, text::IdForm::Hyphenated);
             lines.extend(flagged(
-                &format!(
-                    "! {} needs sign-in: {}",
-                    quota.label,
-                    text::reconnect_command(quota.id, text::IdForm::Hyphenated)
-                ),
+                &format!("! {} needs sign-in: {command}", quota.label),
+                &[command],
                 Tone::Warn,
                 ctx,
             ));
@@ -302,9 +307,10 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
     } else if !signing_in.is_empty() {
         lines.extend(flagged(
             &format!(
-                "! {} to sign in again: jackin account usage reconnect <id> (IDs: jackin account usage ls --wide)",
+                "! {} to sign in again: {RECONNECT_HINT} (IDs: {LS_WIDE})",
                 count(signing_in.len(), "account")
             ),
+            &[RECONNECT_HINT.to_owned(), LS_WIDE.to_owned()],
             Tone::Warn,
             ctx,
         ));
@@ -315,13 +321,15 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
     if hooked {
         lines.extend(indented(
             "status-line accounts update when the Antigravity status-line hook runs; refresh cannot read them",
+            &[],
             Tone::Dim,
             ctx,
         ));
     }
     if duplicated && !wide {
         lines.extend(indented(
-            "IDs: jackin account usage ls --wide · remove one: jackin account usage rm <id>",
+            &format!("IDs: {LS_WIDE} · remove one: {RM_HINT}"),
+            &[LS_WIDE.to_owned(), RM_HINT.to_owned()],
             Tone::Plain,
             ctx,
         ));
