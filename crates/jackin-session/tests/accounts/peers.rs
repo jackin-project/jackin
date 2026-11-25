@@ -879,13 +879,16 @@ async fn a_gateway_entry_that_changed_after_the_plan_is_refused_before_anything_
         entry.openshell_workspace = OpenShellWorkspace::parse("moved")?;
         fleet
             .store
-            .edit(vec![
-                ConfigEdit::RemoveGateway(third.clone()),
-                ConfigEdit::AddGateway {
-                    name: third.clone(),
-                    entry,
-                },
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::RemoveGateway(third.clone()),
+                    ConfigEdit::AddGateway {
+                        name: third.clone(),
+                        entry,
+                    },
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         fleet.world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Provider,
@@ -894,7 +897,7 @@ async fn a_gateway_entry_that_changed_after_the_plan_is_refused_before_anything_
             },
         });
 
-        let refused = plan.apply(&gateways).await;
+        let refused = plan.apply(&gateways, &CancellationToken::new()).await;
 
         assert!(
             matches!(
