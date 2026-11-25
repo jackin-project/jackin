@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::decimal::Decimal;
+
 const FIVE_HOUR_SECONDS: i64 = 18_000;
 const WEEK_SECONDS: i64 = 604_800;
 const DAY_SECONDS: i64 = 86_400;
@@ -17,8 +19,8 @@ pub enum BucketKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Money {
-    minor: i64,
-    exponent: u32,
+    amount: Decimal,
+    places: u32,
     unit: String,
 }
 
@@ -44,18 +46,26 @@ const MAX_MINOR: f64 = 9.0e15;
 impl Money {
     pub fn new(minor: i64, exponent: u32, unit: impl Into<String>) -> Option<Money> {
         (exponent <= MAX_EXPONENT).then(|| Money {
-            minor,
-            exponent,
+            amount: Decimal::minor(minor, exponent),
+            places: exponent,
             unit: unit.into(),
         })
     }
 
     pub fn cents(minor: i64, unit: impl Into<String>) -> Money {
         Money {
-            minor,
-            exponent: 2,
+            amount: Decimal::minor(minor, 2),
+            places: 2,
             unit: unit.into(),
         }
+    }
+
+    pub fn exact(amount: Decimal, places: u32, unit: impl Into<String>) -> Option<Money> {
+        (places <= MAX_EXPONENT).then(|| Money {
+            amount,
+            places,
+            unit: unit.into(),
+        })
     }
 
     pub fn from_f64(value: f64, exponent: u32, unit: impl Into<String>) -> Option<Money> {
@@ -63,47 +73,47 @@ impl Money {
         Money::new(minor_units(scaled)?, exponent, unit)
     }
 
-    pub fn minor(&self) -> i64 {
-        self.minor
+    pub fn amount(&self) -> Decimal {
+        self.amount
     }
 
     pub fn unit(&self) -> &str {
         &self.unit
     }
 
+    pub fn is_positive(&self) -> bool {
+        self.amount.is_positive()
+    }
+
     pub fn minus(&self, other: &Money) -> Option<Money> {
-        if self.exponent != other.exponent || self.unit != other.unit {
+        if self.places != other.places || self.unit != other.unit {
             return None;
         }
-        Money::new(
-            self.minor.checked_sub(other.minor)?,
-            self.exponent,
-            self.unit.clone(),
-        )
+        Some(Money {
+            amount: self.amount.checked_sub(&other.amount)?,
+            places: self.places,
+            unit: self.unit.clone(),
+        })
     }
 
     #[must_use]
     pub fn clamped_at_zero(&self) -> Money {
         Money {
-            minor: self.minor.max(0),
-            exponent: self.exponent,
+            amount: self.amount.clamped_at_zero(),
+            places: self.places,
             unit: self.unit.clone(),
         }
     }
 
-    pub fn text(&self) -> String {
-        if self.exponent == 0 {
-            return self.minor.to_string();
+    pub fn percent_of(&self, whole: &Money) -> Option<f64> {
+        if !whole.is_positive() {
+            return None;
         }
-        let scale = 10_u64.pow(self.exponent);
-        let sign = if self.minor < 0 { "-" } else { "" };
-        let magnitude = self.minor.unsigned_abs();
-        format!(
-            "{sign}{}.{:0width$}",
-            magnitude / scale,
-            magnitude % scale,
-            width = self.exponent as usize
-        )
+        self.amount.ratio(&whole.amount).map(|ratio| ratio * 100.0)
+    }
+
+    pub fn text(&self) -> String {
+        self.amount.fixed(self.places)
     }
 }
 

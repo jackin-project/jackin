@@ -177,6 +177,55 @@ async fn usage_shows_decimals_money_left_and_a_dash_for_no_reset() -> TestResult
 }
 
 #[tokio::test]
+async fn usage_prints_sub_cent_openrouter_amounts_exactly_and_the_cache_repeats_them() -> TestResult
+{
+    guard(async {
+        let world = World::builder().build()?;
+        let config = env_account("router", "openrouter", "ROUTER_KEY");
+        let mut harness = started(&config, &world).await?;
+        harness
+            .env
+            .push(("ROUTER_KEY".to_owned(), "SECRET_TOKEN_ROUTER".to_owned()));
+        let server = world.usage.get().await?;
+        let body = "{\"data\":{\"limit\":1000000000000.000001,\"usage\":1000000000000,\"usage_daily\":0.004,\"usage_weekly\":\"0.0042\",\"usage_monthly\":1.5e-7}}";
+        server.serve(
+            Provider::Openrouter,
+            Method::Get,
+            "/api/v1/key",
+            Route::json(200, body).requires_header("authorization", "Bearer SECRET_TOKEN_ROUTER"),
+        );
+        let expected = "router\topenrouter\tKey limit\t100% used\t0.000001 USD left\t-\t-\n\
+             router\topenrouter\tKey spend\t-\t-\t1000000000000.00 USD spent\t-\n\
+             router\topenrouter\tDaily spend\t-\t-\t0.004 USD spent\t-\n\
+             router\topenrouter\tWeekly spend\t-\t-\t0.0042 USD spent\t-\n\
+             router\topenrouter\tMonthly spend\t-\t-\t0.00000015 USD spent\t-\n";
+        let first = harness.run(&["usage", "host"]).await?;
+        first.ok()?;
+        assert_eq!(first.stdout, expected);
+        server.replace(
+            Provider::Openrouter,
+            Method::Get,
+            "/api/v1/key",
+            Route::status(500),
+        );
+        let cached = harness.run(&["usage", "host"]).await?;
+        cached.ok()?;
+        assert_eq!(cached.stdout, expected);
+        let json = harness.run(&["usage", "host", "--json"]).await?;
+        json.ok()?;
+        for amount in ["0.000001", "1000000000000.00", "0.004", "0.0042", "0.00000015"] {
+            assert!(
+                json.stdout.contains(&format!("\"value\":\"{amount}\"")),
+                "{amount}: {}",
+                json.stdout
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn usage_json_prints_the_report_compactly_and_unchanged() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
