@@ -454,7 +454,7 @@ async fn refresh_selected(
                 if noisy {
                     app.io.note(&text);
                 } else {
-                    overview::note(app, &text);
+                    overview::note(app, &text, &[hub.id.to_string()]);
                 }
                 outcome.hubs_failed += 1;
                 outcome.first_error.get_or_insert_with(|| failure(error));

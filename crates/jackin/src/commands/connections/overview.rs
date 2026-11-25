@@ -61,11 +61,11 @@ fn print(app: &mut App, view: &UsageView, kind: Report) -> Result<(), CommandErr
     app.io.lines(&lines)
 }
 
-pub(super) fn note(app: &mut App, text: &str) {
+pub(super) fn note(app: &mut App, text: &str, atoms: &[String]) {
     let lines = view::text::wrap(
         Vec::new(),
         2,
-        &[(text.to_owned(), Tone::Plain)],
+        &view::text::split_atomic(text, Tone::Plain, atoms),
         context(app).columns(),
     );
     app.io.note(&render::plain(&lines));
@@ -78,6 +78,7 @@ fn introduce(app: &mut App) -> Result<(), CommandError> {
     note(
         app,
         "To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.",
+        &[],
     );
     Err(CommandError::NoUsageSnapshot)
 }
