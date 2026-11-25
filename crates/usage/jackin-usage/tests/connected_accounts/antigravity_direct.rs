@@ -1249,7 +1249,7 @@ async fn connect_without_registration_stops_before_browser_consent() -> Result<(
         .expect_err("an unauthorized registration must stop sign-in");
     assert_eq!(
         error.to_string(),
-        "Google has not authorized Jackin to use the Antigravity installed-app OAuth client"
+        "Google has not authorized Jackin to use the Antigravity installed-app OAuth client; use jackin account usage connect antigravity --status-line"
     );
     assert!(prompts.try_recv().is_err(), "sign-in opened a prompt");
     assert!(
