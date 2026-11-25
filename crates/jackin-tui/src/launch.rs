@@ -16,7 +16,7 @@ use jackin_console::launch::{
     EnvAnswer, EnvQuestion, FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, ReadyInstance,
     TypedKey,
 };
-use jackin_console::world::{Msg, World};
+use jackin_console::world::{LaunchLeft, Msg, World};
 use jackin_core::{
     AccountName, Config, ConfigEdit, ConfigError, EntropyError, EnvName, GatewayName, HostPath,
     IdError, LaunchId, PathError, PlainEnvValue, ProjectRoot, RoleName, SandboxName, Workspace,
@@ -687,23 +687,18 @@ impl Run {
             } => sandbox,
             RestoreFinding::Absent { .. } => return,
             RestoreFinding::Ambiguous(names) => {
-                self.left(format!(
-                    "Cancelled · several sandboxes match this launch: {} · check the fleet before launching again",
-                    names
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
+                self.left(LaunchLeft::Ambiguous {
+                    sandboxes: names.iter().map(ToString::to_string).collect(),
+                });
                 return;
             }
             RestoreFinding::Unconfirmed {
                 last_observed: None,
                 planned,
             } => {
-                self.left(format!(
-                    "Cancelled · the gateway could not confirm whether sandbox {planned} exists · the fleet shows the current state"
-                ));
+                self.left(LaunchLeft::Unconfirmed {
+                    sandbox: planned.to_string(),
+                });
                 return;
             }
         };
@@ -720,14 +715,14 @@ impl Run {
             Some(Ok(instance)) => self.backend.bridge.send(Msg::LaunchCancelled {
                 instance: Box::new(instance),
             }),
-            Some(Err(_)) | None => self.left(format!(
-                "Cancelled · sandbox {sandbox} was seen during this launch, but its details could not be read · the fleet shows the current state"
-            )),
+            Some(Err(_)) | None => self.left(LaunchLeft::Unread {
+                sandbox: sandbox.to_string(),
+            }),
         }
     }
 
-    fn left(&self, text: String) {
-        self.backend.bridge.send(Msg::LaunchLeft { text });
+    fn left(&self, left: LaunchLeft) {
+        self.backend.bridge.send(Msg::LaunchLeft { left });
         self.backend.refresh();
     }
 

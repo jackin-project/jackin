@@ -3161,7 +3161,7 @@
     }
   },
   "manifests": {
-    "Cargo.toml": "c96d7dbeb3d1a101d04b2ed2448a99504bb5c9fe94b443f4434ac50adbe4b2c1",
+    "Cargo.toml": "08ba13ebdb321fcb095236f27feccee4dd876b4bb9b5915adc54a2d3b41f8e7a",
     "crates/jackin-core/Cargo.toml": "b871d103affec6cb8259dfc9757d8fcb4ca5a80a2f55cf7378106f21f568d245",
     "crates/jackin-image/Cargo.toml": "9b97498a682f4cb9550f4019c4839a2c3a5ff99c142235d9e34edab30cb062f3",
     "crates/jackin-openshell/Cargo.toml": "6f0bc40a09df45272e0697b20345ed999e8f0118abc80a860c9fd57adfc7a4f3",
