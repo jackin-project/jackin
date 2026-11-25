@@ -1184,7 +1184,7 @@ impl Fleet {
         self.store.edit(edits, &CancellationToken::new()).await
     }
 
-    fn moved(&self, gateway: &str) -> Result<Vec<ConfigEdit>, Box<dyn std::error::Error>> {
+    fn moved(gateway: &str) -> Result<Vec<ConfigEdit>, Box<dyn std::error::Error>> {
         let gateway = GatewayName::parse(gateway)?;
         let entry = Config::parse(&format!(
             "[gateways.{gateway}]\nopenshell_workspace = \"default\"\nbuilder = \"moved\"\nplatform = \"linux/arm64\"\n"
@@ -1318,7 +1318,7 @@ async fn the_entry_of_the_gateway_being_removed_changed_after_a_removal_plan_ref
     guard(async {
         let fleet = fleet([true, true, true]).await?;
         let plan = fleet.removal("second").await?;
-        fleet.edit(fleet.moved("second")?).await?;
+        fleet.edit(Fleet::moved("second")?).await?;
 
         let error = fleet.refuses_without_a_gateway_operation(plan).await?;
 
@@ -1341,7 +1341,7 @@ async fn a_peer_entry_changed_after_a_removal_plan_refuses_the_apply_and_touches
     guard(async {
         let fleet = fleet([true, true, true]).await?;
         let plan = fleet.removal("second").await?;
-        fleet.edit(fleet.moved("third")?).await?;
+        fleet.edit(Fleet::moved("third")?).await?;
 
         let error = fleet.refuses_without_a_gateway_operation(plan).await?;
 
@@ -1401,7 +1401,7 @@ async fn a_login_account_added_after_an_offline_removal_plan_refuses_the_apply()
         let (_other, added) = other_login_account().await?;
         let config = fleet.edit(vec![ConfigEdit::AddAccount(added)]).await?;
 
-        let refused = plan.apply(&cancel).await.map_err(AccountEditError::from);
+        let refused = plan.apply(&cancel).await;
 
         assert!(
             matches!(
@@ -1473,7 +1473,10 @@ async fn removal_meddled_with_during_the_first_forget(
         .ok_or("a removal that went stale was committed")?;
     assert!(fleet.second.calls(GatewayOp::Provider) > operations[1]);
     assert_eq!(fleet.holders()?, [true, true, true]);
-    assert!(fleet.second.provider(&provider()?).ok_or("no provider")? == held);
+    assert_eq!(
+        fleet.second.provider(&provider()?).ok_or("no provider")?,
+        held
+    );
     assert_eq!(fleet.store.load().await?, meddled?);
     Ok((error, fleet.store.load().await?))
 }
