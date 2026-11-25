@@ -408,17 +408,20 @@ impl SessionSet {
         if scope == GatewayScope::Home {
             return Home::Ready(Box::new(Gateways::single(home)));
         }
-        let known: BTreeMap<GatewayName, Reached> = locked(&self.state)
-            .slots
-            .iter()
-            .map(|(name, slot)| {
-                let reached = match slot {
-                    Slot::Up(session) => Reached::Up(session.clone()),
-                    Slot::Down(error) => Reached::Down(Arc::clone(error)),
-                };
-                (name.clone(), reached)
-            })
-            .collect();
+        let known: BTreeMap<GatewayName, (Reached, Option<GatewayEntry>)> = {
+            let state = locked(&self.state);
+            state
+                .slots
+                .iter()
+                .map(|(name, slot)| {
+                    let reached = match slot {
+                        Slot::Up(session) => Reached::Up(session.clone()),
+                        Slot::Down(error) => Reached::Down(Arc::clone(error)),
+                    };
+                    (name.clone(), (reached, state.built.get(name).cloned()))
+                })
+                .collect()
+        };
         let unreachable = |name: &GatewayName, error: &GatewayError| {
             UnreachableGateway::new(
                 name.clone(),
@@ -430,16 +433,15 @@ impl SessionSet {
         };
         let mut peers = Vec::new();
         for (name, entry) in config.gateways().filter(|(name, _)| **name != default) {
-            let built = locked(&self.state).built.get(name).cloned();
             peers.push(match known.get(name) {
-                Some(Reached::Up(session)) if built.as_ref() == Some(entry) => {
+                Some((Reached::Up(session), built)) if built.as_ref() == Some(entry) => {
                     Ok(Session::clone(session))
                 }
-                Some(Reached::Up(_)) => self
-                    .redial(name, entry, built, connector, deadline, cancel)
+                Some((Reached::Up(_), built)) => self
+                    .redial(name, entry, built.clone(), connector, deadline, cancel)
                     .await
                     .map_err(|error| unreachable(name, &error)),
-                Some(Reached::Down(error)) => Err(unreachable(name, error)),
+                Some((Reached::Down(error), _)) => Err(unreachable(name, error)),
                 None => connector
                     .connect(name, entry, cancel)
                     .await
