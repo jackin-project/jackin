@@ -36,8 +36,8 @@ impl OwnedLogin {
         };
         let listing = tokio::select! {
             biased;
-            ()=cancel.cancelled()=>return Err(LoginError::Cancelled),
             result=list(&http,&address,key.expose())=>result?,
+            ()=cancel.cancelled()=>return Err(LoginError::Cancelled),
         };
         let key = SecretBytes::new(key.expose().as_bytes().to_vec());
         let write = CriticalWrite::begin();

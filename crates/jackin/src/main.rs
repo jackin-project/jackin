@@ -16,19 +16,19 @@ use jackin_tui::TerminalConsole;
 use jackin_usage::ProviderEndpoints;
 use tokio_util::sync::CancellationToken;
 
-fn fail(message: &str) -> ExitCode {
+fn fail(message: &str) -> ExitClass {
     drop(writeln!(std::io::stderr(), "error: {message}"));
-    ExitCode::from(ExitClass::Failure.code())
+    ExitClass::Failure
 }
 
 fn main() -> ExitCode {
     match jackin::drive(start()) {
-        Ok(code) => code,
-        Err(error) => fail(&error.to_string()),
+        Ok(driven) => driven.exit_code(),
+        Err(error) => ExitCode::from(fail(&error.to_string()).code()),
     }
 }
 
-async fn start() -> ExitCode {
+async fn start() -> ExitClass {
     let signals = match Signals::install() {
         Ok(signals) => signals,
         Err(error) => return fail(&error.to_string()),
@@ -97,5 +97,5 @@ async fn start() -> ExitCode {
             ExitClass::Cancelled
         }
     };
-    ExitCode::from(class.code())
+    class
 }
