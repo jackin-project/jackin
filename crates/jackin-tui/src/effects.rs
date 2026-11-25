@@ -487,7 +487,13 @@ impl Inputs {
     ) -> Result<Box<Gateways>, Refused> {
         let home = self
             .sessions
-            .home(config, scope, self.connect.as_ref(), &self.cancel)
+            .home(
+                config,
+                scope,
+                self.connect.as_ref(),
+                self.limits.connect_deadline,
+                &self.cancel,
+            )
             .await;
         match home {
             Home::Ready(gateways) => Ok(gateways),

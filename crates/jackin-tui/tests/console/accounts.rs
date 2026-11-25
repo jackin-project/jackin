@@ -744,7 +744,14 @@ async fn an_add_with_a_removal_forgets_the_provider_on_a_peer_the_console_has_no
 struct RecordingConnector {
     gateway: Arc<dyn Gateway>,
     entries: std::sync::Mutex<Vec<jackin_core::GatewayEntry>>,
-    refuse: bool,
+    behavior: std::sync::Mutex<Dial>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Dial {
+    Serve,
+    Refuse,
+    Stall,
 }
 
 #[async_trait::async_trait]
@@ -757,7 +764,12 @@ impl jackin_session::GatewayConnector for RecordingConnector {
     ) -> Result<Arc<dyn Gateway>, jackin_session::ConnectError> {
         if let Ok(mut entries) = self.entries.lock() {
             entries.push(entry.clone());
-            if self.refuse {
+        }
+        let behavior = self.behavior.lock().map_or(Dial::Serve, |held| *held);
+        match behavior {
+            Dial::Serve => {}
+            Dial::Stall => std::future::pending().await,
+            Dial::Refuse => {
                 return Err(jackin_session::ConnectError::Gateway(
                     jackin_openshell::GatewayError::Unreachable {
                         endpoint: "moved".to_owned(),
@@ -772,7 +784,7 @@ impl jackin_session::GatewayConnector for RecordingConnector {
 
 async fn save_after_the_home_entry_moved(
     lab: &mut Lab,
-    refuse: bool,
+    behavior: Dial,
 ) -> Result<(Arc<RecordingConnector>, jackin_core::GatewayEntry), Box<dyn std::error::Error>> {
     let home = lab
         .config()
@@ -785,9 +797,10 @@ async fn save_after_the_home_entry_moved(
     let connector = Arc::new(RecordingConnector {
         gateway: port,
         entries: std::sync::Mutex::new(Vec::new()),
-        refuse,
+        behavior: std::sync::Mutex::new(Dial::Serve),
     });
     lab.console = ConsoleRig::builder(&lab.rig.world)
+        .deadline(Duration::from_millis(300))
         .connector(connector_over(
             &lab.rig.world,
             Arc::<RecordingConnector>::clone(&connector),
@@ -795,6 +808,9 @@ async fn save_after_the_home_entry_moved(
         .build()
         .await?;
     lab.console.skip_intro();
+    if let Ok(mut held) = connector.behavior.lock() {
+        *held = behavior;
+    }
     let moved = jackin_core::Config::parse(
         "[gateways.moved]\nopenshell_workspace = \"default\"\nbuilder = \"moved\"\nplatform = \"linux/arm64\"\n",
     )?
@@ -828,7 +844,7 @@ async fn a_new_account_publishes_through_a_home_gateway_dialed_with_the_current_
 {
     guard(async {
         let mut lab = Lab::open().await?;
-        let (connector, moved) = save_after_the_home_entry_moved(&mut lab, false).await?;
+        let (connector, moved) = save_after_the_home_entry_moved(&mut lab, Dial::Serve).await?;
         assert!(lab.config().await?.account(&account("newlogin")?).is_some());
         assert!(
             lab.rig
@@ -855,7 +871,35 @@ async fn a_home_gateway_that_refuses_its_moved_entry_blocks_the_save_and_publish
     guard(async {
         let mut lab = Lab::open().await?;
         let before = lab.config().await?;
-        let (_connector, _moved) = save_after_the_home_entry_moved(&mut lab, true).await?;
+        let (_connector, _moved) = save_after_the_home_entry_moved(&mut lab, Dial::Refuse).await?;
+        let config = lab.config().await?;
+        assert!(config.account(&account("newlogin")?).is_none());
+        assert!(
+            !lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
+        assert_eq!(config.accounts().count(), before.accounts().count());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_home_gateway_that_stalls_on_its_moved_entry_blocks_the_save_within_the_connect_deadline()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let before = lab.config().await?;
+        let started = std::time::Instant::now();
+        let (_connector, _moved) = save_after_the_home_entry_moved(&mut lab, Dial::Stall).await?;
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "the save waited {:?} for a stalled dial with a 300ms deadline",
+            started.elapsed()
+        );
         let config = lab.config().await?;
         assert!(config.account(&account("newlogin")?).is_none());
         assert!(

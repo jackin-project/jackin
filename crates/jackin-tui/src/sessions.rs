@@ -344,6 +344,7 @@ impl SessionSet {
         config: &Config,
         scope: GatewayScope,
         connector: &dyn SessionConnector,
+        deadline: Duration,
         cancel: &CancellationToken,
     ) -> Home {
         let (default, cached, stale) = {
@@ -365,19 +366,27 @@ impl SessionSet {
         };
         let home = match stale {
             None => cached,
-            Some((entry, previous)) => match connector.connect(&default, &entry, cancel).await {
-                Ok(session) => {
-                    let mut state = locked(&self.state);
-                    if state.built.get(&default) == previous.as_ref() {
-                        state
-                            .slots
-                            .insert(default.clone(), Slot::Up(Box::new(session.clone())));
-                        state.built.insert(default.clone(), entry);
+            Some((entry, previous)) => {
+                match within(deadline, connector.connect(&default, &entry, cancel)).await {
+                    Some(Ok(session)) => {
+                        let mut state = locked(&self.state);
+                        if state.built.get(&default) == previous.as_ref() {
+                            state
+                                .slots
+                                .insert(default.clone(), Slot::Up(Box::new(session.clone())));
+                            state.built.insert(default.clone(), entry);
+                        }
+                        session
                     }
-                    session
+                    Some(Err(error)) => return Home::Down(Arc::new(error)),
+                    None => {
+                        return Home::Down(Arc::new(GatewayError::Unreachable {
+                            endpoint: default.to_string(),
+                            message: TimedOut(Waited(deadline)).to_string(),
+                        }));
+                    }
                 }
-                Err(error) => return Home::Down(Arc::new(error)),
-            },
+            }
         };
         if scope == GatewayScope::Home {
             return Home::Ready(Box::new(Gateways::single(home)));
