@@ -10,6 +10,7 @@ use jackin_core::{
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, ProviderMaterial, ProviderProfile, ProviderSpec,
+    ProviderWriteEffect,
 };
 use jackin_session::{AccountError, LaunchError, LaunchStep, plan_launch};
 use jackin_testkit::{Fault, Rig, Trigger, guard_within};
@@ -260,6 +261,38 @@ async fn a_cancel_while_a_failed_provider_rollback_leaves_the_provider_is_still_
             matches!(&**source, AccountError::RollbackFailed { account, .. } if account.as_str() == ACCOUNT),
             "{source:?}"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_write_that_changed_an_existing_provider_leaves_it_unsettled() -> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, key) = key_rig(b"KEY-ONE").await?;
+        ready(launch(&rig, 38).await?)?;
+        rig.gateway().delete_sandbox(&rig.sandbox_name(38)?).await?;
+        rig.world.fs.remove_file(&key).await?;
+        rig.world
+            .fs
+            .write_new(&key, b"KEY-TWO", FileMode(0o600))
+            .await?;
+        rig.gateway()
+            .inject(Fault::PutProviderFailsAfterWrite { error: broken() });
+        let failed = failure(launch(&rig, 39).await?)?;
+        assert_eq!(failed.step, LaunchStep::Provider);
+        let LaunchError::ProviderUnavailable { source, .. } = &*failed.error else {
+            return Err(format!("{:?}", failed.error).into());
+        };
+        assert!(
+            matches!(&**source, AccountError::ProviderWrite(write) if write.effect() == ProviderWriteEffect::Existing),
+            "{source:?}"
+        );
+        assert!(
+            source.leaves_provider_unsettled(),
+            "a provider changed in place was reported as settled: {source:?}"
+        );
+        assert_eq!(access_token(&rig)?.as_deref(), Some("KEY-TWO"));
         Ok(())
     })
     .await

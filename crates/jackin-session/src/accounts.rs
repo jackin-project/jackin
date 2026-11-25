@@ -120,10 +120,13 @@ impl AccountError {
 
     #[must_use]
     pub fn leaves_provider_unsettled(&self) -> bool {
-        matches!(
-            self,
-            AccountError::ProviderWriteUncertain { .. } | AccountError::RollbackFailed { .. }
-        )
+        match self {
+            AccountError::ProviderWriteUncertain { .. } | AccountError::RollbackFailed { .. } => {
+                true
+            }
+            AccountError::ProviderWrite(write) => write.effect() == ProviderWriteEffect::Existing,
+            _ => false,
+        }
     }
 
     #[must_use]
