@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, CaptureLimits, CaptureProblem, CredentialFileProblem, CredentialSource, FileIdentity,
-    HostPath, InterruptWatch, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret,
-    StoreImage, capture, lookup_tuple, read_credential_file,
+    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program, SQLITE_MAGIC,
+    STORE_VALUE_MAX_BYTES, Secret, StoreImage, capture, lookup_tuple, read_credential_file,
+    run_interruptible,
 };
 use jackin_usage_provider_core::Credential;
 use serde_json::Value;
@@ -22,14 +23,8 @@ const OPENCODE_LIMITS: CaptureLimits = CaptureLimits {
     database_bytes: 512 * 1024 * 1024,
     log_bytes: 128 * 1024 * 1024,
     image_bytes: 640 * 1024 * 1024,
+    deadline: Duration::from_secs(60),
 };
-const OMP_LIMITS: CaptureLimits = CaptureLimits {
-    database_bytes: 64 * 1024 * 1024,
-    log_bytes: 16 * 1024 * 1024,
-    image_bytes: 80 * 1024 * 1024,
-};
-const SECRET_VALUE_MAX_BYTES: usize = 64 * 1024;
-const SQL_DEADLINE: Duration = Duration::from_secs(5);
 const CODEX_LOGIN_FILE: &str = "auth.json";
 const OMP_DB: &str = jackin_core::OMP_HOST_STORE;
 const KIMI_CONFIG: &str = "config.toml";
@@ -367,6 +362,7 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
     let captured = match capture(deps.fs.as_ref(), path, OPENCODE_LIMITS).await {
         Ok(captured) => captured,
         Err(CaptureProblem::NotSqlite) => return Ok(None),
+        Err(CaptureProblem::Symlink) if !links_to_sqlite(deps, path).await => return Ok(None),
         Err(CaptureProblem::Missing) => return Err(Unresolved::Missing),
         Err(CaptureProblem::LogUnreadable | CaptureProblem::LogTooLarge) => {
             return Err(Unresolved::Unreadable(
@@ -388,6 +384,13 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
     Ok(Some(
         Material::login(found.value).with_revision(Some(revision)),
     ))
+}
+
+async fn links_to_sqlite(deps: &UsageDeps, path: &HostPath) -> bool {
+    match deps.fs.read_at(path, 0, SQLITE_MAGIC.len()).await {
+        Ok(head) => head == SQLITE_MAGIC,
+        Err(_) => false,
+    }
 }
 
 struct OpenCodeRecord {
@@ -485,7 +488,7 @@ async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Se
         ))?;
     let db = HostPath::resolve(Path::new(OMP_DB), &deps.home)
         .map_err(|_| Unresolved::Unreadable("the OMP database path is not usable"))?;
-    let captured = match capture(deps.fs.as_ref(), &db, OMP_LIMITS).await {
+    let captured = match capture(deps.fs.as_ref(), &db, OMP_CAPTURE_LIMITS).await {
         Ok(captured) => captured,
         Err(CaptureProblem::Missing) => return Err(Unresolved::Missing),
         Err(_) => return Err(Unresolved::Unreadable("the OMP store could not be read")),
@@ -546,7 +549,7 @@ fn read_omp_api_key(
 
 fn bounded_text(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<String> {
     let text = value.as_str()?;
-    if text.len() > SECRET_VALUE_MAX_BYTES {
+    if text.len() > STORE_VALUE_MAX_BYTES {
         return Err(rusqlite::Error::InvalidQuery);
     }
     Ok(text.to_owned())
@@ -577,24 +580,25 @@ where
 {
     let connection = store_connection(words.opened)?;
     let handle = connection.get_interrupt_handle();
-    let interrupt = InterruptWatch::new(move || handle.interrupt());
     let (opened, read) = (words.opened, words.read);
-    let finished = interrupt.finished();
-    let task = tokio::task::spawn_blocking(move || {
-        let done = finished;
-        let mut connection = connection;
-        let length = image.as_slice().len();
-        connection
-            .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
-            .map_err(|_| Unresolved::Unreadable(opened))?;
-        let result = work(&connection);
-        drop(done);
-        result
-    });
-    match tokio::time::timeout(SQL_DEADLINE, task).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(_)) | Err(_) => Err(Unresolved::Unreadable(read)),
-    }
+    let done = run_interruptible(
+        move || handle.interrupt(),
+        move || {
+            let mut connection = connection;
+            let length = image.as_slice().len();
+            connection
+                .deserialize_read_exact(
+                    "main",
+                    std::io::Cursor::new(image.as_slice()),
+                    length,
+                    true,
+                )
+                .map_err(|_| Unresolved::Unreadable(opened))?;
+            work(&connection)
+        },
+    )
+    .await;
+    done.unwrap_or(Err(Unresolved::Unreadable(read)))
 }
 
 fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unresolved> {

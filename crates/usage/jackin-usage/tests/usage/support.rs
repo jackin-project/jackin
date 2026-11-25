@@ -497,7 +497,7 @@ pub(crate) fn wal_checksum(
 pub(crate) fn rewrite_pages(
     wal: &[u8],
     page_size: usize,
-    set: &dyn Fn(usize, u32) -> u32,
+    set: &dyn Fn(usize, u32, u32) -> (u32, u32),
 ) -> Vec<u8> {
     let big_endian = wal[3] & 1 == 1;
     let mut out = wal.to_vec();
@@ -508,7 +508,10 @@ pub(crate) fn rewrite_pages(
     let mut offset = 32;
     while offset + frame <= out.len() && out[offset + 8..offset + 16] == wal[16..24] {
         let page = u32::from_be_bytes(out[offset..offset + 4].try_into().expect("page"));
-        out[offset..offset + 4].copy_from_slice(&set(index, page).to_be_bytes());
+        let commit = u32::from_be_bytes(out[offset + 4..offset + 8].try_into().expect("commit"));
+        let (page, commit) = set(index, page, commit);
+        out[offset..offset + 4].copy_from_slice(&page.to_be_bytes());
+        out[offset + 4..offset + 8].copy_from_slice(&commit.to_be_bytes());
         let (next_one, next_two) = wal_checksum(&out[offset..offset + 8], one, two, big_endian);
         let (next_one, next_two) = wal_checksum(
             &out[offset + 24..offset + frame],

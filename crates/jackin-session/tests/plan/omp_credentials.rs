@@ -1,8 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{HostPath, StdFileSystem};
+use std::io::Write as _;
+use std::path::Path;
+
+use jackin_core::{FileMode, FileSystem, HostPath, OMP_CAPTURE_LIMITS, StdFileSystem};
 use jackin_session::read_omp_host_key;
+use jackin_testkit::MemFs;
 
 use super::support::TestResult;
 
@@ -25,5 +29,64 @@ async fn omp_api_key_comes_from_the_selected_providers_sqlite_row() -> TestResul
     let key = read_omp_host_key(&fs, &host, "wanted").await?;
     assert_eq!(key.expose(), "fake-wanted-key");
     read_omp_host_key(&fs, &host, "absent").await.unwrap_err();
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_omp_store_behind_a_symbolic_link_is_not_followed() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let real = dir.path().join("real.db");
+    let connection = rusqlite::Connection::open(&real)?;
+    connection.execute_batch(
+        "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+         INSERT INTO auth_credentials (provider, credential_type, data) VALUES ('wanted', 'api_key', '{\"key\": \"fake-wanted-key\"}');",
+    )?;
+    drop(connection);
+    let link = dir.path().join("agent.db");
+    std::os::unix::fs::symlink(&real, &link)?;
+    let fs = StdFileSystem::default();
+    read_omp_host_key(&fs, &HostPath::parse(&link)?, "wanted")
+        .await
+        .unwrap_err();
+    let key = read_omp_host_key(
+        &fs,
+        &HostPath::parse(&std::fs::canonicalize(&real)?)?,
+        "wanted",
+    )
+    .await?;
+    assert_eq!(key.expose(), "fake-wanted-key");
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_omp_store_over_its_size_cap_is_unreadable() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("agent.db");
+    let mut file = std::fs::File::create(&path)?;
+    file.write_all(jackin_core::SQLITE_MAGIC)?;
+    file.set_len(u64::try_from(OMP_CAPTURE_LIMITS.database_bytes)? + 1)?;
+    drop(file);
+    read_omp_host_key(
+        &StdFileSystem::default(),
+        &HostPath::parse(&std::fs::canonicalize(&path)?)?,
+        "wanted",
+    )
+    .await
+    .unwrap_err();
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_omp_store_read_that_never_returns_is_given_up_on() -> TestResult {
+    let fs = MemFs::new();
+    let store = HostPath::parse(Path::new("/home/work/.omp/agent/agent.db"))?;
+    fs.create_dir_all(&HostPath::parse(Path::new("/home/work/.omp/agent"))?)
+        .await?;
+    fs.write_new(&store, jackin_core::SQLITE_MAGIC, FileMode(0o600))
+        .await?;
+    let probe = fs.stall_reads_of("agent.db");
+    read_omp_host_key(&fs, &store, "wanted").await.unwrap_err();
+    assert_eq!(probe.entered(), 1);
+    assert_eq!(probe.abandoned(), 1);
     Ok(())
 }

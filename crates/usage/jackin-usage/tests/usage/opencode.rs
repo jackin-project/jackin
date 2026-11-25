@@ -851,58 +851,173 @@ fn holds_secret(secret: &str, root: &Path) -> bool {
     false
 }
 
+fn large_page_store(directory: &Path) -> Result<(Connection, std::path::PathBuf), rusqlite::Error> {
+    let db = directory.join("opencode.db");
+    let connection = Connection::open(&db)?;
+    connection.execute_batch(
+        "PRAGMA page_size = 65536; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;",
+    )?;
+    connection.execute_batch(SCHEMA)?;
+    connection.execute(
+        "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_1', 'opencode', 'opencode', ?1, 1, 1, 1)",
+        rusqlite::params![credential(TOKEN, EXPIRES, None)],
+    )?;
+    connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+    connection.execute(
+        "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_2', 'opencode', 'opencode', ?1, 1, 2, 2)",
+        rusqlite::params![credential("SECRET_TOKEN_FROM_THE_LOG", EXPIRES, None)],
+    )?;
+    Ok((connection, directory.join("opencode.db-wal")))
+}
+
+async fn report_of_store(
+    directory: &Path,
+    token: &str,
+) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+    let harness = UsageHarness::new().await?;
+    harness.server.replace(
+        Provider::Opencode,
+        Method::Get,
+        PATH,
+        Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {token}")),
+    );
+    let account = account(
+        "opencode",
+        Provider::Opencode,
+        CredentialSource::File {
+            path: host_path_of(&directory.join("opencode.db")),
+        },
+    );
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        harness.report_cached(&account, directory),
+    )
+    .await
+    .map_err(|_| "the report did not finish")?
+}
+
 #[tokio::test]
 async fn a_log_that_names_a_page_far_beyond_the_store_is_ignored_where_it_cannot_apply()
 -> TestResult {
     use crate::support::rewrite_pages;
     guard(async {
         let directory = tempfile::tempdir()?;
-        let db = directory.path().join("opencode.db");
-        let connection = Connection::open(&db)?;
-        connection.execute_batch(
-            "PRAGMA page_size = 65536; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;",
-        )?;
-        connection.execute_batch(SCHEMA)?;
-        connection.execute(
-            "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_1', 'opencode', 'opencode', ?1, 1, 1, 1)",
-            rusqlite::params![credential(TOKEN, EXPIRES, None)],
-        )?;
-        connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
-        connection.execute(
-            "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_2', 'opencode', 'opencode', ?1, 1, 2, 2)",
-            rusqlite::params![credential("SECRET_TOKEN_FROM_THE_LOG", EXPIRES, None)],
-        )?;
-        let log = directory.path().join("opencode.db-wal");
+        let (connection, log) = large_page_store(directory.path())?;
         let wal = std::fs::read(&log)?;
         assert!(wal.len() >= 32 + 24 + 65_536);
-        assert_eq!(rewrite_pages(&wal, 65_536, &|_, page| page), wal);
+        assert_eq!(
+            rewrite_pages(&wal, 65_536, &|_, page, commit| (page, commit)),
+            wal
+        );
         let last = wal.len() / (24 + 65_536) - 1;
         std::fs::write(
             &log,
-            rewrite_pages(&wal, 65_536, &|index, page| {
-                if index == last { u32::MAX } else { page }
+            rewrite_pages(&wal, 65_536, &|index, page, commit| {
+                if index == last {
+                    (u32::MAX, commit)
+                } else {
+                    (page, commit)
+                }
             }),
         )?;
+        let outcome = report_of_store(directory.path(), "SECRET_TOKEN_FROM_THE_LOG").await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        drop(connection);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_log_that_commits_more_pages_than_the_image_cap_is_unreadable() -> TestResult {
+    use crate::support::rewrite_pages;
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let (connection, log) = large_page_store(directory.path())?;
+        let wal = std::fs::read(&log)?;
+        let last = wal.len() / (24 + 65_536) - 1;
+        for commit in [11_000_u32, u32::MAX] {
+            std::fs::write(
+                &log,
+                rewrite_pages(&wal, 65_536, &|index, page, was| {
+                    (page, if index == last { commit } else { was })
+                }),
+            )?;
+            let outcome = report_of_store(directory.path(), "SECRET_TOKEN_FROM_THE_LOG").await?;
+            assert!(
+                matches!(
+                    unavailable(&outcome),
+                    UnavailableReason::Provider(message)
+                        if message == "the OpenCode store could not be read"
+                ),
+                "commit size {commit}: {outcome:?}"
+            );
+        }
+        drop(connection);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symlinked_credential_file_that_is_not_the_store_is_read_as_a_credential() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let real = directory.path().join("dotfiles");
+        std::fs::create_dir(&real)?;
+        std::fs::write(real.join("opencode.json"), credential(TOKEN, EXPIRES, None))?;
+        let link = directory.path().join("opencode.json");
+        std::os::unix::fs::symlink(real.join("opencode.json"), &link)?;
         let harness = UsageHarness::new().await?;
         harness.server.replace(
             Provider::Opencode,
             Method::Get,
             PATH,
-            Route::json(200, USAGE).requires_header("authorization", "Bearer SECRET_TOKEN_FROM_THE_LOG"),
+            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {TOKEN}")),
         );
         let account = account(
             "opencode",
             Provider::Opencode,
-            CredentialSource::File { path: host_path_of(&db) },
+            CredentialSource::File {
+                path: host_path_of(&link),
+            },
         );
-        let outcome = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            harness.report_cached(&account, directory.path()),
-        )
-        .await
-        .map_err(|_| "the report did not finish")??;
+        let outcome = harness.report_cached(&account, directory.path()).await?;
         assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
-        drop(connection);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symlinked_store_is_refused() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let real = directory.path().join("dotfiles");
+        std::fs::create_dir(&real)?;
+        store(
+            &real,
+            &[("cred_1", "opencode", 1, &credential(TOKEN, EXPIRES, None))],
+        );
+        let link = directory.path().join("opencode.db");
+        std::os::unix::fs::symlink(real.join("opencode.db"), &link)?;
+        let harness = UsageHarness::new().await?;
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: host_path_of(&link),
+            },
+        );
+        let outcome = harness.report_cached(&account, directory.path()).await?;
+        assert!(
+            matches!(
+                unavailable(&outcome),
+                UnavailableReason::Provider(message)
+                    if message == "the OpenCode store could not be read"
+            ),
+            "{outcome:?}"
+        );
         Ok(())
     })
     .await

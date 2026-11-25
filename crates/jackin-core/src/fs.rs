@@ -344,10 +344,10 @@ fn read_below(
     if !meta.is_file() {
         return Ok(Err(RegularFileProblem::NotARegularFile));
     }
-    let mut bytes = Vec::new();
     let limit = u64::try_from(max_bytes)
         .unwrap_or(u64::MAX)
         .saturating_add(1);
+    let mut bytes = Vec::with_capacity(usize::try_from(meta.len().min(limit)).unwrap_or(0));
     (&mut opened).take(limit).read_to_end(&mut bytes)?;
     Ok(Ok(RegularFile {
         bytes,

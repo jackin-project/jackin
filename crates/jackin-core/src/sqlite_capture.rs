@@ -28,12 +28,23 @@ pub struct CaptureLimits {
     pub database_bytes: usize,
     pub log_bytes: usize,
     pub image_bytes: usize,
+    pub deadline: Duration,
 }
+
+pub const OMP_CAPTURE_LIMITS: CaptureLimits = CaptureLimits {
+    database_bytes: 64 * 1024 * 1024,
+    log_bytes: 16 * 1024 * 1024,
+    image_bytes: 80 * 1024 * 1024,
+    deadline: Duration::from_secs(30),
+};
+pub const STORE_VALUE_MAX_BYTES: usize = 64 * 1024;
+pub const STORE_QUERY_DEADLINE: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CaptureProblem {
     Missing,
     NotARegularFile,
+    Symlink,
     NotSqlite,
     DatabaseTooLarge,
     LogTooLarge,
@@ -41,6 +52,7 @@ pub enum CaptureProblem {
     LogUnreadable,
     Unreadable,
     Changed,
+    TimedOut,
 }
 
 pub struct StoreImage(Zeroizing<Vec<u8>>);
@@ -64,7 +76,7 @@ pub struct Capture {
 }
 
 enum Read {
-    Bytes(Vec<u8>),
+    Bytes(Zeroizing<Vec<u8>>),
     Absent,
 }
 
@@ -78,8 +90,14 @@ async fn read_file(
 ) -> Result<Read, CaptureProblem> {
     let file = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
     match fs.read_regular(dir, &file, limit).await {
-        Ok(Ok(found)) if found.bytes.len() > limit => Err(too_large),
-        Ok(Ok(found)) => Ok(Read::Bytes(found.bytes)),
+        Ok(Ok(found)) => {
+            let bytes = Zeroizing::new(found.bytes);
+            if bytes.len() > limit {
+                Err(too_large)
+            } else {
+                Ok(Read::Bytes(bytes))
+            }
+        }
         Ok(Err(RegularFileProblem::Missing))
         | Err(FsError::Io {
             kind: std::io::ErrorKind::NotFound,
@@ -99,8 +117,18 @@ pub async fn capture(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
+    tokio::time::timeout(limits.deadline, capture_pinned(fs, database, limits))
+        .await
+        .map_err(|_| CaptureProblem::TimedOut)?
+}
+
+async fn capture_pinned(
+    fs: &dyn FileSystem,
+    database: &HostPath,
+    limits: CaptureLimits,
+) -> Result<Capture, CaptureProblem> {
     match fs.stat(database).await {
-        Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::NotARegularFile),
+        Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
         Ok(_) => {}
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
@@ -141,7 +169,6 @@ pub async fn capture(
             return Err(CaptureProblem::Missing);
         };
         let (first, digest) = offload(move || {
-            let first = Zeroizing::new(first);
             let digest = Sha256::of(&first);
             (first, digest)
         })
@@ -159,7 +186,7 @@ pub async fn capture(
         )
         .await?
         {
-            Read::Bytes(bytes) => Some(Zeroizing::new(bytes)),
+            Read::Bytes(bytes) => Some(bytes),
             Read::Absent => None,
         };
         let Read::Bytes(again) = read_file(
@@ -178,11 +205,7 @@ pub async fn capture(
             continue;
         }
         let after = identity_of(fs, &target).await?;
-        let same = offload(move || {
-            let again = Zeroizing::new(again);
-            Sha256::of(&again) == digest
-        })
-        .await?;
+        let same = offload(move || Sha256::of(&again) == digest).await?;
         if before != after || !same {
             continue;
         }
@@ -373,7 +396,14 @@ fn apply_log(
         .checked_mul(page_size)
         .filter(|total| *total <= image_bytes)
         .ok_or(CaptureProblem::ImageTooLarge)?;
-    image.resize(total, 0);
+    if total > image.len() {
+        let mut grown = Zeroizing::new(Vec::with_capacity(total));
+        grown.extend_from_slice(image);
+        grown.resize(total, 0);
+        *image = grown;
+    } else {
+        image.truncate(total);
+    }
     for (page, at) in &frames[..committed] {
         let index = usize::try_from(*page).map_err(|_| bad)?;
         if index > pages {
@@ -392,8 +422,7 @@ fn apply_log(
     Ok(())
 }
 
-#[derive(Debug)]
-pub struct Finished(Arc<AtomicBool>);
+struct Finished(Arc<AtomicBool>);
 
 impl Drop for Finished {
     fn drop(&mut self) {
@@ -401,26 +430,20 @@ impl Drop for Finished {
     }
 }
 
-pub struct InterruptWatch {
+struct InterruptWatch {
     interrupt: Arc<dyn Fn() + Send + Sync>,
     finished: Arc<AtomicBool>,
 }
 
-impl std::fmt::Debug for InterruptWatch {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("InterruptWatch")
-    }
-}
-
 impl InterruptWatch {
-    pub fn new(interrupt: impl Fn() + Send + Sync + 'static) -> InterruptWatch {
+    fn new(interrupt: impl Fn() + Send + Sync + 'static) -> InterruptWatch {
         InterruptWatch {
             interrupt: Arc::new(interrupt),
             finished: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn finished(&self) -> Finished {
+    fn finished(&self) -> Finished {
         Finished(Arc::clone(&self.finished))
     }
 }
@@ -441,5 +464,24 @@ impl Drop for InterruptWatch {
                 std::thread::park_timeout(Duration::from_millis(25));
             }
         });
+    }
+}
+
+pub async fn run_interruptible<T: Send + 'static>(
+    interrupt: impl Fn() + Send + Sync + 'static,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, CaptureProblem> {
+    let watch = InterruptWatch::new(interrupt);
+    let finished = watch.finished();
+    let task = tokio::task::spawn_blocking(move || {
+        let done = finished;
+        let output = work();
+        drop(done);
+        output
+    });
+    match tokio::time::timeout(STORE_QUERY_DEADLINE, task).await {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(_)) => Err(CaptureProblem::Unreadable),
+        Err(_) => Err(CaptureProblem::TimedOut),
     }
 }

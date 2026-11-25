@@ -13,7 +13,7 @@ use jackin_core::{
     HostPath, LinkProblem, Provider, RegularFile, RegularFileProblem, RepoPath, StdFileSystem,
 };
 use jackin_testkit::{Method, Route, WorkingFs};
-use jackin_usage::{Refresh, UnavailableReason, UsageRequest};
+use jackin_usage::{Refresh, UnavailableReason, UsageError, UsageRequest};
 use rusqlite::Connection;
 use tokio_util::sync::CancellationToken;
 
@@ -115,6 +115,45 @@ async fn an_omp_account_reads_the_key_of_its_store() -> TestResult {
         let omp = started(&[(1, &key_json(KEY))]).await?;
         let outcome = omp.report().await?;
         assert_eq!(windows_of(&outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancelling_while_the_omp_store_read_stalls_stops_that_read() -> TestResult {
+    guard(async {
+        let harness = UsageHarness::new().await?;
+        harness
+            .put("/home/work/.omp/agent/agent.db", "SQLite format 3\0")
+            .await?;
+        let probe = harness.fs.stall_reads_of("agent.db");
+        let host = harness.host();
+        let cancel = CancellationToken::new();
+        let stopping = {
+            let cancel = cancel.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                cancel.cancel();
+            })
+        };
+        let request = UsageRequest {
+            accounts: vec![account("omp", Provider::Zai, CredentialSource::OmpHost)],
+            refresh: Refresh::Cached,
+        };
+        let finished =
+            tokio::time::timeout(Duration::from_secs(10), host.report(&request, &cancel)).await;
+        stopping.abort();
+        match finished.map_err(|_| "the cancelled report never returned")? {
+            Err(UsageError::Cancelled) => {}
+            Err(other) => panic!("expected cancellation, found {other:?}"),
+            Ok(report) => panic!(
+                "expected cancellation, found {} windows",
+                report.accounts.len()
+            ),
+        }
+        assert_eq!(probe.entered(), 1, "the store read never started");
+        assert_eq!(probe.abandoned(), 1, "the stalled read outlived the report");
         Ok(())
     })
     .await
@@ -422,7 +461,7 @@ impl ReplacingFs {
     fn new(inner: Arc<dyn FileSystem>, target: HostPath) -> ReplacingFs {
         ReplacingFs {
             inner,
-            target,
+            target: canonical_target(&target),
             identities: AtomicUsize::new(0),
         }
     }
@@ -446,9 +485,7 @@ impl FileSystem for ReplacingFs {
         self.inner.file_len(path).await
     }
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
-        if path.as_path().ends_with(".omp/agent/agent.db")
-            && self.identities.fetch_add(1, Ordering::SeqCst) == 1
-        {
+        if path == &self.target && self.identities.fetch_add(1, Ordering::SeqCst) == 1 {
             replace_store(self.target.as_path(), KEY_REPLACED);
         }
         self.inner.identity(path).await
@@ -524,7 +561,10 @@ impl std::fmt::Debug for ReusedInodeFs {
 
 impl ReusedInodeFs {
     fn new(inner: Arc<dyn FileSystem>, target: HostPath) -> ReusedInodeFs {
-        ReusedInodeFs { inner, target }
+        ReusedInodeFs {
+            inner,
+            target: canonical_target(&target),
+        }
     }
 }
 
@@ -546,7 +586,7 @@ impl FileSystem for ReusedInodeFs {
         self.inner.file_len(path).await
     }
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
-        if path.as_path().file_name() == self.target.as_path().file_name() {
+        if path == &self.target {
             return Ok(Some(FileIdentity { dev: 1, ino: 42 }));
         }
         self.inner.identity(path).await
@@ -607,6 +647,10 @@ impl FileSystem for ReusedInodeFs {
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         self.inner.read_regular(root, file, max_bytes).await
     }
+}
+
+fn canonical_target(target: &HostPath) -> HostPath {
+    host_path_of(&std::fs::canonicalize(target.as_path()).expect("the store exists"))
 }
 
 fn replace_store(live: &Path, key: &str) {

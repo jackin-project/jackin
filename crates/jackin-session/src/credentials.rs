@@ -218,14 +218,6 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
         .ok_or_else(|| invalid(key))
 }
 
-const OMP_LIMITS: jackin_core::CaptureLimits = jackin_core::CaptureLimits {
-    database_bytes: 64 * 1024 * 1024,
-    log_bytes: 16 * 1024 * 1024,
-    image_bytes: 80 * 1024 * 1024,
-};
-const OMP_VALUE_MAX_BYTES: usize = 64 * 1024;
-const OMP_SQL_DEADLINE: Duration = Duration::from_secs(5);
-
 fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Secret> {
     let data: String = connection
         .query_row(
@@ -233,7 +225,7 @@ fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Se
             [provider_id],
             |row| {
                 let text = row.get_ref(0)?.as_str()?;
-                if text.len() > OMP_VALUE_MAX_BYTES {
+                if text.len() > jackin_core::STORE_VALUE_MAX_BYTES {
                     return Err(rusqlite::Error::InvalidQuery);
                 }
                 Ok(text.to_owned())
@@ -257,7 +249,7 @@ pub async fn read_omp_host_key(
     let unreadable = || CredentialError::LoginUnreadable {
         path: db_path.clone(),
     };
-    let captured = jackin_core::capture(fs, db_path, OMP_LIMITS)
+    let captured = jackin_core::capture(fs, db_path, jackin_core::OMP_CAPTURE_LIMITS)
         .await
         .map_err(|_| unreadable())?;
     let connection = rusqlite::Connection::open_in_memory().map_err(|_| unreadable())?;
@@ -265,25 +257,26 @@ pub async fn read_omp_host_key(
         .execute_batch("PRAGMA temp_store = MEMORY;")
         .map_err(|_| unreadable())?;
     let handle = connection.get_interrupt_handle();
-    let interrupt = jackin_core::InterruptWatch::new(move || handle.interrupt());
     let wanted = provider_id.to_owned();
-    let finished = interrupt.finished();
-    let task = tokio::task::spawn_blocking(move || {
-        let done = finished;
-        let mut connection = connection;
-        let image = captured.image;
-        let length = image.as_slice().len();
-        connection
-            .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
-            .ok()?;
-        let found = omp_key_of(&connection, &wanted);
-        drop(done);
-        found
-    });
-    match tokio::time::timeout(OMP_SQL_DEADLINE, task).await {
-        Ok(Ok(Some(key))) => Ok(key),
-        _ => Err(unreadable()),
-    }
+    let found = jackin_core::run_interruptible(
+        move || handle.interrupt(),
+        move || {
+            let mut connection = connection;
+            let image = captured.image;
+            let length = image.as_slice().len();
+            connection
+                .deserialize_read_exact(
+                    "main",
+                    std::io::Cursor::new(image.as_slice()),
+                    length,
+                    true,
+                )
+                .ok()?;
+            omp_key_of(&connection, &wanted)
+        },
+    )
+    .await;
+    found.ok().flatten().ok_or_else(unreadable)
 }
 
 #[derive(Debug)]

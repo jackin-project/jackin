@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
@@ -48,6 +49,31 @@ struct FsState {
     next_inode: u64,
     calls: HashMap<FsOp, u32>,
     faults: Vec<FsFault>,
+    stall: Option<(String, Arc<StallProbe>)>,
+}
+
+#[derive(Debug, Default)]
+pub struct StallProbe {
+    entered: AtomicUsize,
+    abandoned: AtomicUsize,
+}
+
+impl StallProbe {
+    pub fn entered(&self) -> usize {
+        self.entered.load(Ordering::SeqCst)
+    }
+
+    pub fn abandoned(&self) -> usize {
+        self.abandoned.load(Ordering::SeqCst)
+    }
+}
+
+struct Abandoned<'a>(&'a StallProbe);
+
+impl Drop for Abandoned<'_> {
+    fn drop(&mut self) {
+        self.0.abandoned.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 #[derive(Debug)]
@@ -133,6 +159,12 @@ impl MemFs {
             nth: due,
             error: Some(error),
         });
+    }
+
+    pub fn stall_reads_of(&self, name: &str) -> Arc<StallProbe> {
+        let probe = Arc::new(StallProbe::default());
+        locked(&self.state).stall = Some((name.to_owned(), Arc::clone(&probe)));
+        probe
     }
 
     pub fn read_string(&self, path: &HostPath) -> Option<String> {
@@ -460,6 +492,16 @@ impl FileSystem for MemFs {
         file: &RepoPath,
         max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let stalled = locked(&self.state)
+            .stall
+            .as_ref()
+            .filter(|(name, _)| name == file.as_str())
+            .map(|(_, probe)| Arc::clone(probe));
+        if let Some(probe) = stalled {
+            probe.entered.fetch_add(1, Ordering::SeqCst);
+            let _abandoned = Abandoned(&probe);
+            std::future::pending::<()>().await;
+        }
         let state = self.enter(FsOp::Read)?;
         let mut current = root.as_path().to_path_buf();
         let mut names = file.as_str().split('/').peekable();
