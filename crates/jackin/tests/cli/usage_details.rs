@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::support::Harness;
+use super::usage_view::view_text;
 use jackin::ExitClass;
 use jackin_core::{Clock, SecretBytes};
 use jackin_testkit::{
-    TestResult, World, assert_golden, guard, pin_usage_view_clock, seed_usage_profile,
-    seed_usage_view,
+    TestResult, World, guard, pin_usage_view_clock, seed_usage_profile, seed_usage_view,
 };
 use jackin_usage::accounts::{
     AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, DATABASE_PATH,
     UsageProvider,
 };
+use jackin_usage::view::{Report, ViewFilter};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -155,7 +156,7 @@ async fn daily_details_report_exact_amounts_optional_failures_and_no_private_fie
 }
 
 #[tokio::test]
-async fn details_text_matches_the_golden_without_color_and_json_keeps_its_keys() -> TestResult {
+async fn details_text_is_the_details_report_without_color_and_json_keeps_its_keys() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         pin_usage_view_clock(&world.clock);
@@ -167,12 +168,19 @@ async fn details_text_matches_the_golden_without_color_and_json_keeps_its_keys()
             .ok_or("config dir")?
             .join(DATABASE_PATH);
         let accounts = seed_usage_view(&path)?;
-        let ids: Vec<Uuid> = accounts.iter().map(|account| account.id).collect();
         let text = cli.run(&["usage", "details"]).await?;
         text.ok()?;
         assert!(!text.stdout.contains('\x1b'));
         assert!(text.stderr.is_empty(), "{}", text.stderr);
-        assert_golden("tests/cli/golden/details.txt", &text.stdout, &ids)?;
+        assert!(
+            text.stdout.starts_with("Usage details · "),
+            "{}",
+            text.stdout
+        );
+        assert_eq!(
+            text.stdout,
+            view_text(&cli, &ViewFilter::default(), Report::Details)?
+        );
         let json = cli.run(&["usage", "details", "--json"]).await?;
         json.ok()?;
         assert!(!json.stdout.contains('\x1b'));
@@ -193,7 +201,8 @@ async fn details_text_matches_the_golden_without_color_and_json_keeps_its_keys()
 }
 
 #[tokio::test]
-async fn details_text_for_one_account_matches_the_golden_and_rejects_unknown_ones() -> TestResult {
+async fn details_text_for_one_account_is_that_accounts_report_and_unknown_ones_are_rejected()
+-> TestResult {
     guard(async {
         let world = World::builder().build()?;
         pin_usage_view_clock(&world.clock);
@@ -205,7 +214,6 @@ async fn details_text_for_one_account_matches_the_golden_and_rejects_unknown_one
             .ok_or("config dir")?
             .join(DATABASE_PATH);
         let accounts = seed_usage_view(&path)?;
-        let ids: Vec<Uuid> = accounts.iter().map(|account| account.id).collect();
         let codex = accounts
             .iter()
             .find(|account| account.provider == UsageProvider::ChatGpt)
@@ -215,7 +223,13 @@ async fn details_text_for_one_account_matches_the_golden_and_rejects_unknown_one
             .await?;
         one.ok()?;
         assert!(!one.stdout.contains('\x1b'));
-        assert_golden("tests/cli/golden/details-one.txt", &one.stdout, &ids)?;
+        let filter = ViewFilter {
+            provider: None,
+            account: Some(codex.id),
+        };
+        assert_eq!(one.stdout, view_text(&cli, &filter, Report::Details)?);
+        let everything = view_text(&cli, &ViewFilter::default(), Report::Details)?;
+        assert_ne!(one.stdout, everything);
         let unknown = cli
             .run(&["usage", "details", "--account", &Uuid::new_v4().to_string()])
             .await?;

@@ -20,6 +20,7 @@ use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use crate::engine::FakeEngine;
+use crate::engine_certs::EngineCertificateSet;
 use crate::fixtures::{FixtureError, RepoFixture, RoleFixture};
 use crate::gateway::{FakeGateway, ProgramScript, SandboxHandle};
 use crate::host::{FakeClock, TestRunner};
@@ -169,8 +170,13 @@ impl Rig {
     pub async fn write_engine_certs(&self) -> Result<(), FixtureError> {
         let directory = self.engine_certs()?;
         tokio::fs::create_dir_all(directory.as_path()).await?;
+        let certificates = EngineCertificateSet::generate()?;
         for cert in EngineCert::ALL {
-            tokio::fs::write(directory.as_path().join(cert.file_name()), engine_pem(cert)).await?;
+            tokio::fs::write(
+                directory.as_path().join(cert.file_name()),
+                certificates.pem(cert),
+            )
+            .await?;
         }
         Ok(())
     }

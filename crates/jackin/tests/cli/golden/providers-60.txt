@@ -1,0 +1,22 @@
+Providers · 11 tracked · 11 connected · 14 accounts
+
+PROVIDER                 ID           ACCOUNTS  NOTE
+Claude                   claude              2
+ChatGPT / Codex          codex               2
+Muse                     muse                1
+Grok                     grok                1
+Kimi                     kimi                1
+Z.AI                     zai                 1
+MiniMax                  minimax             1
+MiMo                     mimo                1
+Antigravity (Google AI)  antigravity         2  same account connected twice
+OpenCode                 opencode            1
+OpenRouter               openrouter          1
+
+Info  Gemini app (web):
+      chat limits are not tracked; there is no usage source.
+      Google AI plan quotas appear under Antigravity (Google
+      AI).
+
+Connect: jackin account usage connect <id>
+Filter:  jackin usage details --provider <id>

@@ -1,0 +1,40 @@
+  jackin❯    File   Go   Help                                       Usage › Overview  inside the sandbox  no instances  
+                                                                                                                        
+ ╭─ Priority ──────────────────────────────────────────────────────────────────────────────────────────── 4 readings ─╮ 
+ │   All Usage    Providers    Refresh    Attention…    Details                                                       │ 
+ │  Reading                                              Value       NEAR LIMIT · work@example.com             Muse   │ 
+ │     FAILING · personal@example.co… failed · fetched 1d 5h ago     ──────────────────────────────────────────────   │ 
+ │  ▎› NEAR LIMIT · work@example.com ·… stale · 99% used · 5d 8h     Weekly                stale · 99% used · 5d 8h   │ 
+ │     NEAR LIMIT · personal@ex… stale · dup · >99% used · 1d 7h     resets in 5d 8h · Mon 07:00                      │ 
+ │     DUPLICATE · personal@example.c… duplicate · 2 connections     Plan · Muse Code Max Usage                       │ 
+ │                                                                   stale · fetched 13h 57m ago                      │ 
+ │                                                                   7d window                                        │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ │                                                                                                                    │ 
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯ 
+                                                                                                                        
+ p Priority  → Full text  a All Usage  ↑↓ Move  Enter Open  r Refresh  m Accounts  Esc Back  R Roles  D Doctor          

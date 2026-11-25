@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{DockerRisk, EngineCert, EnvFile, sandbox_layout};
-use jackin_testkit::{KEY_MARKER, Rig, TestResult, engine_pem, guard, launch_id};
+use jackin_testkit::{EngineCertificateSet, Rig, TestResult, engine_pem, guard, launch_id};
 
 use jackin::ExitClass;
 
@@ -17,13 +17,20 @@ const RISKS: [&str; DockerRisk::ALL.len()] = [
     "  The engine outlives the sandbox. Sandboxes that share one engine see each other's containers, and you remove them.",
 ];
 
-fn certs(rig: &Rig) -> Result<String, Failure> {
+fn certs(rig: &Rig) -> Result<(String, Vec<String>), Failure> {
     let dir = rig.home.as_path().join("engine-certs");
     std::fs::create_dir(&dir)?;
+    let certificates = EngineCertificateSet::generate()?;
     for cert in EngineCert::ALL {
-        std::fs::write(dir.join(cert.file_name()), engine_pem(cert))?;
+        std::fs::write(dir.join(cert.file_name()), certificates.pem(cert))?;
     }
-    Ok(dir.display().to_string())
+    let key_lines = certificates
+        .key
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .map(str::to_owned)
+        .collect();
+    Ok((dir.display().to_string(), key_lines))
 }
 
 async fn env_names(rig: &Rig, id: u8) -> Result<Vec<String>, Failure> {
@@ -43,7 +50,7 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
         let rig = Rig::new().await?;
         let mut harness = Harness::new(&rig.world);
         harness.cwd = rig.repo.root().clone();
-        let certs = certs(&rig)?;
+        let (certs, key_lines) = certs(&rig)?;
         let root = rig.loaded.root().as_path().display().to_string();
         let home = rig.home.as_path().display().to_string();
         let repo = rig.repo.root().as_path().display().to_string();
@@ -89,7 +96,9 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
             "{}",
             ran.stderr
         );
-        assert!(!ran.stderr.contains(KEY_MARKER) && !ran.stdout.contains(KEY_MARKER));
+        for line in &key_lines {
+            assert!(!ran.stderr.contains(line) && !ran.stdout.contains(line));
+        }
         let after: Vec<&str> = ran
             .stderr
             .lines()
@@ -111,16 +120,18 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
         }
 
         let key = std::path::Path::new(&certs).join("key.pem");
-        let valid = rig.home.as_path().join("other-key.pem");
-        std::fs::write(&valid, engine_pem(EngineCert::Key))?;
+        let target = rig.home.as_path().join("other-key.pem");
+        std::fs::write(&target, engine_pem(EngineCert::Key))?;
         std::fs::remove_file(&key)?;
-        std::os::unix::fs::symlink(&valid, &key)?;
+        std::os::unix::fs::symlink(&target, &key)?;
         let refused = harness
             .run(&["load", "--launch-id", &launch_id(3).to_string()])
             .await?;
         failed(&refused, ExitClass::Failure, &["key.pem"])?;
         assert!(!refused.stderr.contains(WARNING), "{}", refused.stderr);
-        assert!(!refused.stderr.contains(KEY_MARKER));
+        for line in &key_lines {
+            assert!(!refused.stderr.contains(line));
+        }
         std::fs::remove_file(&key)?;
         std::fs::write(&key, engine_pem(EngineCert::Key))?;
         harness.write_config(&rig.config.render())?;

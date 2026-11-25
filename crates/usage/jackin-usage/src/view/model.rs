@@ -155,6 +155,14 @@ pub struct ResetCredit {
     pub kind: String,
     pub status: ResetStatus,
     pub expires_at: Timestamp,
+    pub remaining: u64,
+    pub index: usize,
+}
+
+impl ResetCredit {
+    pub fn number(&self) -> usize {
+        self.index + 1
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

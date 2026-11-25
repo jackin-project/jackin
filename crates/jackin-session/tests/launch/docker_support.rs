@@ -125,6 +125,32 @@ pub(crate) fn padded(label: &str, total: usize) -> Vec<u8> {
     text.into_bytes()
 }
 
+pub(crate) fn assert_hides_key(shown: &str, key_pem: &str) -> Result<(), Box<dyn Error>> {
+    use base64::Engine as _;
+
+    let body = jackin_testkit::pem_body(key_pem);
+    assert!(!shown.contains(&body), "the key body leaked");
+    for line in key_pem.lines().filter(|line| !line.starts_with("-----")) {
+        assert!(!shown.contains(line), "a key line leaked");
+    }
+    let der = base64::engine::general_purpose::STANDARD.decode(&body)?;
+    let scalar = der
+        .windows(2)
+        .position(|pair| pair == [0x04, 0x20])
+        .ok_or("the key holds no 32 byte private scalar")?;
+    let window = der
+        .get(scalar + 6..scalar + 18)
+        .ok_or("the key is too short")?;
+    let spaced: Vec<String> = window.iter().map(|byte| format!("{byte:02x}")).collect();
+    let hex = spaced.concat();
+    let decimal = format!("{window:?}");
+    let shown = shown.to_lowercase();
+    for form in [hex, spaced.join(" "), decimal] {
+        assert!(!shown.contains(&form), "the key bytes leaked as {form}");
+    }
+    Ok(())
+}
+
 pub(crate) fn split_failure(
     outcome: Outcome,
 ) -> Result<(Vec<LaunchEvent>, LaunchFailure), Box<dyn Error>> {
