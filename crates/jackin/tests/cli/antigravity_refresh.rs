@@ -847,7 +847,7 @@ async fn the_final_error_line_of_a_failed_refresh_fits_80_piped_and_60_on_a_term
     .await
 }
 
-async fn failing_hub_lab(world: &World) -> Result<Harness, Failure> {
+async fn failing_hub_lab(world: &World) -> Result<(Harness, UsageServer), Failure> {
     use jackin_usage::onboarding::OwnedLogin as Login;
     use tokio_util::sync::CancellationToken;
     let server = UsageServer::start().await?;
@@ -882,15 +882,14 @@ async fn failing_hub_lab(world: &World) -> Result<Harness, Failure> {
         .await?;
     statusline_account(world, &cli, &path).await?;
     server.replace(Provider::Claude, Method::Get, listing, Route::status(500));
-    std::mem::forget(server);
-    Ok(cli)
+    Ok((cli, server))
 }
 
 #[tokio::test]
 async fn a_failed_hub_sync_note_and_error_fit_80_piped_and_60_on_a_terminal() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
-        let cli = failing_hub_lab(&world).await?;
+        let (cli, _server) = failing_hub_lab(&world).await?;
         let piped = cli.run(&["usage", "refresh"]).await?;
         assert_ne!(piped.exit, ExitClass::Ok, "{}", piped.stderr);
         assert!(!piped.stderr.is_empty());
