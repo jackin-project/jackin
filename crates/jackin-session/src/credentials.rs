@@ -241,6 +241,16 @@ fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Se
     }
 }
 
+fn omp_connection() -> rusqlite::Result<rusqlite::Connection> {
+    let connection = rusqlite::Connection::open_in_memory()?;
+    connection.execute_batch(jackin_core::STORE_PRAGMAS)?;
+    connection.set_limit(
+        rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+        jackin_core::STORE_LENGTH_LIMIT,
+    )?;
+    Ok(connection)
+}
+
 pub async fn read_omp_host_key(
     fs: &dyn FileSystem,
     db_path: &HostPath,
@@ -252,16 +262,7 @@ pub async fn read_omp_host_key(
     let captured = jackin_core::capture(fs, db_path, jackin_core::OMP_CAPTURE_LIMITS)
         .await
         .map_err(|_| unreadable())?;
-    let connection = rusqlite::Connection::open_in_memory().map_err(|_| unreadable())?;
-    connection
-        .execute_batch("PRAGMA temp_store = MEMORY; PRAGMA trusted_schema = OFF;")
-        .map_err(|_| unreadable())?;
-    connection
-        .set_limit(
-            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
-            jackin_core::STORE_LENGTH_LIMIT,
-        )
-        .map_err(|_| unreadable())?;
+    let connection = omp_connection().map_err(|_| unreadable())?;
     let wanted = provider_id.to_owned();
     let found = jackin_core::run_bounded(jackin_core::STORE_QUERY_DEADLINE, move |mut budget| {
         let mut connection = connection;
@@ -1178,5 +1179,20 @@ pub async fn resolve_static_key(
         CredentialSource::OnePassword { .. }
         | CredentialSource::CodexLogin { .. }
         | CredentialSource::HostLogin { .. } => Err(missing()),
+    }
+}
+
+#[cfg(test)]
+mod store_connection_tests {
+    #[test]
+    fn an_omp_connection_distrusts_the_schema_and_limits_value_length() -> rusqlite::Result<()> {
+        let connection = super::omp_connection()?;
+        let trusted: i64 = connection.query_row("PRAGMA trusted_schema", [], |row| row.get(0))?;
+        assert_eq!(trusted, 0);
+        assert_eq!(
+            connection.limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH)?,
+            jackin_core::STORE_LENGTH_LIMIT
+        );
+        Ok(())
     }
 }

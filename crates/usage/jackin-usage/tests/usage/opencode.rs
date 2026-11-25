@@ -1046,39 +1046,46 @@ async fn a_symlinked_store_is_refused() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_symlink_to_a_pipe_is_refused_without_blocking_the_console() -> TestResult {
+async fn a_pipe_at_the_store_or_behind_a_link_is_refused_without_blocking_the_console() -> TestResult
+{
     guard(async {
-        let directory = tempfile::tempdir()?;
-        let fifo = directory.path().join("pipe");
-        let made = tokio::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .await?;
-        assert!(made.success(), "mkfifo failed");
-        let link = directory.path().join("opencode.db");
-        std::os::unix::fs::symlink(&fifo, &link)?;
-        let harness = UsageHarness::new().await?;
-        let account = account(
-            "opencode",
-            Provider::Opencode,
-            CredentialSource::File {
-                path: host_path_of(&link),
-            },
-        );
-        let outcome = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            harness.report_cached(&account, directory.path()),
-        )
-        .await
-        .map_err(|_| "the pipe behind the link blocked the console")??;
-        assert!(
-            matches!(
-                unavailable(&outcome),
-                UnavailableReason::Provider(message)
-                    if message == "the credential file is not a regular file"
-            ),
-            "{outcome:?}"
-        );
+        for linked in [false, true] {
+            let directory = tempfile::tempdir()?;
+            let fifo = directory
+                .path()
+                .join(if linked { "pipe" } else { "opencode.db" });
+            let made = tokio::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .await?;
+            assert!(made.success(), "mkfifo failed");
+            let store = directory.path().join("opencode.db");
+            if linked {
+                std::os::unix::fs::symlink(&fifo, &store)?;
+            }
+            let harness = UsageHarness::new().await?;
+            let account = account(
+                "opencode",
+                Provider::Opencode,
+                CredentialSource::File {
+                    path: host_path_of(&store),
+                },
+            );
+            let outcome = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                harness.report_cached(&account, directory.path()),
+            )
+            .await
+            .map_err(|_| format!("the pipe blocked the console (linked: {linked})"))??;
+            assert!(
+                matches!(
+                    unavailable(&outcome),
+                    UnavailableReason::Provider(message)
+                        if message == "the credential file is not a regular file"
+                ),
+                "linked {linked}: {outcome:?}"
+            );
+        }
         Ok(())
     })
     .await

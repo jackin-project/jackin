@@ -14,7 +14,8 @@ use crate::paths::{HostPath, RepoPath};
 pub const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
 
-const ATTEMPTS: usize = 3;
+const ATTEMPTS: usize = 5;
+const RETRY_PAUSE: Duration = Duration::from_millis(40);
 const CAPTURE_SLOTS: usize = 2;
 const WAL_HEADER: usize = 32;
 const WAL_FRAME_HEADER: usize = 24;
@@ -40,6 +41,7 @@ pub const OMP_CAPTURE_LIMITS: CaptureLimits = CaptureLimits {
 };
 pub const STORE_VALUE_MAX_BYTES: usize = 64 * 1024;
 pub const STORE_QUERY_DEADLINE: Duration = Duration::from_secs(5);
+pub const STORE_PRAGMAS: &str = "PRAGMA temp_store = MEMORY; PRAGMA trusted_schema = OFF;";
 pub const STORE_QUERY_STEP: i32 = 1000;
 const STORE_QUERY_GRACE: Duration = Duration::from_secs(1);
 pub const STORE_QUERY_MAX_STEPS: usize = 200_000;
@@ -199,7 +201,13 @@ async fn capture_pinned(
         Ok(Err(_)) => return Err(CaptureProblem::NotARegularFile),
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
-    for _ in 0..ATTEMPTS {
+    for attempt in 0..ATTEMPTS {
+        if attempt > 0 {
+            tokio::time::sleep(RETRY_PAUSE * u32::try_from(attempt).unwrap_or(1)).await;
+        }
+        if journal_is_hot(fs, &dir, &journal_name).await? {
+            continue;
+        }
         let before = fence_of(fs, &dir, &target, &log_target).await?;
         let Some((first, log)) = read_pair(fs, &dir, name, &log_name, limits).await? else {
             continue;
@@ -272,6 +280,18 @@ fn same_bytes(one: &Read, two: &Read) -> bool {
     }
 }
 
+fn log_only_grew(one: &Read, two: &Read) -> bool {
+    match (one, two) {
+        (Read::Bytes(one), Read::Bytes(two)) => {
+            two.len() >= one.len()
+                && two.starts_with(one)
+                && (one.len() >= WAL_HEADER || one.len() == two.len())
+        }
+        (Read::Absent, Read::Absent) => true,
+        _ => false,
+    }
+}
+
 async fn read_pair(
     fs: &dyn FileSystem,
     dir: &HostPath,
@@ -295,7 +315,7 @@ async fn read_pair(
     }
     let log_again = read_log(fs, dir, log_name, limits).await?;
     let (log_first, same) = offload(move || {
-        let same = same_bytes(&log_first, &log_again);
+        let same = log_only_grew(&log_first, &log_again);
         (log_first, same)
     })
     .await?;

@@ -7,7 +7,7 @@ use std::time::Duration;
 use jackin_core::{
     Agent, CaptureLimits, CaptureProblem, CredentialFileProblem, CredentialSource, FileIdentity,
     HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath,
-    SQLITE_MAGIC, STORE_LENGTH_LIMIT, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
+    SQLITE_MAGIC, STORE_LENGTH_LIMIT, STORE_PRAGMAS, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
     STORE_VALUE_MAX_BYTES, Secret, StoreImage, capture, lookup_tuple, read_credential_file,
     run_bounded,
 };
@@ -362,7 +362,7 @@ async fn minimax_host_login(
 async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Material>, Unresolved> {
     let captured = match capture(deps.fs.as_ref(), path, OPENCODE_LIMITS).await {
         Ok(captured) => captured,
-        Err(CaptureProblem::NotSqlite) => return Ok(None),
+        Err(CaptureProblem::NotSqlite | CaptureProblem::NotARegularFile) => return Ok(None),
         Err(CaptureProblem::Symlink) if !links_to_sqlite(deps, path).await => return Ok(None),
         Err(CaptureProblem::Missing) => return Err(Unresolved::Missing),
         Err(CaptureProblem::LogUnreadable | CaptureProblem::LogTooLarge) => {
@@ -620,7 +620,7 @@ fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unreso
     let connection =
         rusqlite::Connection::open_in_memory().map_err(|_| Unresolved::Unreadable(opened))?;
     connection
-        .execute_batch("PRAGMA temp_store = MEMORY; PRAGMA trusted_schema = OFF;")
+        .execute_batch(STORE_PRAGMAS)
         .map_err(|_| Unresolved::Unreadable(opened))?;
     connection
         .set_limit(
@@ -716,6 +716,20 @@ mod tests {
 
     fn identity(ino: u64) -> FileIdentity {
         FileIdentity { dev: 3, ino }
+    }
+
+    #[test]
+    fn a_store_connection_distrusts_the_schema_and_limits_value_length() -> rusqlite::Result<()> {
+        let Ok(connection) = super::store_connection("opened") else {
+            panic!("a connection");
+        };
+        let trusted: i64 = connection.query_row("PRAGMA trusted_schema", [], |row| row.get(0))?;
+        assert_eq!(trusted, 0);
+        assert_eq!(
+            connection.limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH)?,
+            jackin_core::STORE_LENGTH_LIMIT
+        );
+        Ok(())
     }
 
     #[test]

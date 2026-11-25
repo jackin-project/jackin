@@ -90,3 +90,28 @@ async fn an_omp_store_read_that_never_returns_is_given_up_on() -> TestResult {
     assert_eq!(probe.abandoned(), 1);
     Ok(())
 }
+
+fn view_store(dir: &Path, view: &str) -> Result<HostPath, Box<dyn std::error::Error>> {
+    let path = dir.join("agent.db");
+    let connection = rusqlite::Connection::open(&path)?;
+    connection.execute_batch(view)?;
+    drop(connection);
+    Ok(HostPath::parse(&std::fs::canonicalize(&path)?)?)
+}
+
+#[tokio::test]
+async fn an_omp_credential_view_that_never_finishes_is_given_up_on() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let store = view_store(
+        dir.path(),
+        "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'wanted' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
+    )?;
+    let finished = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        read_omp_host_key(&StdFileSystem::default(), &store, "wanted"),
+    )
+    .await
+    .map_err(|_| "the read never finished")?;
+    finished.unwrap_err();
+    Ok(())
+}

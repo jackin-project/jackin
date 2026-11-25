@@ -3,7 +3,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use jackin_core::{
@@ -443,25 +443,28 @@ async fn a_read_that_never_returns_is_given_up_at_the_deadline() -> TestResult {
 
 #[tokio::test]
 async fn a_capture_that_the_caller_drops_leaves_no_read_behind() -> TestResult {
-    let fs = fixture(&[("agent.db", database(512))]).await?;
+    let fs = Arc::new(fixture(&[("agent.db", database(512))]).await?);
     let probe = fs.stall_reads_of("agent.db");
-    let waited = tokio::time::timeout(
-        Duration::from_millis(100),
-        capture(&fs, &at("agent.db")?, LIMITS),
-    )
-    .await;
-    assert!(waited.is_err(), "the stalled capture finished");
+    let running = tokio::spawn({
+        let fs = Arc::clone(&fs);
+        async move {
+            capture(&*fs, &at("agent.db").expect("a path"), LIMITS)
+                .await
+                .map(|_| ())
+        }
+    });
+    for _ in 0..500 {
+        if probe.entered() == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     assert_eq!(probe.entered(), 1);
+    assert_eq!(probe.abandoned(), 0);
+    running.abort();
+    drop(running.await);
     assert_eq!(probe.abandoned(), 1);
     Ok(())
-}
-
-async fn image_of(files: &[(&str, Vec<u8>)]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let fs = fixture(files).await?;
-    let captured = capture(&fs, &at("agent.db")?, LIMITS)
-        .await
-        .map_err(|problem| format!("{problem:?}"))?;
-    Ok(captured.image.as_slice().to_vec())
 }
 
 #[tokio::test]
@@ -594,22 +597,104 @@ async fn a_log_that_appears_between_the_reads_is_read_again() -> TestResult {
     Ok(())
 }
 
+fn reissue_at(fs: &MemFs, count: usize, target: &str) {
+    if let (2, Ok(path)) = (count, at(target)) {
+        fs.reissue_inode(&path);
+    }
+}
+
+async fn image_of(files: &[(&str, Vec<u8>)]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let fs = fixture(files).await?;
+    let captured = capture(&fs, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    Ok(captured.image.as_slice().to_vec())
+}
+
 #[tokio::test]
-async fn a_database_or_directory_replaced_during_the_capture_is_noticed() -> TestResult {
-    for (name, target) in [("agent.db", "agent.db"), ("agent.db", "")] {
-        let reissue = move |fs: &MemFs, count: usize| {
-            if count == 2 {
-                fs.reissue_inode(&at(target).expect("a path"));
+async fn a_database_log_or_directory_replaced_during_the_capture_is_noticed() -> TestResult {
+    for target in ["agent.db", "agent.db-wal", ""] {
+        let reads = Arc::new(AtomicUsize::new(0));
+        let reissue = {
+            let reads = Arc::clone(&reads);
+            move |fs: &MemFs, count: usize| {
+                reads.store(count, Ordering::SeqCst);
+                reissue_at(fs, count, target);
             }
         };
-        let image = swapped_during(name, reissue, log(&[(1, 1, marked_page(9))]))
+        let image = swapped_during("agent.db", reissue, log(&[(1, 1, marked_page(9))]))
             .await?
             .map_err(|problem| format!("{problem:?}"))?;
         assert_eq!(image[100], 9, "{target:?}");
+        assert_eq!(
+            reads.load(Ordering::SeqCst),
+            5,
+            "{target:?}: the capture was not repeated"
+        );
         let always = move |fs: &MemFs, _: usize| fs.reissue_inode(&at(target).expect("a path"));
-        let refused = swapped_during(name, always, log(&[(1, 1, marked_page(9))])).await?;
+        let refused = swapped_during("agent.db", always, log(&[(1, 1, marked_page(9))])).await?;
         assert_eq!(refused, Err(CaptureProblem::Changed), "{target:?}");
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_log_that_only_grows_between_its_reads_is_taken_at_its_first_read() -> TestResult {
+    let reads = Arc::new(AtomicUsize::new(0));
+    let grown = log(&[(1, 1, marked_page(9)), (2, 2, vec![7; 512])]);
+    let grows = {
+        let reads = Arc::clone(&reads);
+        move |fs: &MemFs, count: usize| {
+            reads.store(count, Ordering::SeqCst);
+            if count == 1 {
+                fs.overwrite(&at("agent.db-wal").expect("a path"), grown.clone());
+            }
+        }
+    };
+    let fs = fixture(&[
+        ("agent.db", page_database(1)),
+        ("agent.db-wal", log(&[(1, 1, marked_page(9))])),
+    ])
+    .await?;
+    let appended = Arc::new(AtomicUsize::new(0));
+    fs.after_read_of("agent.db-wal", grows);
+    fs.after_read_of("agent.db", {
+        let appended = Arc::clone(&appended);
+        move |_: &MemFs, count: usize| appended.store(count, Ordering::SeqCst)
+    });
+    let captured = capture(&fs, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    let image = captured.image.as_slice();
+    assert_eq!(image.len(), 512);
+    assert_eq!(image[100], 9);
+    assert_eq!(
+        appended.load(Ordering::SeqCst),
+        3,
+        "the capture was repeated"
+    );
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_log_that_shrinks_or_restarts_between_its_reads_is_read_again() -> TestResult {
+    let restarted = Wal {
+        salt: [8, 7, 6, 5, 4, 3, 2, 1],
+        frame_salt: [8, 7, 6, 5, 4, 3, 2, 1],
+        ..Wal::standard()
+    }
+    .build(&[(1, 1, marked_page(7)), (2, 2, vec![7; 512])]);
+    let swap = move |fs: &MemFs, count: usize| {
+        if count == 1 {
+            fs.overwrite(&at("agent.db-wal").expect("a path"), restarted.clone());
+        }
+    };
+    let image = swapped_during("agent.db-wal", swap, log(&[(1, 1, marked_page(9))]))
+        .await?
+        .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(image[100], 7);
+    assert_eq!(image.len(), 2 * 512);
     Ok(())
 }
 
