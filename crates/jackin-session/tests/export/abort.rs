@@ -8,7 +8,7 @@ use jackin_core::{Clock, GroupFault, ProcessError, Program};
 use jackin_openshell::{GatewayError, GatewayOp, TransferOp};
 use jackin_session::ExportError;
 use jackin_testkit::{
-    CancelsOn, FakeClock, Fault, Rig, TestResult, Trigger, default_limits, guard,
+    CancelsOn, FakeClock, Fault, Rig, TestResult, Trigger, default_limits, guard, guard_within,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -287,6 +287,38 @@ async fn a_gateway_cancel_or_timeout_with_a_group_fault_keeps_the_fault_through_
         assert_eq!(after.rest, before.rest);
         assert!(exports(&after).is_empty());
         assert_eq!(staging_left(&rig)?, Vec::<String>::new());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_interrupts_a_hung_lookup_at_the_start_of_an_export() -> TestResult {
+    guard_within(Duration::from_secs(20), async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        handle.commit_in_project("a.txt", b"a", "work").await?;
+        let before = snapshot(&rig).await?;
+        let hold = Trigger::Op(GatewayOp::Find);
+        rig.world.gateway.inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let driver = async {
+            assert!(rig.world.gateway.until_held(&hold).await);
+            token.cancel();
+        };
+        let session = &rig.world.session;
+        let (result, ()) = tokio::join!(session.export(&rig.config, &name, token.clone()), driver);
+        assert!(
+            matches!(result, Err(ExportError::Cancelled { group: None })),
+            "{result:?}"
+        );
+        let after = snapshot(&rig).await?;
+        assert_eq!((after.rest, after.exported), (before.rest, before.exported));
+        rig.world.gateway.release(&hold);
         Ok(())
     })
     .await

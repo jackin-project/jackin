@@ -379,6 +379,8 @@ pub(crate) fn join_display<T: fmt::Display>(items: &[T]) -> String {
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[error("cancelled before the config changed")]
+    Cancelled,
     #[error("syntax error at line {line}, column {column}: {}", plain(.message))]
     Syntax {
         line: usize,
@@ -451,6 +453,21 @@ impl ConfigError {
     #[must_use]
     pub const fn committed(&self) -> bool {
         matches!(self, ConfigError::Fs(FsError::Unsynced { .. }))
+    }
+
+    #[must_use]
+    pub const fn cancelled(&self) -> bool {
+        matches!(self, ConfigError::Cancelled)
+    }
+
+    pub fn unless_cancelled(
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> Result<(), ConfigError> {
+        if cancel.is_cancelled() {
+            Err(ConfigError::Cancelled)
+        } else {
+            Ok(())
+        }
     }
 }
 

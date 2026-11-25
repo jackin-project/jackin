@@ -50,7 +50,11 @@ async fn put_key(
 async fn run(world: &World, edits: Vec<ConfigEdit>) -> Result<Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&world.desk(), edits, &cancel).await?;
-    plan.apply(&Gateways::single(world.session.clone())).await
+    plan.apply(
+        &Gateways::single(world.session.clone()),
+        &CancellationToken::new(),
+    )
+    .await
 }
 
 fn record(world: &World) -> Result<jackin_testkit::ProviderRecord, Box<dyn std::error::Error>> {
@@ -211,7 +215,12 @@ async fn apply_on_peers(
 ) -> Result<Config, AccountEditError> {
     let plan = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await?;
     let AccountPlan::Gateway(gateway) = &plan else {
-        return plan.apply(&Gateways::single(world.session.clone())).await;
+        return plan
+            .apply(
+                &Gateways::single(world.session.clone()),
+                &CancellationToken::new(),
+            )
+            .await;
     };
     let mut connector = ScriptedConnector::new();
     for gateway in [second, third] {
@@ -226,7 +235,7 @@ async fn apply_on_peers(
     )
     .await
     .map_err(AccountEditError::Connect)?;
-    plan.apply(&gateways).await
+    plan.apply(&gateways, &CancellationToken::new()).await
 }
 
 #[tokio::test]

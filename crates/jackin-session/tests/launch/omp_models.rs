@@ -33,11 +33,14 @@ async fn seed_omp_provider(rig: &mut Rig) -> Result<(), Box<dyn std::error::Erro
         .await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddAccount(Account::new(
-            AccountName::parse(OMP_ACCOUNT)?,
-            Provider::Zai,
-            CredentialSource::File { path },
-        )?)])
+        .edit(
+            vec![ConfigEdit::AddAccount(Account::new(
+                AccountName::parse(OMP_ACCOUNT)?,
+                Provider::Zai,
+                CredentialSource::File { path },
+            )?)],
+            &CancellationToken::new(),
+        )
         .await?;
     rig.config = rig.world.config.load().await?;
     let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Zai)?;
@@ -121,7 +124,10 @@ async fn an_omp_lead_launch_gets_the_lead_models_file_and_no_home_copy() -> Test
         )?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(account)])
+            .edit(
+                vec![ConfigEdit::AddAccount(account)],
+                &CancellationToken::new(),
+            )
             .await?;
         let config = rig.world.config.load().await?;
         let request = rig
@@ -182,7 +188,10 @@ async fn omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_hom
         )?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(account.clone())])
+            .edit(
+                vec![ConfigEdit::AddAccount(account.clone())],
+                &CancellationToken::new(),
+            )
             .await?;
         let config = rig.world.config.load().await?;
         let request = rig

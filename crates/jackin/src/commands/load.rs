@@ -14,7 +14,7 @@ use jackin_core::{
 use jackin_image::Rebuild;
 use jackin_session::{
     AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
-    Prompting, RestoreCandidate, launch_events, lookup_workspace, plan_launch,
+    Prompting, RestoreCandidate, RestoreFinding, launch_events, lookup_workspace, plan_launch,
 };
 use serde::Deserialize;
 
@@ -94,12 +94,35 @@ async fn plan(
 
 fn cancelled(candidate: &RestoreCandidate) -> CommandError {
     let launch = &candidate.launch_id;
-    CommandError::Cancelled(match &candidate.sandbox {
-        Some(sandbox) => format!(
+    CommandError::Cancelled(match &candidate.finding {
+        RestoreFinding::Observed(sandbox) => format!(
             "cancelled; sandbox {sandbox} remains as a restore candidate (launch {launch}); repeat the same jackin load command with --launch-id {launch}"
         ),
-        None => format!(
+        RestoreFinding::Absent { requested: false } => format!(
             "cancelled before a sandbox existed (launch {launch}); repeat the same jackin load command with --launch-id {launch}"
+        ),
+        RestoreFinding::Absent { requested: true } => format!(
+            "cancelled; no sandbox exists for launch {launch}; repeat the same jackin load command with --launch-id {launch}"
+        ),
+        RestoreFinding::Ambiguous(sandboxes) => format!(
+            "cancelled; several sandboxes match launch {launch}: {}; resolve them (jackin ls shows them) before repeating the same jackin load command with --launch-id {launch}",
+            sandboxes
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        RestoreFinding::Unconfirmed {
+            last_observed: Some(sandbox),
+            ..
+        } => format!(
+            "cancelled; sandbox {sandbox} was seen during this launch, but the gateway's lookups do not settle whether it still exists (launch {launch}); jackin ls shows the current state; repeat the same jackin load command with --launch-id {launch}"
+        ),
+        RestoreFinding::Unconfirmed {
+            last_observed: None,
+            planned,
+        } => format!(
+            "cancelled; the gateway could not confirm whether sandbox {planned} exists (launch {launch}); jackin ls shows the current state; repeat the same jackin load command with --launch-id {launch}"
         ),
     })
 }

@@ -14,6 +14,7 @@ use jackin_core::{
 };
 use jackin_openshell::Gateway;
 use jackin_testkit::{ACCOUNT_ID, ConsoleRig, Rig, RoleFixture, SandboxHandle};
+use tokio_util::sync::CancellationToken;
 
 pub(crate) type Failure = Box<dyn Error>;
 
@@ -35,14 +36,17 @@ pub(crate) async fn picker_account(rig: &Rig) -> Result<(), Failure> {
     if rig.world.config.load().await?.account(&account).is_none() {
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(Account::new(
-                account,
-                Provider::Codex,
-                CredentialSource::CodexLogin {
-                    home: rig.home.clone(),
-                    chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
-                },
-            )?)])
+            .edit(
+                vec![ConfigEdit::AddAccount(Account::new(
+                    account,
+                    Provider::Codex,
+                    CredentialSource::CodexLogin {
+                        home: rig.home.clone(),
+                        chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+                    },
+                )?)],
+                &CancellationToken::new(),
+            )
             .await?;
     }
     Ok(())
@@ -52,9 +56,12 @@ pub(crate) async fn console(rig: &Rig) -> Result<ConsoleRig, Failure> {
     rig.world.seed_all(&rig.config).await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::SetDefaultAccount {
-            account: AccountName::parse("work")?,
-        }])
+        .edit(
+            vec![ConfigEdit::SetDefaultAccount {
+                account: AccountName::parse("work")?,
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     let mut console = ConsoleRig::builder(&rig.world)
         .size(160, 44)
@@ -289,10 +296,13 @@ pub(crate) async fn two_roles() -> Result<(Rig, RoleFixture), Failure> {
     other.commit().await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddRole {
-            name: RoleName::parse("other")?,
-            source: RoleSource::Path(other.root().clone()),
-        }])
+        .edit(
+            vec![ConfigEdit::AddRole {
+                name: RoleName::parse("other")?,
+                source: RoleSource::Path(other.root().clone()),
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     Ok((rig, other))
 }

@@ -6,12 +6,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, Clock, Config, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector,
-    LaunchId, PlainEnvValue, ProcessRunner, ProjectRoot, Provider, RoleName, SandboxName,
-    sandbox_layout,
+    AccountName, Agent, AgentInstance, AgentInstances, Clock, Config, DockerLabel, EngineCert,
+    EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId, PlainEnvValue, PlannedLabels,
+    PolicyLabel, ProcessRunner, ProjectRoot, Provider, RoleName, SandboxName, SandboxPath,
+    WorkspaceName, sandbox_layout,
 };
 use jackin_image::{BuildStage, BuiltImage, ImageEngine, ImageSource};
-use jackin_openshell::{Gateway, SandboxQuery};
+use jackin_openshell::{ClosedPolicy, Gateway, MainProcess, SandboxCreate, SandboxQuery};
 use jackin_session::{
     HostPorts, LaunchEvent, LaunchFailure, LaunchLimits, LaunchOutcome, LaunchPlan, LaunchRequest,
     LineDelivery, LoadedRole, Session, SessionDeps, launch_events, plan_launch,
@@ -307,6 +308,45 @@ impl Rig {
             .iter()
             .map(|build| build.stage)
             .collect()
+    }
+
+    pub async fn foreign_sandbox(
+        &self,
+        name: SandboxName,
+        launch: u8,
+    ) -> Result<SandboxHandle, FixtureError> {
+        let image = self.final_image()?;
+        let labels = PlannedLabels {
+            workspace: WorkspaceName::parse("platform-backend")?,
+            role: RoleName::parse("sentinel")?,
+            agents: AgentInstances::single(AgentInstance::lead(
+                Agent::Codex,
+                AccountName::parse("work")?,
+            )),
+            policy: PolicyLabel::of("policy"),
+            launch: launch_id(launch),
+        }
+        .complete(&image.id, DockerLabel::Off);
+        self.gateway().add_image(&image.tag);
+        self.gateway()
+            .create_sandbox(&SandboxCreate::new(
+                name.clone(),
+                image.tag,
+                labels,
+                Vec::new(),
+                ClosedPolicy::parse(&self.loaded.policy().document().render()?)?,
+                MainProcess {
+                    program: SandboxPath::parse("/bin/sh")?,
+                    args: vec!["-c".to_owned(), "sleep 3600".to_owned()],
+                },
+            ))
+            .await?;
+        self.gateway()
+            .find_sandboxes(&SandboxQuery::Name(name.clone()))
+            .await?;
+        self.gateway()
+            .sandbox(&name)
+            .ok_or_else(|| "the foreign sandbox is missing".into())
     }
 
     pub fn final_image(&self) -> Result<BuiltImage, FixtureError> {

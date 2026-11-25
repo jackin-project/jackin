@@ -10,8 +10,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jackin_core::{
     Account, ChatgptAccountId, CredentialFileProblem, CredentialSource, FileSystem, FsError,
-    HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program, Provider, Secret,
-    SecretBytes, plain, read_credential_file,
+    GroupFault, HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    Provider, Secret, SecretBytes, plain, read_credential_file,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -180,6 +180,8 @@ pub enum CredentialError {
     KeychainUnavailable,
     #[error("the host credential store has no usable login")]
     KeychainLoginMissing,
+    #[error("cancelled while reading the host credential store{}", GroupFault::note(.group.as_ref()))]
+    Cancelled { group: Option<GroupFault> },
     #[error(transparent)]
     Fs(#[from] FsError),
 }
@@ -1041,6 +1043,7 @@ async fn keychain_secret(
         .await
         .map_err(|error| match error {
             ProcessError::Spawn { .. } => CredentialError::KeychainUnavailable,
+            ProcessError::Cancelled { group, .. } => CredentialError::Cancelled { group },
             _ => CredentialError::KeychainLoginMissing,
         })?;
     if output.status != ProcessStatus::Exited(0) {

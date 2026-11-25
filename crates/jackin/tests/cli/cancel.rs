@@ -5,8 +5,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jackin::ExitClass;
-use jackin_core::{HookKind, ProcessRunner, sandbox_layout};
-use jackin_openshell::GatewayOp;
+use jackin_core::{
+    HookKind, NameSuffix, ProcessRunner, SandboxName, SandboxSlug, lock_path, sandbox_layout,
+};
+use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_testkit::{
     CancelsOn, Fault, HostSnapshot, Rig, RoleFixture, TestResult, Trigger, guard, launch_id,
 };
@@ -242,6 +244,220 @@ async fn cancelling_load_while_it_waits_for_an_environment_value_ends_the_comman
         assert!(ran.stdout.is_empty());
         assert!(rig.world.gateway.sandboxes().is_empty());
         assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+fn cancelled_line(stderr: &str) -> Result<&str, Failure> {
+    Ok(stderr
+        .lines()
+        .find(|line| line.starts_with("cancelled"))
+        .ok_or("no cancelled line")?)
+}
+
+fn lost_create() -> GatewayError {
+    GatewayError::Timeout {
+        op: GatewayOp::Create,
+        after: std::time::Duration::from_secs(30),
+        group: None,
+    }
+}
+
+#[tokio::test]
+async fn a_cancelled_load_says_a_sandbox_never_existed_only_when_none_was_requested() -> TestResult
+{
+    guard(async {
+        let (rig, harness) = rigged().await?;
+        let token = CancellationToken::new();
+        rig.gateway().inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::Provider),
+            token: token.clone(),
+        });
+        let id = launch_id(1).to_string();
+        let ran = harness
+            .command(&["load", "--launch-id", &id])
+            .cancel(token)
+            .run()
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        let line = cancelled_line(&ran.stderr)?;
+        assert!(
+            line.contains("before a sandbox existed") && line.contains(&id),
+            "{line}"
+        );
+        assert!(rig.gateway().sandboxes().is_empty());
+
+        let (rig, harness) = rigged().await?;
+        let token = CancellationToken::new();
+        rig.gateway().inject(Fault::ProvisionFails { creates: 1 });
+        rig.gateway().inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::Delete),
+            token: token.clone(),
+        });
+        let ran = harness
+            .command(&["load", "--launch-id", &id])
+            .cancel(token)
+            .run()
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        let line = cancelled_line(&ran.stderr)?;
+        assert!(
+            line.contains("no sandbox exists") && !line.contains("before a sandbox existed"),
+            "{line}"
+        );
+        assert!(rig.gateway().sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_load_never_says_no_sandbox_when_the_gateway_cannot_confirm() -> TestResult {
+    guard(async {
+        let id = launch_id(1).to_string();
+
+        let (rig, harness) = rigged().await?;
+        let token = CancellationToken::new();
+        rig.gateway()
+            .inject(Fault::HideEverywhereUntilCreateConflict);
+        rig.gateway().inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::Create),
+            token: token.clone(),
+        });
+        rig.gateway().inject(Fault::LoseResponse {
+            op: GatewayOp::Create,
+            error: lost_create(),
+        });
+        let ran = harness
+            .command(&["load", "--launch-id", &id])
+            .cancel(token)
+            .run()
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        let line = cancelled_line(&ran.stderr)?;
+        let planned = rig.sandbox_name(1)?;
+        assert!(
+            line.contains(&format!(
+                "could not confirm whether sandbox {planned} exists"
+            )) && !line.contains("before a sandbox existed")
+                && line.contains(&id),
+            "{line}"
+        );
+        assert_eq!(rig.world.gateway.sandboxes().len(), 1);
+        harness.run(&["load", "--launch-id", &id]).await?.ok()?;
+        assert_eq!(rig.world.gateway.sandboxes().len(), 1);
+
+        let (rig, harness) = rigged().await?;
+        let hold = Trigger::Op(GatewayOp::UploadTree);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let running = harness
+            .command(&["load", "--launch-id", &id])
+            .cancel(token.clone())
+            .run();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            rig.gateway().inject(Fault::FailNext {
+                op: GatewayOp::Find,
+                error: GatewayError::Unreachable {
+                    endpoint: "fake".to_owned(),
+                    message: "down".to_owned(),
+                },
+            });
+            token.cancel();
+            rig.gateway().release(&hold);
+        };
+        let (ran, ()) = tokio::join!(running, driver);
+        let ran = ran?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        let line = cancelled_line(&ran.stderr)?;
+        let name = rig.sandbox_name(1)?;
+        assert!(
+            line.contains(name.as_str())
+                && line.contains("was seen during this launch")
+                && !line.contains("before a sandbox existed"),
+            "{line}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_load_with_several_matching_sandboxes_names_them_all() -> TestResult {
+    guard(async {
+        let (rig, harness) = rigged().await?;
+        let id = launch_id(1).to_string();
+        let hold = Trigger::Op(GatewayOp::UploadTree);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let extra = SandboxName::new(&SandboxSlug::parse("dup")?, &NameSuffix::parse("bbbb")?);
+        let running = harness
+            .command(&["load", "--launch-id", &id])
+            .cancel(token.clone())
+            .run();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            rig.foreign_sandbox(extra.clone(), 1).await?;
+            token.cancel();
+            rig.gateway().release(&hold);
+            Ok::<(), Failure>(())
+        };
+        let (ran, driven) = tokio::join!(running, driver);
+        driven?;
+        let ran = ran?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        let line = cancelled_line(&ran.stderr)?;
+        let ours = rig.sandbox_name(1)?;
+        assert!(
+            line.contains(ours.as_str())
+                && line.contains(extra.as_str())
+                && !line.contains("before a sandbox existed")
+                && !line.contains("remains as a restore candidate"),
+            "{line}"
+        );
+        assert_eq!(rig.world.gateway.sandboxes().len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_while_the_config_lock_is_held_exits_cancelled_and_changes_nothing() -> TestResult
+{
+    guard(async {
+        let (rig, harness) = rigged().await?;
+        let before = harness.config_bytes()?;
+        let held = rig.world.fs.lock(&lock_path(&harness.config_path)?).await?;
+        let token = CancellationToken::new();
+        let elsewhere = rig.home.as_path().display().to_string();
+        let running = harness
+            .command(&["workspace", "add", "extra", &elsewhere])
+            .cancel(token.clone())
+            .run();
+        let canceller = async {
+            while rig.world.clock.slept().is_empty() {
+                tokio::task::yield_now().await;
+            }
+            token.cancel();
+        };
+        let (ran, ()) = tokio::join!(running, canceller);
+        let ran = ran?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stdout.is_empty());
+        assert_eq!(harness.config_bytes()?, before);
+
+        drop(held);
+        harness
+            .run(&["workspace", "add", "extra", &elsewhere])
+            .await?
+            .ok()?;
+        assert_ne!(harness.config_bytes()?, before);
         Ok(())
     })
     .await

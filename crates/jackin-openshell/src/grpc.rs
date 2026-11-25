@@ -21,7 +21,8 @@ use crate::discovery::ResolvedGateway;
 use crate::error::{GatewayError, GatewayOp};
 use crate::gateway::{
     Gateway, GatewayHealth, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderSpec,
-    ProviderState, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
+    ProviderState, ProviderWriteEffect, ProviderWriteError, SandboxCreate, SandboxDetail,
+    SandboxFile, SandboxQuery, SandboxView,
 };
 use crate::policy::ProviderProfile;
 use crate::terminal::{TerminalRequest, TerminalSession};
@@ -210,7 +211,10 @@ impl Gateway for GrpcGateway {
         self.inner.provider_state(name).await
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.inner.put_provider(spec).await
     }
 

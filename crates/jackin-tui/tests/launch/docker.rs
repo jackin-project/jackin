@@ -9,6 +9,7 @@ use jackin_testkit::{ENGINE_PORT, Rig, TestResult, guard};
 use super::support::{
     Stage, begin, console, dialog, env_file, labels, launch, only, stage, until_route, until_shows,
 };
+use tokio_util::sync::CancellationToken;
 
 async fn rules(rig: &Rig) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let handle = only(rig)?;
@@ -118,10 +119,13 @@ async fn a_docker_launch_warns_though_the_roster_did_not_know() -> TestResult {
         let mut console = console(&rig).await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceDocker {
-                workspace: WorkspaceName::parse("platform-backend")?,
-                docker: true,
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceDocker {
+                    workspace: WorkspaceName::parse("platform-backend")?,
+                    docker: true,
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         launch(&mut console).await?;
         until_shows(&mut console, "Docker is on").await?;

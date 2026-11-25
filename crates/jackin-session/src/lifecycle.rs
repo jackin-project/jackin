@@ -89,6 +89,8 @@ pub enum LifecycleError {
     Profile(#[from] PolicyError),
     #[error("cancelled")]
     Cancelled,
+    #[error("cancelled while {sandbox} was changing to {wanted}; the request was already sent")]
+    PowerCancelled { sandbox: SandboxName, wanted: Phase },
 }
 
 const INSPECT_SCHEMA: u32 = 1;
@@ -321,47 +323,7 @@ impl Session {
         action: PowerAction,
         cancel: &CancellationToken,
     ) -> Result<SandboxSummary, LifecycleError> {
-        let found = self.find_managed(sandbox).await?;
-        let view = found.ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
-        labelled(sandbox, &view.labels)?;
-        if view.phase.main_process_ended() {
-            return Err(LifecycleError::MainProcessEnded {
-                sandbox: sandbox.clone(),
-                phase: view.phase,
-            });
-        }
-        let wanted = match action {
-            PowerAction::Start => Phase::Ready,
-            PowerAction::Stop => Phase::Stopped,
-        };
-        let mut view = self.deps.gateway.set_power(sandbox, action).await?;
-        let limit = self.deps.limits.ready;
-        let mut waited = Duration::ZERO;
-        while view.phase != wanted {
-            if view.phase.main_process_ended() {
-                return Err(LifecycleError::MainProcessEnded {
-                    sandbox: sandbox.clone(),
-                    phase: view.phase,
-                });
-            }
-            if waited >= limit {
-                return Err(LifecycleError::PowerTimeout {
-                    sandbox: sandbox.clone(),
-                    wanted,
-                    after: waited,
-                });
-            }
-            tokio::select! {
-                biased;
-                () = cancel.cancelled() => return Err(LifecycleError::Cancelled),
-                () = self.deps.host.clock.sleep(POLL) => {}
-            }
-            waited += POLL;
-            view = self
-                .find_managed(sandbox)
-                .await?
-                .ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
-        }
+        let view = self.power_view(sandbox, action, cancel, true).await?;
         summary(&view)
     }
 
@@ -371,8 +333,34 @@ impl Session {
         action: PowerAction,
         cancel: &CancellationToken,
     ) -> Result<(), LifecycleError> {
-        let found = self.find_managed(sandbox).await?;
-        let view = found.ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
+        self.power_view(sandbox, action, cancel, false)
+            .await
+            .map(drop)
+    }
+
+    async fn found_until(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<SandboxView, LifecycleError> {
+        match self.find_managed_until(sandbox, cancel).await {
+            Ok(found) => found.ok_or_else(|| LifecycleError::NotFound(sandbox.clone())),
+            Err(GatewayError::Cancelled { .. }) => Err(LifecycleError::Cancelled),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn power_view(
+        &self,
+        sandbox: &SandboxName,
+        action: PowerAction,
+        cancel: &CancellationToken,
+        require_labels: bool,
+    ) -> Result<SandboxView, LifecycleError> {
+        let view = self.found_until(sandbox, cancel).await?;
+        if require_labels {
+            labelled(sandbox, &view.labels)?;
+        }
         if view.phase.main_process_ended() {
             return Err(LifecycleError::MainProcessEnded {
                 sandbox: sandbox.clone(),
@@ -383,6 +371,9 @@ impl Session {
             PowerAction::Start => Phase::Ready,
             PowerAction::Stop => Phase::Stopped,
         };
+        if cancel.is_cancelled() {
+            return Err(LifecycleError::Cancelled);
+        }
         let mut view = self.deps.gateway.set_power(sandbox, action).await?;
         let limit = self.deps.limits.ready;
         let mut waited = Duration::ZERO;
@@ -402,15 +393,23 @@ impl Session {
             }
             tokio::select! {
                 biased;
-                () = cancel.cancelled() => return Err(LifecycleError::Cancelled),
+                () = cancel.cancelled() => return Err(LifecycleError::PowerCancelled {
+                    sandbox: sandbox.clone(),
+                    wanted,
+                }),
                 () = self.deps.host.clock.sleep(POLL) => {}
             }
             waited += POLL;
-            view = self
-                .find_managed(sandbox)
-                .await?
-                .ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
+            view = match self.found_until(sandbox, cancel).await {
+                Err(LifecycleError::Cancelled) => {
+                    return Err(LifecycleError::PowerCancelled {
+                        sandbox: sandbox.clone(),
+                        wanted,
+                    });
+                }
+                other => other?,
+            };
         }
-        Ok(())
+        Ok(view)
     }
 }
