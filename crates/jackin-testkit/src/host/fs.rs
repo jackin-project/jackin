@@ -342,7 +342,7 @@ impl FileSystem for MemFs {
         }
         let state = locked(&self.state);
         if let Some(target) = state.links.get(path.as_path()) {
-            return Ok((state.files.contains_key(target) || state.is_dir(target))
+            return (state.files.contains_key(target) || state.is_dir(target))
                 .then(|| HostPath::parse(target))
                 .transpose()
                 .map_err(|_| {
@@ -351,7 +351,7 @@ impl FileSystem for MemFs {
                         ErrorKind::InvalidInput,
                         "the link target is not absolute",
                     )
-                })?);
+                });
         }
         Ok(
             (state.files.contains_key(path.as_path()) || state.is_dir(path.as_path()))
