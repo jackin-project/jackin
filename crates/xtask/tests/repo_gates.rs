@@ -1963,6 +1963,7 @@ mod error_paths {
     #[test]
     fn a_qualified_display_call_and_a_multi_line_attribute_are_reported() -> TestResult {
         let source = text(&[
+            "use std as stdlib;",
             "use std::path as stdpath;",
             "use std::path::{self as grouped};",
             "use crate::path::Path as Local;",
@@ -2002,6 +2003,8 @@ mod error_paths {
             "    X(PathBuf),",
             "    #[error(\"local path module {}\", crate::path::Path::display(.0))]",
             "    W(Label),",
+            "    #[error(\"renamed root {}\", stdlib::path::Path::display(.0.as_path()))] // p_root",
+            "    T(PathBuf),",
             "    #[error(\"grouped {}\", grouped::Path::display(.0.as_path()))] // p_grouped",
             "    V(PathBuf),",
             "    #[error(\"local alias {}\", Local::display(.0))]",
@@ -2034,6 +2037,7 @@ mod error_paths {
                     "p_deep",
                     "p_typed",
                     "p_module",
+                    "p_root",
                     "p_grouped",
                     "p_chained",
                     "p_aliased",

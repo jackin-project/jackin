@@ -437,3 +437,13 @@ pub(crate) fn module_names<'a>(
     }
     names
 }
+
+pub(crate) fn root_aliases<'a>(tokens: &'a [Token], roots: &[&str]) -> Vec<&'a str> {
+    tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| roots.iter().any(|root| token.is_ident(root)))
+        .filter(|(index, _)| tokens.get(index + 1).is_some_and(|t| t.is_ident("as")))
+        .filter_map(|(index, _)| tokens.get(index + 2).and_then(Token::ident))
+        .collect()
+}

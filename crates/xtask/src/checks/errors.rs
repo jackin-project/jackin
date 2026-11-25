@@ -3,7 +3,7 @@
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Token, alias_names, leading_segment, lex_rust, module_names};
+use crate::lex::{Token, alias_names, leading_segment, lex_rust, module_names, root_aliases};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -23,7 +23,8 @@ impl Check for ErrorsCheck {
             if file.kind() == FileKind::Rust && !file.is_third_party_source() {
                 let tokens = lex_rust(file.text()).tokens;
                 let paths = path_names(&tokens);
-                let modules = module_names(&tokens, "path", &["std", "core"]);
+                let mut modules = module_names(&tokens, "path", &["std", "core"]);
+                modules.extend(root_aliases(&tokens, &["std", "core"]));
                 violations.extend(
                     (0..tokens.len())
                         .filter_map(|index| error_attribute(&tokens, index))
