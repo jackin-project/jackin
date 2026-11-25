@@ -166,7 +166,12 @@ impl Fake {
         if state.providers.contains_key(&key) {
             return Err(Status::already_exists("provider already exists"));
         }
+        let mut provider = provider;
+        provider.metadata.get_or_insert_with(Default::default).id = Fake::next_id(&mut state);
         state.providers.insert(key, provider.clone());
+        if let Some(mut hook) = state.after_create_provider.take() {
+            hook(&mut state);
+        }
         Ok(Response::new(ProviderResponse {
             provider: Some(redacted(provider)),
             ..ProviderResponse::default()
@@ -327,6 +332,9 @@ impl Fake {
             ));
         }
         let mut state = self.shared.lock();
+        if let Some(mut hook) = state.before_configure_refresh.take() {
+            hook(&mut state);
+        }
         if !state
             .providers
             .contains_key(&(workspace.clone(), request.provider.clone()))

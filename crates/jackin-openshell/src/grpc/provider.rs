@@ -24,6 +24,23 @@ const PROFILE_SOURCE: &str = "jackin";
 const CLIENT_ID_MATERIAL: &str = "client_id";
 const REFRESH_TOKEN_MATERIAL: &str = "refresh_token";
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Incarnation {
+    Unknown,
+    Gone,
+    Id(String),
+}
+
+impl Incarnation {
+    fn of(provider: Option<&Provider>) -> Incarnation {
+        provider
+            .and_then(|provider| provider.metadata.as_ref())
+            .map(|metadata| metadata.id.clone())
+            .filter(|id| !id.is_empty())
+            .map_or(Incarnation::Unknown, Incarnation::Id)
+    }
+}
+
 struct RefreshConfiguration {
     material: HashMap<String, String>,
     expires_at: Option<i64>,
@@ -360,15 +377,15 @@ impl Inner {
         if self.provider_state(&spec.name).await.map_err(untouched)? == ProviderState::Present {
             return Ok(CreateOutcome::PeerExists);
         }
-        match self.create_provider(spec, record).await {
-            Ok(()) => {}
+        let created = match self.create_provider(spec, record).await {
+            Ok(created) => created,
             Err(GatewayError::AlreadyExists { .. }) => return Ok(CreateOutcome::PeerExists),
             Err(error) => {
                 let effect = ProviderWriteEffect::after_failed_write(false, &error);
                 return Err(ProviderWriteError::new(error, effect));
             }
-        }
-        self.configure_refresh(spec, refresh, ProviderWriteEffect::Created)
+        };
+        self.configure_refresh(spec, refresh, ProviderWriteEffect::Created, &created)
             .await?;
         Ok(CreateOutcome::Created)
     }
@@ -391,9 +408,13 @@ impl Inner {
             };
             ProviderWriteError::new(error, effect)
         };
+        let mut incarnation = Incarnation::Unknown;
         let effect = match self.provider_state(&spec.name).await.map_err(untouched)? {
             ProviderState::Absent => match self.create_provider(spec, record.clone()).await {
-                Ok(()) => ProviderWriteEffect::Created,
+                Ok(created) => {
+                    incarnation = created;
+                    ProviderWriteEffect::Created
+                }
                 Err(error @ GatewayError::AlreadyExists { .. }) => {
                     match self.provider_state(&spec.name).await.map_err(untouched)? {
                         ProviderState::Present => {
@@ -413,7 +434,8 @@ impl Inner {
                 ProviderWriteEffect::Existing
             }
         };
-        self.configure_refresh(spec, refresh, effect).await?;
+        self.configure_refresh(spec, refresh, effect, &incarnation)
+            .await?;
         Ok(effect)
     }
 
@@ -422,11 +444,28 @@ impl Inner {
         spec: &ProviderSpec,
         refresh: Option<RefreshConfiguration>,
         effect: ProviderWriteEffect,
+        created: &Incarnation,
     ) -> Result<(), ProviderWriteError> {
         let after = |error| ProviderWriteError::new(error, effect);
         let Some(refresh) = refresh else {
             return Ok(());
         };
+        let replaced = |effect| {
+            ProviderWriteError::new(
+                GatewayError::Protocol {
+                    message: format!(
+                        "provider {} was replaced while its refresh was configured",
+                        spec.name
+                    ),
+                },
+                effect,
+            )
+        };
+        if matches!(created, Incarnation::Id(_))
+            && self.incarnation(&spec.name).await.map_err(after)? != *created
+        {
+            return Err(replaced(ProviderWriteEffect::NoWrite));
+        }
         let mut request = ConfigureProviderRefreshRequest {
             workspace_scope: Some(self.scope()),
             provider: spec.name.to_string(),
@@ -454,6 +493,11 @@ impl Inner {
         )
         .await
         .map_err(after)?;
+        if matches!(created, Incarnation::Id(_))
+            && self.incarnation(&spec.name).await.map_err(after)? != *created
+        {
+            return Err(replaced(ProviderWriteEffect::Existing));
+        }
         Ok(())
     }
 
@@ -461,18 +505,27 @@ impl Inner {
         &self,
         spec: &ProviderSpec,
         record: Provider,
-    ) -> Result<(), GatewayError> {
-        self.unary(
-            GatewayOp::Provider,
-            Some(Missing::Provider(spec.name.clone())),
-            self.grpc().create_provider(CreateProviderRequest {
-                workspace_scope: Some(self.scope()),
-                provider: Some(record),
-                request_id: String::new(),
-            }),
-        )
-        .await
-        .map(|_| ())
+    ) -> Result<Incarnation, GatewayError> {
+        let response = self
+            .unary(
+                GatewayOp::Provider,
+                Some(Missing::Provider(spec.name.clone())),
+                self.grpc().create_provider(CreateProviderRequest {
+                    workspace_scope: Some(self.scope()),
+                    provider: Some(record),
+                    request_id: String::new(),
+                }),
+            )
+            .await?;
+        Ok(Incarnation::of(response.provider.as_ref()))
+    }
+
+    async fn incarnation(&self, name: &ProviderName) -> Result<Incarnation, GatewayError> {
+        match self.get_provider(name).await {
+            Ok(provider) => Ok(Incarnation::of(Some(&provider))),
+            Err(GatewayError::NotFound { .. }) => Ok(Incarnation::Gone),
+            Err(error) => Err(error),
+        }
     }
 
     async fn update_provider(

@@ -990,3 +990,79 @@ async fn create_if_absent_with_an_unreadable_state_writes_nothing() {
     assert_eq!(unreadable.effect(), ProviderWriteEffect::NoWrite);
     assert!(env.server.state().providers.is_empty());
 }
+
+fn replace_by_a_peer(key: (String, String), id: &'static str) -> Box<dyn FnMut(&mut State) + Send> {
+    Box::new(move |state: &mut State| {
+        state.providers.insert(
+            key.clone(),
+            Provider {
+                metadata: Some(ObjectMeta {
+                    id: id.to_owned(),
+                    name: PROVIDER.to_owned(),
+                    ..ObjectMeta::default()
+                }),
+                r#type: "codex".to_owned(),
+                profile_workspace: WORKSPACE.to_owned(),
+                ..Provider::default()
+            },
+        );
+    })
+}
+
+#[tokio::test]
+async fn a_provider_a_peer_replaced_before_the_refresh_is_configured_gets_no_refresh() {
+    let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
+    for if_absent in [false, true] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        guard(gateway.ensure_profile(&profile())).await.unwrap();
+        env.server.state().after_create_provider =
+            Some(replace_by_a_peer(provider_key.clone(), "peer-incarnation"));
+        let error = if if_absent {
+            guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+                .await
+                .map(drop)
+        } else {
+            guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+                .await
+                .map(drop)
+        }
+        .unwrap_err();
+        assert_eq!(error.effect(), ProviderWriteEffect::NoWrite, "{if_absent}");
+        assert!(
+            error.to_string().contains("was replaced"),
+            "{if_absent}: {error}"
+        );
+        assert!(
+            env.server.state().refresh.is_empty(),
+            "the refresh landed on the peer's provider ({if_absent})"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_provider_a_peer_replaced_while_the_refresh_is_configured_is_reported() {
+    let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
+    for if_absent in [false, true] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        guard(gateway.ensure_profile(&profile())).await.unwrap();
+        env.server.state().before_configure_refresh =
+            Some(replace_by_a_peer(provider_key.clone(), "peer-incarnation"));
+        let error = if if_absent {
+            guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+                .await
+                .map(drop)
+        } else {
+            guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+                .await
+                .map(drop)
+        }
+        .unwrap_err();
+        assert_eq!(error.effect(), ProviderWriteEffect::Existing, "{if_absent}");
+        assert!(
+            error.to_string().contains("was replaced"),
+            "{if_absent}: {error}"
+        );
+    }
+}
