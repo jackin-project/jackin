@@ -18,6 +18,7 @@ use jackin_image::{
     BuildxEngine, ContextEntry, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision,
     SourceFile, ensure_image, read_regular_file,
 };
+use jackin_openshell::PolicyDocument;
 use jackin_session::TokioProcessRunner;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -72,10 +73,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
         work_dir: state_work_dir()?,
         rebuild: Rebuild::No,
         calls: 2,
-        read_write: vec![
-            SandboxPath::from_static("/dev/null"),
-            SandboxPath::from_static("/tmp"),
-        ],
+        read_write: PolicyDocument::parse("version: 1\n")?.effective_read_write_paths()?,
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {

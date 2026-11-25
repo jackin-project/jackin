@@ -1280,6 +1280,18 @@ fn the_effective_read_write_paths_add_the_baseline_the_gateway_grants_to_every_p
         .map(|path| path.as_str().to_owned())
         .collect();
     assert_eq!(effective, ["/dev/null", "/sandbox", "/tmp"]);
+    let read_only_tmp = format!(
+        "version: 1\nfilesystem_policy:\n  read_only:\n    - /usr\n    - /tmp\n  read_write:\n    - /sandbox\n{HARD}"
+    );
+    let effective: Vec<String> = AuthoredPolicy::parse(&read_only_tmp)
+        .unwrap()
+        .document()
+        .effective_read_write_paths()
+        .unwrap()
+        .iter()
+        .map(|path| path.as_str().to_owned())
+        .collect();
+    assert_eq!(effective, ["/dev/null", "/sandbox"]);
     let listed = read_write_of(&["/tmp", "/dev/null", "/sandbox"]).unwrap();
     assert_eq!(listed, ["/dev/null", "/sandbox", "/tmp"]);
 }

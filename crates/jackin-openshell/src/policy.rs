@@ -17,6 +17,7 @@ use crate::error::{ClosedPolicyError, PolicyError};
 mod yaml;
 
 const PROXY_BASELINE_READ_WRITE: [&str; 2] = ["/tmp", "/dev/null"];
+#[doc(hidden)]
 pub const PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT: &str =
     "5d25211b25a8fc887e8d5c606d57d6ab22f1d76c";
 
@@ -157,7 +158,18 @@ impl PolicyDocument {
 
     pub fn effective_read_write_paths(&self) -> Result<Vec<SandboxPath>, PolicyError> {
         let mut paths: BTreeSet<SandboxPath> = self.read_write_paths()?.into_iter().collect();
-        paths.extend(PROXY_BASELINE_READ_WRITE.map(SandboxPath::from_static));
+        let read_only = self
+            .proto
+            .filesystem
+            .as_ref()
+            .map(|filesystem| filesystem.read_only.as_slice())
+            .unwrap_or_default();
+        paths.extend(
+            PROXY_BASELINE_READ_WRITE
+                .into_iter()
+                .filter(|path| !read_only.iter().any(|listed| listed == path))
+                .map(SandboxPath::from_static),
+        );
         Ok(paths.into_iter().collect())
     }
 

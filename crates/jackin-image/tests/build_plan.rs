@@ -1611,10 +1611,12 @@ fn request_with(paths: &[&str]) -> Result<ImageRequest, Box<dyn Error>> {
     Ok(request)
 }
 
-fn read_write_argument(paths: &[&str]) -> Result<Option<String>, Box<dyn Error>> {
+fn read_write_argument(paths: &[&str]) -> Result<String, Box<dyn Error>> {
     let plan = ImagePlan::new(&request_with(paths)?)?;
     let args = build_arg_map(&plan.final_builds(&construct_id()?).derived.args)?;
-    Ok(args.get("READ_WRITE_PATHS").cloned())
+    args.get("READ_WRITE_PATHS")
+        .cloned()
+        .ok_or_else(|| "no READ_WRITE_PATHS argument".into())
 }
 
 #[test]
@@ -1628,12 +1630,12 @@ fn the_policy_read_write_paths_reach_the_derived_build_as_one_sorted_argument() 
         Err(ImageError::NoReadWritePaths)
     ));
     assert_eq!(
-        read_write_argument(&["/tmp", "/sandbox"])?.as_deref(),
-        Some("/sandbox\n/tmp")
+        read_write_argument(&["/tmp", "/sandbox"])?,
+        "/sandbox\n/tmp"
     );
     assert_eq!(
-        read_write_argument(&["/sandbox", "/tmp", "/sandbox"])?.as_deref(),
-        Some("/sandbox\n/tmp")
+        read_write_argument(&["/sandbox", "/tmp", "/sandbox"])?,
+        "/sandbox\n/tmp"
     );
     Ok(())
 }
@@ -1652,11 +1654,7 @@ fn every_legitimate_path_character_is_carried_verbatim() -> TestResult {
         "/-dash",
         "/#hash",
     ] {
-        assert_eq!(
-            read_write_argument(&[path])?.as_deref(),
-            Some(path),
-            "{path}"
-        );
+        assert_eq!(read_write_argument(&[path])?, path, "{path}");
     }
     Ok(())
 }
@@ -1859,7 +1857,7 @@ fn the_read_write_paths_of_a_policy_never_outgrow_one_build_argument() -> TestRe
     let prefix = "--build-arg=READ_WRITE_PATHS=".len();
     let fits = policy_of_joined_length(162);
     let fits: Vec<&str> = fits.iter().map(String::as_str).collect();
-    let value = read_write_argument(&fits)?.ok_or("no argument")?;
+    let value = read_write_argument(&fits)?;
     assert_eq!(prefix + value.len() + 1, 131_072);
     let over = policy_of_joined_length(163);
     let over: Vec<&str> = over.iter().map(String::as_str).collect();
@@ -1885,11 +1883,7 @@ fn a_read_write_path_the_scan_cannot_stat_below_its_root_is_refused_at_planning(
         .and_then(|rest| rest.split(',').next())
         .ok_or("no bind target")?;
     assert_eq!(mounted, "/image");
-    assert_eq!(4095 - mounted.len(), 4089);
     let longest = format!("/{}", "a".repeat(4088));
-    assert_eq!(
-        read_write_argument(&[&longest])?.as_deref(),
-        Some(longest.as_str())
-    );
+    assert_eq!(read_write_argument(&[&longest])?, longest);
     Ok(())
 }

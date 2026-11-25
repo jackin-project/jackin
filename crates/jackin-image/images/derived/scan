@@ -9,7 +9,7 @@ newline='
 '
 
 usage() {
-    echo "usage: scan --owner UID:GID --sandbox-owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... [--read-write PATH]... ROOT PROTECTED..." >&2
+    echo "usage: scan --owner UID:GID --sandbox-owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... --read-write PATH... ROOT PROTECTED..." >&2
     exit 64
 }
 
