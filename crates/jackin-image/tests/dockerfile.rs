@@ -89,6 +89,8 @@ fn plan_verdict(result: Result<ImagePlan, ImageError>) -> Verdict {
             | ImageError::NotDelivered { .. }
             | ImageError::Rule { .. }
             | ImageError::SourceMoved { .. }
+            | ImageError::ReadWritePath { .. }
+            | ImageError::ReadWritePathsTotal { .. }
             | ImageError::LockTimeout { .. }
             | ImageError::Cancelled { .. },
         ) => Verdict::Other,
@@ -926,6 +928,7 @@ fn request(dockerfile: &[u8]) -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: vec![jackin_core::SandboxPath::from_static("/tmp")],
         rebuild: Rebuild::No,
     })
 }

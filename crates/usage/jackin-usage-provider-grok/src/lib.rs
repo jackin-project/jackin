@@ -130,11 +130,13 @@ fn period_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
     {
         (percent, None)
     } else {
-        let limit = cents(config.get("monthlyLimit"))?.filter(|limit| limit.minor() > 0);
+        let limit = cents(config.get("monthlyLimit"))?.filter(Money::is_positive);
         let Some((limit, spent)) = limit.zip(cents(config.get("used"))?) else {
             return Ok(None);
         };
-        let used = spent.minor() as f64 / limit.minor() as f64 * 100.0;
+        let used = spent
+            .percent_of(&limit)
+            .ok_or(ProviderError::OUT_OF_RANGE)?;
         let left = limit.minus(&spent).ok_or(ProviderError::OUT_OF_RANGE)?;
         (used, Some(Remaining::Amount(left.clamped_at_zero())))
     };
@@ -148,7 +150,7 @@ fn period_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
 
 fn prepaid(config: &Value) -> Result<Option<Bucket>, ProviderError> {
     Ok(cents(config.get("prepaidBalance"))?
-        .filter(|balance| balance.minor() > 0)
+        .filter(Money::is_positive)
         .map(|balance| {
             Bucket::named(BucketKind::Credits, "Extra usage credits")
                 .left(Some(Remaining::Amount(balance)))
@@ -156,11 +158,11 @@ fn prepaid(config: &Value) -> Result<Option<Bucket>, ProviderError> {
 }
 
 fn on_demand_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
-    let Some(cap) = cents(config.get("onDemandCap"))?.filter(|cap| cap.minor() > 0) else {
+    let Some(cap) = cents(config.get("onDemandCap"))?.filter(Money::is_positive) else {
         return Ok(None);
     };
     let spent = cents(config.get("onDemandUsed"))?.unwrap_or_else(|| Money::cents(0, UNIT));
-    let used = spent.minor() as f64 / cap.minor() as f64 * 100.0;
+    let used = spent.percent_of(&cap).ok_or(ProviderError::OUT_OF_RANGE)?;
     let left = cap.minus(&spent).ok_or(ProviderError::OUT_OF_RANGE)?;
     Ok(Some(
         Bucket::named(BucketKind::Spend, "On-demand")

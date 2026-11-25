@@ -3060,7 +3060,6 @@ name = "jackin-usage-provider-openrouter"
 version = "0.1.0"
 dependencies = [
  "jackin-usage-provider-core",
- "serde_json",
 ]
 
 [[package]]

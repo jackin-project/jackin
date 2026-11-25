@@ -946,6 +946,16 @@
               "requires_features": false
             },
             {
+              "name": "memory_vault",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/memory_vault.rs",
+              "requires_features": false
+            },
+            {
               "name": "rig",
               "kinds": [
                 "test"
@@ -2467,7 +2477,10 @@
             {
               "name": "serde_json",
               "kind": "normal",
-              "manifest": null
+              "manifest": null,
+              "features": [
+                "raw_value"
+              ]
             },
             {
               "name": "thiserror",
@@ -2515,6 +2528,16 @@
               "features": [
                 "derive"
               ]
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt"
+              ]
             }
           ],
           "targets": [
@@ -2526,6 +2549,36 @@
               "tests": true,
               "doctest": true,
               "source": "crates/usage/jackin-usage-provider-core/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "decimal",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage-provider-core/tests/decimal.rs",
+              "requires_features": false
+            },
+            {
+              "name": "exact",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage-provider-core/tests/exact.rs",
+              "requires_features": false
+            },
+            {
+              "name": "money",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage-provider-core/tests/money.rs",
               "requires_features": false
             }
           ]
@@ -2921,11 +2974,6 @@
               "name": "jackin-usage-provider-core",
               "kind": "normal",
               "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
-            },
-            {
-              "name": "serde_json",
-              "kind": "normal",
-              "manifest": null
             }
           ],
           "targets": [
@@ -3191,7 +3239,7 @@
     "crates/jackin/Cargo.toml": "e09c3b3344011f7cc087879ce2ffa485e096901723a6fac811e1c6f55e249f2e",
     "crates/usage/jackin-usage-provider-claude/Cargo.toml": "8a585594e1c95c6301ad39e7173cac73f6695253fbea3d13316dcb0af570dbd7",
     "crates/usage/jackin-usage-provider-codex/Cargo.toml": "84e88b1fc2d817a7c30f5c9b387035b2792c91845f6367fdfd8a0400912d9549",
-    "crates/usage/jackin-usage-provider-core/Cargo.toml": "97f0fcdcc0b4c758ed23ba46c8ea96e7620b96183ccaac4c7adc677fea8e1c78",
+    "crates/usage/jackin-usage-provider-core/Cargo.toml": "4b52f7f9fac25356cafbcf5f9d8adc6e427935c8fc7663db3961288ea942868b",
     "crates/usage/jackin-usage-provider-cursor/Cargo.toml": "0bfc3fc123137c71ef6f37d443506c6bfd1756240c332e0421d3d01a22615cfd",
     "crates/usage/jackin-usage-provider-gemini/Cargo.toml": "fc303542aea4f9c0d81da127c7c3f17867a5aea938c90f8dd2e555a5eeda9127",
     "crates/usage/jackin-usage-provider-grok/Cargo.toml": "cab97348389b3238df8f50847f5a530bd16f8f496ce2bb77e14753d135812229",
@@ -3199,10 +3247,10 @@
     "crates/usage/jackin-usage-provider-mimo/Cargo.toml": "04ae983c3589d322f6dcf6fc025a3931b8be81af1a85205285b51327051e26c2",
     "crates/usage/jackin-usage-provider-minimax/Cargo.toml": "6d7de6bf66dcdcda132e7389f1b2c921ab570adf45ab3b9de3d457b6d2750ae1",
     "crates/usage/jackin-usage-provider-opencode/Cargo.toml": "9407c38d4d49990f32090a78162e44f0fef7d9556180e87fc80e7db3a8a7cce3",
-    "crates/usage/jackin-usage-provider-openrouter/Cargo.toml": "5ffa1637f775e24d5c24a5fd390995a3d197341bb3050b87cb4befa5bd355fa4",
+    "crates/usage/jackin-usage-provider-openrouter/Cargo.toml": "be1a7c49fcb5964c7e90a271020a206a4cfb4dfc6faa4f6526e7f2ff7da062aa",
     "crates/usage/jackin-usage-provider-zai/Cargo.toml": "96721af941ffee4a68c58efbc6bd0473921a6fa73edc1bd80a9ed4e54bc84381",
     "crates/usage/jackin-usage/Cargo.toml": "d2f38eff19a1d8fdb59357d822759a9871c7b5b0932cf60a4746b13aebe750dd",
     "crates/xtask/Cargo.toml": "8a80645825f1a28861ca030bcc830651a97e2ec12f9528d47c9f8dbc46ef8048"
   },
-  "layout": "42343c9b6a37f15d1326df7ecb4122e82eb644784c9d5cdb92ba6fc3c215e0dc"
+  "layout": "7701cc9508da4f40a1f15e0a6b4ba57d0d90c328f0bc4498af1e71ee8f9802d1"
 }

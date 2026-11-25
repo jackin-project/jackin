@@ -16,6 +16,7 @@ use time::{
 };
 
 use crate::error::ProviderError;
+use crate::exact::Exact;
 
 const MAX_BODY_BYTES: u64 = 1 << 20;
 const AGENT: &str = concat!("jackin/", env!("CARGO_PKG_VERSION"));
@@ -183,6 +184,23 @@ impl Http {
         self.send(Method::GET, url, auth, headers, None).await
     }
 
+    pub async fn get_exact(
+        &self,
+        url: &str,
+        auth: Auth<'_>,
+        headers: &[(&str, &str)],
+    ) -> Result<Exact, ProviderError> {
+        if self.hub.is_some() {
+            return Err(ProviderError::Unsupported(
+                "a hub login cannot return exact amounts",
+            ));
+        }
+        let bytes = self
+            .authorized_bytes(Method::GET, url, auth, headers, None)
+            .await?;
+        Exact::parse(&bytes)
+    }
+
     pub async fn post(
         &self,
         url: &str,
@@ -231,6 +249,21 @@ impl Http {
             reply.ensure_success()?;
             return Ok(reply.body);
         }
+        let bytes = self
+            .authorized_bytes(method, url, auth, headers, body)
+            .await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|_| ProviderError::Decode("the response is not valid JSON"))
+    }
+
+    async fn authorized_bytes(
+        &self,
+        method: Method,
+        url: &str,
+        auth: Auth<'_>,
+        headers: &[(&str, &str)],
+        body: Option<&Value>,
+    ) -> Result<Vec<u8>, ProviderError> {
         let mut request = self.request(method, url)?;
         request = with_authorization(request, auth)?;
         for (name, value) in headers {
@@ -243,8 +276,7 @@ impl Http {
         }
         let response = request.send().await.map_err(transport)?;
         check_status(response.status().as_u16(), retry_after_seconds(&response))?;
-        serde_json::from_slice(&read_bytes(response).await?)
-            .map_err(|_| ProviderError::Decode("the response is not valid JSON"))
+        read_bytes(response).await
     }
 
     fn request(&self, method: Method, url: &str) -> Result<RequestBuilder, ProviderError> {

@@ -524,3 +524,109 @@ async fn a_role_repointed_to_an_equal_manifest_loses_the_check_of_the_old_source
     })
     .await
 }
+
+#[tokio::test]
+async fn a_local_role_manifest_deleted_and_restored_outside_the_console_follows_the_file()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let other = lab.add_role("other").await?;
+        lab.reopen().await?;
+        lab.console.keys("R v")?;
+        lab.console.settle().await?;
+        lab.console.keys("down v")?;
+        lab.console.settle().await?;
+        assert!(check_state_is_done(&mut lab, "sentinel")?);
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(false));
+
+        let root = lab.rig.loaded.root().clone();
+        let file = root.as_path().join("jackin.role.toml");
+        let original = tokio::fs::read_to_string(&file).await?;
+        let restored = original.replace("enabled = false", "enabled = true");
+        assert_ne!(restored, original);
+
+        tokio::fs::remove_file(&file).await?;
+        after_refresh(&mut lab).await?;
+        let gone = record(&mut lab, "sentinel")?;
+        assert!(
+            matches!(&gone.manifest, Err(text) if !text.is_empty()),
+            "a missing manifest kept its stale document: {:?}",
+            gone.manifest
+        );
+        assert!(check_state_is_unchecked(&mut lab, "sentinel")?);
+        assert_eq!(docker(&mut lab, "other")?, Some(false));
+
+        tokio::fs::write(&file, restored).await?;
+        after_refresh(&mut lab).await?;
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(true));
+        assert_eq!(docker(&mut lab, "other")?, Some(false));
+        drop(other);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_git_sourced_role_stays_cached_while_local_roles_are_reread_on_refresh() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let remote = RoleFixture::new("remote")?;
+        remote.commit().await?;
+        let url = "https://example.invalid/remote.git";
+        tokio::fs::write(
+            lab.rig.world.home().as_path().join(".gitconfig"),
+            format!(
+                "[url \"file://{}\"]\n\tinsteadOf = {url}\n",
+                remote.root().as_path().display()
+            ),
+        )
+        .await?;
+        lab.edit(vec![ConfigEdit::AddRole {
+            name: RoleName::parse("remote")?,
+            source: RoleSource::Git {
+                url: jackin_core::RoleUrl::parse(url)?,
+                rev: None,
+            },
+        }])
+        .await?;
+        lab.reopen().await?;
+        after_refresh(&mut lab).await?;
+        assert_eq!(docker(&mut lab, "remote")?, Some(false));
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(false));
+
+        edit_manifest(remote.root(), true).await?;
+        let status = tokio::process::Command::new("/usr/bin/git")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .arg("-C")
+            .arg(remote.root().as_path())
+            .args([
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "-q",
+                "-a",
+                "-m",
+                "enable docker",
+            ])
+            .status()
+            .await?;
+        assert!(status.success());
+        edit_manifest(lab.rig.loaded.root(), true).await?;
+        after_refresh(&mut lab).await?;
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(true));
+        assert_eq!(
+            docker(&mut lab, "remote")?,
+            Some(false),
+            "a refresh re-read the remote role"
+        );
+        Ok(())
+    })
+    .await
+}

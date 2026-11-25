@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 
 use jackin_core::{Timestamp, plain};
+use jackin_usage_provider_core::Decimal;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -17,6 +18,13 @@ use crate::accounts::{
 };
 use crate::catalog;
 use crate::dashboard::{DashboardSettings, concealed_label, visible_resource_reset};
+
+fn float(value: &Value) -> Option<f64> {
+    match value {
+        Value::String(text) => Decimal::parse_text(text).ok().map(|exact| exact.to_f64()),
+        other => other.as_f64(),
+    }
+}
 
 const CONCEALED_FAILURE: &str = "Current usage unavailable.";
 
@@ -383,21 +391,19 @@ fn used_of(resource: &Value) -> Option<Used> {
     ) {
         return None;
     }
-    if let Some(left) = resource["remaining_fraction"].as_f64() {
+    if let Some(left) = float(&resource["remaining_fraction"]) {
         return Some(Used::Fraction(UsedFraction::new(1.0 - left)));
     }
-    if let Some(left) = resource["remaining_percent"].as_f64() {
+    if let Some(left) = float(&resource["remaining_percent"]) {
         return Some(Used::Fraction(UsedFraction::new(1.0 - left / 100.0)));
     }
     let scale = scale_of(resource);
-    let limit = resource["limit"]
-        .as_f64()
+    let limit = float(&resource["limit"])
         .map(|limit| limit / scale)
         .and_then(PositiveAmount::new);
-    let used = resource["used"]
-        .as_f64()
+    let used = float(&resource["used"])
         .map(|used| used / scale)
-        .or_else(|| Some(limit?.get() - resource["remaining"].as_f64()? / scale));
+        .or_else(|| Some(limit?.get() - float(&resource["remaining"])? / scale));
     match (used, limit) {
         (Some(used), Some(limit)) => Some(match unit_of(resource) {
             Some(unit) if resource["unit"] != "percent" => Used::Amount {
@@ -407,9 +413,7 @@ fn used_of(resource: &Value) -> Option<Used> {
             },
             _ => Used::Fraction(UsedFraction::new(used / limit.get())),
         }),
-        _ => resource["utilization"]
-            .as_f64()
-            .map(|used| Used::Fraction(UsedFraction::new(used))),
+        _ => float(&resource["utilization"]).map(|used| Used::Fraction(UsedFraction::new(used))),
     }
 }
 
@@ -434,7 +438,7 @@ fn cap(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
     if hidden.contains("payAsYouGo") {
         return None;
     }
-    let limit = body["extraUsageCap"]["limit"].as_f64()?;
+    let limit = float(&body["extraUsageCap"]["limit"])?;
     Some(Note::Balance {
         key: "payAsYouGo".to_owned(),
         label: "Extra cap".to_owned(),
@@ -527,10 +531,9 @@ fn balance(key: &str, resource: &Value) -> Option<Note> {
         return None;
     }
     let scale = scale_of(resource);
-    let amount = resource["available"]
-        .as_f64()
-        .or_else(|| resource["amount"].as_f64())
-        .or_else(|| resource["remaining"].as_f64())?
+    let amount = float(&resource["available"])
+        .or_else(|| float(&resource["amount"]))
+        .or_else(|| float(&resource["remaining"]))?
         / scale;
     let unit = unit_of(resource)?;
     let optional = ["gift", "frozen", "creditLimit", "creditAvailable"]
@@ -539,8 +542,7 @@ fn balance(key: &str, resource: &Value) -> Option<Note> {
     if optional && amount == 0.0 {
         return None;
     }
-    let approx = resource["usd"]
-        .as_f64()
+    let approx = float(&resource["usd"])
         .filter(|_| unit == Unit::Credits)
         .map(|usd| (usd, Currency::USD));
     Some(Note::Balance {
@@ -676,7 +678,7 @@ fn today_tokens(count: Option<u64>, shown: bool) -> TodayTokens {
 }
 
 fn spend(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
-    let period = |key: &str, field: &str| body["period_spend"][key][field].as_f64();
+    let period = |key: &str, field: &str| float(&body["period_spend"][key][field]);
     let shown = |key: &str| !hidden.contains(key);
     let (today, week, month) = (
         period("today", "spend").filter(|_| shown("today")),

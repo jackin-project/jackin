@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, Platform, RepoPath, RoleName, Sha256,
+    Agent, BuilderName, CommitId, DockerLayer, Platform, RepoPath, RoleName, SandboxPath, Sha256,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +68,7 @@ pub struct ImageRequest {
     pub platform: Platform,
     pub builder: BuilderName,
     pub docker: DockerLayer,
+    pub read_write: Vec<SandboxPath>,
     pub rebuild: Rebuild,
 }
 
