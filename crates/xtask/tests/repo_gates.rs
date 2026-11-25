@@ -1982,6 +1982,8 @@ mod error_paths {
             "    H(Label),",
             "    #[error(\"unrelated qualified {}\", <Sanitized as Render>::display(.0))]",
             "    I(Label),",
+            "    #[error(\"full ufcs {}\", <std::path::Path>::display(.0.as_path()))] // p_deep",
+            "    J(PathBuf),",
             "    #[error(\"aliased {}\", P::display(.0.as_path()))] // p_aliased",
             "    E(PathBuf),",
             "    #[error(\"ufcs {}\", <Path>::display(.0.as_path()))] // p_ufcs",
@@ -1999,6 +2001,7 @@ mod error_paths {
                     "p_full",
                     "p_multi",
                     "p_mapped",
+                    "p_deep",
                     "p_aliased",
                     "p_ufcs"
                 ]

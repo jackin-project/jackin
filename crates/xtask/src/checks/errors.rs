@@ -149,11 +149,17 @@ fn is_qualified_display(arguments: &[Token], index: usize, paths: &[&str]) -> bo
         return false;
     };
     if arguments[qualifier].is_punct('>') {
-        return arguments[..qualifier]
+        let Some(open) = arguments[..qualifier]
             .iter()
             .rposition(|token| token.is_punct('<'))
-            .and_then(|open| arguments.get(open + 1))
-            .and_then(Token::ident)
+        else {
+            return false;
+        };
+        return arguments[open + 1..qualifier]
+            .iter()
+            .take_while(|token| !token.is_ident("as"))
+            .filter_map(Token::ident)
+            .last()
             .is_some_and(|name| paths.contains(&name));
     }
     arguments[qualifier]
