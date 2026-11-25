@@ -302,7 +302,7 @@ async fn a_gateway_removal_that_fails_midway_restores_only_the_provider_it_delet
 }
 
 #[tokio::test]
-async fn a_login_provider_that_could_not_be_deleted_keeps_the_gateway_material_when_the_edit_rolls_back()
+async fn a_login_provider_that_could_not_be_deleted_keeps_the_gateway_material_when_the_replacement_rolls_back()
 -> TestResult {
     guard(async {
         let world = registered().await?;
@@ -327,17 +327,18 @@ async fn a_login_provider_that_could_not_be_deleted_keeps_the_gateway_material_w
             .ok_or("no login provider")?;
         login["tokens"]["refresh_token"] = serde_json::json!("ROTATED-ON-THE-HOST");
         home.write(&login).await?;
-        let key = HostPath::parse(&world.home().as_path().join("held.key"))?;
-        world
-            .fs
-            .write_new(&key, b"HELD-KEY", FileMode(0o600))
-            .await?;
+        let key = write_key(&world, FIRST_KEY).await?;
+        let keyed = Account::new(
+            account.name().clone(),
+            Provider::Zai,
+            CredentialSource::File { path: key },
+        )?;
         let plan = plan_account_edits(
             &world.desk(),
-            vec![ConfigEdit::SetAccountCredential {
-                account: account.name().clone(),
-                credential: CredentialSource::File { path: key },
-            }],
+            vec![
+                ConfigEdit::RemoveAccountClearingBindings(account.name().clone()),
+                ConfigEdit::AddAccount(keyed),
+            ],
             &CancellationToken::new(),
         )
         .await?;
@@ -356,7 +357,7 @@ async fn a_login_provider_that_could_not_be_deleted_keeps_the_gateway_material_w
             )
             .await
             .err()
-            .ok_or("an edit with a failing delete succeeded")?;
+            .ok_or("a replacement with a failing delete succeeded")?;
         assert!(
             matches!(error, AccountEditError::OnGateway { .. }),
             "{error:?}"
