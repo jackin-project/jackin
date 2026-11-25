@@ -44,22 +44,21 @@ async fn first_cancels_second_forces_exit(first: &str, second: &str) -> TestResu
     Ok(())
 }
 
-#[tokio::test]
-async fn sigint_cancels_and_a_second_signal_forces_the_exit() -> TestResult {
-    guard(first_cancels_second_forces_exit("INT", "INT")).await
-}
-
-#[tokio::test]
-async fn sigterm_cancels_like_sigint() -> TestResult {
-    guard(first_cancels_second_forces_exit("TERM", "TERM")).await
-}
-
-#[tokio::test]
-async fn sighup_cancels_like_sigint() -> TestResult {
-    guard(first_cancels_second_forces_exit("HUP", "HUP")).await
-}
-
-#[tokio::test]
-async fn the_signals_count_together_toward_the_forced_exit() -> TestResult {
-    guard(first_cancels_second_forces_exit("HUP", "TERM")).await
+#[test]
+fn real_signals_are_handled_one_scenario_at_a_time() -> TestResult {
+    super::drive::real_interrupts_reach_a_drive()?;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(guard(async {
+            for (first, second) in [
+                ("INT", "INT"),
+                ("TERM", "TERM"),
+                ("HUP", "HUP"),
+                ("HUP", "TERM"),
+            ] {
+                first_cancels_second_forces_exit(first, second).await?;
+            }
+            Ok(())
+        }))
 }

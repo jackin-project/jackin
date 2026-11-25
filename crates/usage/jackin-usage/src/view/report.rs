@@ -54,14 +54,6 @@ pub fn report(view: &UsageView, ctx: &Ctx, kind: Report) -> Vec<Line> {
     lines
 }
 
-fn plural(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
 pub fn title(view: &UsageView, kind: Report, ctx: &Ctx) -> Vec<Line> {
     let word = match kind {
         Report::Usage => "Usage",
@@ -82,8 +74,8 @@ pub fn title(view: &UsageView, kind: Report, ctx: &Ctx) -> Vec<Line> {
         let parts = [
             Part::new(word, Tone::Strong),
             Part::new(format!("{stamp} ({offset})"), Tone::Plain),
-            Part::new(plural(view.account_count(), "account"), Tone::Plain),
-            Part::new(plural(view.groups.len(), "provider"), Tone::Plain),
+            Part::new(text::plural(view.account_count(), "account"), Tone::Plain),
+            Part::new(text::plural(view.groups.len(), "provider"), Tone::Plain),
         ];
         lines = text::wrap(Vec::new(), TITLE_INDENT, &parts, ctx.columns());
         if lines.len() == 1 {

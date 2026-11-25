@@ -296,6 +296,29 @@ fn punctuation_glued_to_an_atom_counts_toward_the_width() {
 }
 
 #[test]
+fn leading_punctuation_travels_with_the_atom_it_is_glued_to() {
+    let command = "jackin account usage ls --wide";
+    for open in ["(", "\"", "'", "[", "(\""] {
+        for columns in [34, 36, 38, 40] {
+            let text = format!("see the list below {open}{command}) for more");
+            let parts = [Part::new(text, Tone::Plain).atom(command)];
+            let lines = view_text::wrap(vec![Span::plain("  ")], 2, &parts, columns);
+            let shown = render::plain(&lines);
+            assert!(
+                shown.lines().all(|line| !line.trim_end().ends_with(open)),
+                "{columns} columns, opening {open:?}:\n{shown}"
+            );
+            assert!(
+                shown
+                    .lines()
+                    .any(|line| line.trim().starts_with(&format!("{open}{command})"))),
+                "{columns} columns, opening {open:?}:\n{shown}"
+            );
+        }
+    }
+}
+
+#[test]
 fn only_a_command_wider_than_the_width_is_exempt_from_the_check() {
     assert!(is_unsplittable_command(
         "  jackin account usage ls --wide)",

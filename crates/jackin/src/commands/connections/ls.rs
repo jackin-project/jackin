@@ -186,14 +186,6 @@ fn grid(header: Vec<Vec<Span>>, body: Vec<Vec<Vec<Span>>>) -> Vec<Line> {
         .collect()
 }
 
-fn count(number: usize, noun: &str) -> String {
-    if number == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{number} {noun}s")
-    }
-}
-
 const RECONNECT_HINT: &str = "jackin account usage reconnect <id>";
 const LS_WIDE: &str = "jackin account usage ls --wide";
 const RM_HINT: &str = "jackin account usage rm <id>";
@@ -219,8 +211,8 @@ fn indented(text: &str, atoms: &[String], tone: Tone, ctx: Ctx) -> Vec<Line> {
 fn summary(view: &UsageView, ctx: Ctx) -> Vec<Line> {
     let accounts = view.account_count();
     let mut parts = vec![
-        count(accounts, "account"),
-        count(view.groups.len(), "provider"),
+        text::plural(accounts, "account"),
+        text::plural(view.groups.len(), "provider"),
     ];
     let failing = view
         .accounts()
@@ -313,7 +305,7 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
         lines.extend(flagged(
             &format!(
                 "! {} to sign in again: {RECONNECT_HINT} (IDs: {LS_WIDE})",
-                count(signing_in.len(), "account")
+                text::plural(signing_in.len(), "account")
             ),
             &[RECONNECT_HINT.to_owned(), LS_WIDE.to_owned()],
             Tone::Warn,
