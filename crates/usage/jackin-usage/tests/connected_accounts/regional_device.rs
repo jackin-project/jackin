@@ -69,9 +69,12 @@ async fn kimi_device_reconnect_checks_identity_and_recovers_lost_vault_registrat
     let vault = Arc::new(Vault::default());
     let db = db(&path, &vault)?;
     let s = UsageServer::start().await?;
-    let login =
-        OwnedLogin::new(path, s.endpoints(), Arc::new(FakeClock::new()))
-            .with_vault(Arc::<Vault>::clone(&vault));
+    let login = OwnedLogin::new(
+        path,
+        s.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    );
     let p = Provider::Kimi;
     let token = "/api/oauth/token";
     s.serve(p,Method::Post,"/api/oauth/device_authorization",Route::json(200,r#"{"user_code":"USER","verification_uri_complete":"https://auth.kimi.com/approve","device_code":"dev","expires_in":600,"interval":1}"#).requires_text_body("client_id=registered-client"));
@@ -207,8 +210,7 @@ async fn minimax_device_checks_pkce_and_uses_grant_product_and_renewal() -> Resu
     let db = db(&path, &vault)?;
     let s = UsageServer::start().await?;
     let clock = Arc::new(FakeClock::new());
-    let login =
-        OwnedLogin::new(path, s.endpoints(), Arc::<FakeClock>::clone(&clock)).with_vault(vault);
+    let login = OwnedLogin::new(path, s.endpoints(), Arc::<FakeClock>::clone(&clock), vault);
     let p = Provider::Minimax;
     let start = "/oauth2/device/code";
     s.serve(

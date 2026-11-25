@@ -113,6 +113,13 @@ pub enum Unit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Currency([u8; 3]);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TodayTokens {
+    Hidden,
+    Unavailable,
+    Count(u64),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Note {
     Balance {
@@ -124,7 +131,7 @@ pub enum Note {
     },
     Resets(Vec<ResetCredit>),
     Tokens {
-        today: Option<u64>,
+        today: TodayTokens,
         yesterday: Option<Activity>,
         last30: Option<Activity>,
     },

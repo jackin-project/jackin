@@ -16,6 +16,7 @@ use jackin_core::{
 };
 use jackin_session::{AccountDesk, HostPorts, RoleCatalog};
 use jackin_usage::HostUsage;
+use jackin_usage::accounts::CredentialVault;
 use termrock::clock::SimClock;
 use termrock::motion::Motion;
 use termrock::runtime::{Application, external_channel, pump_external};
@@ -49,6 +50,7 @@ pub struct ConsoleDeps {
     pub config: ConfigStore,
     pub desk: AccountDesk,
     pub usage: Arc<HostUsage>,
+    pub vault: Arc<dyn CredentialVault>,
     pub sessions: SessionSet,
     pub connect: Arc<dyn SessionConnector>,
     pub roles: Arc<RoleCatalog>,
@@ -226,6 +228,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         config,
         desk,
         usage,
+        vault,
         sessions,
         connect,
         roles,
@@ -249,6 +252,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         config,
         desk,
         usage,
+        vault,
         op: op.clone(),
         google_registration: jackin_usage::onboarding::GoogleRegistrationFile::from_environment(
             &env,

@@ -49,29 +49,33 @@ async fn offline_snapshot_filters_accounts_and_preserves_absence_and_zero() -> T
         let secret = SecretBytes::new(vec![]);
         let now = world.clock.now().0;
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             "Work",
             &CandidateIdentity::OAuth(None),
             &secret,
-            now - 600,
-            &json!({
+            (now - 600, &json!({
                 "nextGrantId":"private-receipt",
                 "resources":{"session":{"kind":"consumption","unit":"percent","used":0,"limit":100}}
-            }),
+            })),
         )?;
         let pending = db.add(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Grok,
             "Personal",
             &CandidateIdentity::OAuth(None),
             &secret,
         )?;
         db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::OpenCode,
             "Hidden workspace",
             &CandidateIdentity::OAuth(None),
             &secret,
-            now,
-            &json!({"notice":"Reconnect this workspace","resources":{}}),
+            (
+                now,
+                &json!({"notice":"Reconnect this workspace","resources":{}}),
+            ),
         )?;
         drop(db);
         let overview = cli.run(&["usage"]).await?;
@@ -244,12 +248,12 @@ async fn control_bytes_in_a_failure_message_never_reach_the_text_report() -> Tes
             AccountRegistry::with_vault(&root.join("usage/accounts.sqlite3"), Arc::new(WriteOnly))?;
         let now = world.clock.now().0;
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             "Work",
             &CandidateIdentity::OAuth(None),
             &SecretBytes::new(vec![]),
-            now,
-            &json!({"resources":{"session":{"kind":"consumption","unit":"percent","used":5,"limit":100}}}),
+            (now, &json!({"resources":{"session":{"kind":"consumption","unit":"percent","used":5,"limit":100}}})),
         )?;
         let version = db.version(id)?;
         db.record_failure(

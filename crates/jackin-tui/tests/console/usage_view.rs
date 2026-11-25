@@ -9,12 +9,12 @@ use jackin_console::screens::Go;
 use jackin_console::usage_connections::UsageBoard;
 use jackin_core::Clock;
 use jackin_testkit::{
-    ConsoleRig, ProfileAccount, Rig, SeedRow, TestResult, assert_golden, pin_usage_view_clock,
-    seed_usage_rows, seed_usage_view,
+    ConsoleRig, MemoryVault, ProfileAccount, Rig, SeedRow, TestResult, USAGE_VIEW_NOW,
+    assert_golden, pin_usage_view_clock, seed_usage_rows, seed_usage_view,
 };
-use jackin_usage::ProviderEndpoints;
-use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, FailureKind};
+use jackin_usage::accounts::{AccountRegistry, CredentialVault, DATABASE_PATH, FailureKind};
 use jackin_usage::onboarding::OwnedLogin;
+use jackin_usage::view::text;
 use termrock::core::id::WidgetId;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -64,7 +64,7 @@ fn ids(accounts: &[ProfileAccount]) -> Vec<Uuid> {
     accounts.iter().map(|account| account.id).collect()
 }
 
-fn board(lab: &Lab, priority: bool) -> Result<UsageBoard, Box<dyn std::error::Error>> {
+async fn board(lab: &Lab, priority: bool) -> Result<UsageBoard, Box<dyn std::error::Error>> {
     let path = lab
         .console
         .config()
@@ -75,7 +75,9 @@ fn board(lab: &Lab, priority: bool) -> Result<UsageBoard, Box<dyn std::error::Er
         .join(DATABASE_PATH);
     let fake = Arc::clone(&lab.rig.world.clock);
     let clock: Arc<dyn Clock> = fake;
-    let service = OwnedLogin::new(path, ProviderEndpoints::real(), clock);
+    let endpoints = lab.rig.world.usage.get().await?.endpoints();
+    let vault: Arc<dyn CredentialVault> = Arc::<MemoryVault>::clone(&lab.rig.world.vault);
+    let service = OwnedLogin::new(path, endpoints, clock, vault);
     Ok(jackin_tui::read_usage_board(&service, priority)?)
 }
 
@@ -154,10 +156,10 @@ async fn a_duplicate_connection_is_flagged_with_its_short_id_and_its_failure() -
 async fn the_mapped_board_rows_carry_normalized_quantities_and_no_remaining_wording() -> TestResult
 {
     let (lab, accounts) = seeded().await?;
-    let all = board(&lab, false)?;
+    let all = board(&lab, false).await?;
     for row in &all.rows {
         assert!(
-            row.value.chars().count() <= 32,
+            text::width(&row.value) <= 32,
             "{}: {}",
             row.title,
             row.value
@@ -204,7 +206,7 @@ async fn the_mapped_board_rows_carry_normalized_quantities_and_no_remaining_word
 #[tokio::test]
 async fn priority_keeps_its_sections_and_speaks_in_used_percentages() -> TestResult {
     let (lab, _) = seeded().await?;
-    let priority = board(&lab, true)?;
+    let priority = board(&lab, true).await?;
     assert!(!priority.rows.is_empty());
     let sections = [
         "Pinned",
@@ -261,7 +263,8 @@ async fn rename_and_read(
         .parent()
         .ok_or("config dir")?
         .join(DATABASE_PATH);
-    let registry = AccountRegistry::open_read_only(&path)?.ok_or("registry")?;
+    let registry = AccountRegistry::open_read_only_with_vault(&path, MemoryVault::shared())?
+        .ok_or("registry")?;
     let renamed = registry
         .list()?
         .into_iter()
@@ -440,7 +443,7 @@ async fn all_usage_rows_carry_the_freshness_failure_and_duplicate_flags() -> Tes
             .to_string();
         Ok(id.chars().take(8).collect())
     };
-    let all = board(&lab, false)?;
+    let all = board(&lab, false).await?;
     let value = |title: &str| {
         all.rows
             .iter()
@@ -453,7 +456,7 @@ async fn all_usage_rows_carry_the_freshness_failure_and_duplicate_flags() -> Tes
     assert!(value(&format!("#{} · Claude weekly", short(13)?))?.starts_with("failed · dup · "));
     for row in &all.rows {
         assert!(
-            row.value.chars().count() <= 32,
+            text::width(&row.value) <= 32,
             "{}: {}",
             row.title,
             row.value
@@ -502,7 +505,7 @@ async fn priority_lists_the_cli_attention_entries_at_120x40() -> TestResult {
 #[tokio::test]
 async fn priority_rows_follow_the_attention_notices() -> TestResult {
     let (lab, accounts) = seeded().await?;
-    let priority = board(&lab, true)?;
+    let priority = board(&lab, true).await?;
     let tags = |texts: Vec<&str>| -> Vec<String> {
         texts
             .into_iter()
@@ -529,6 +532,80 @@ async fn priority_rows_follow_the_attention_notices() -> TestResult {
         &dump(&priority),
         &ids(&accounts),
     )
+}
+
+#[tokio::test]
+async fn a_duplicate_only_registry_does_not_claim_all_clear() -> TestResult {
+    let (lab, cancel) = quiet_lab().await?;
+    pin_usage_view_clock(&lab.rig.world.clock);
+    cancel.cancel();
+    let path = lab
+        .console
+        .config()
+        .path()
+        .as_path()
+        .parent()
+        .ok_or("config dir")?
+        .join(DATABASE_PATH);
+    let snapshot = serde_json::json!({
+        "plan": "Google AI Ultra",
+        "resources": {
+            "3p-weekly": {
+                "kind": "quota",
+                "label": "Claude weekly",
+                "remaining_fraction": 0.9,
+                "resets_at": USAGE_VIEW_NOW + 86_400,
+                "unit": "percent",
+                "window_seconds": 604_800
+            }
+        }
+    });
+    let seeds = ["subject-shared", "SUBJECT-Shared"]
+        .into_iter()
+        .map(|identity| SeedRow {
+            provider: jackin_usage::accounts::UsageProvider::Antigravity,
+            label: "work@example.com",
+            identity: Some(identity),
+            fetched_at: USAGE_VIEW_NOW,
+            snapshot: snapshot.clone(),
+            failure: None,
+        })
+        .collect();
+    seed_usage_rows(&path, seeds)?;
+    let priority = board(&lab, true).await?;
+    assert!(
+        priority
+            .rows
+            .iter()
+            .any(|row| row.title.contains("work@example.com")),
+        "{}",
+        dump(&priority)
+    );
+    assert!(
+        priority.notices.iter().any(|n| n.starts_with("DUPLICATE")),
+        "{}",
+        dump(&priority)
+    );
+    assert!(
+        !priority.summary.contains("All clear") && !priority.summary.contains("Waiting"),
+        "{}",
+        dump(&priority)
+    );
+    assert_eq!(
+        priority.summary,
+        jackin_usage::view::report::attention_heading(1),
+        "{}",
+        dump(&priority)
+    );
+    assert!(
+        priority
+            .notices
+            .iter()
+            .all(|notice| !notice.contains("All clear")),
+        "{}",
+        dump(&priority)
+    );
+    Ok(())
 }
 
 #[tokio::test]

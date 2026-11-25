@@ -15,7 +15,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use jackin_core::{Clock, Provider, Secret, SecretBytes, Timestamp};
+use jackin_core::{Clock, CriticalWrite, Provider, Secret, SecretBytes, Timestamp};
 use jackin_usage_provider_core::{Http, ProviderError};
 use serde_json::Value;
 use thiserror::Error;
@@ -40,7 +40,7 @@ pub struct OwnedLogin {
     endpoints: ProviderEndpoints,
     clock: Arc<dyn Clock>,
     google_registration: Option<GoogleRegistrationFile>,
-    vault: Option<Arc<dyn crate::accounts::CredentialVault>>,
+    vault: Arc<dyn crate::accounts::CredentialVault>,
     store_wait: std::time::Duration,
 }
 
@@ -208,12 +208,17 @@ fn core_provider(provider: UsageProvider) -> Provider {
 }
 
 impl OwnedLogin {
-    pub fn new(path: PathBuf, endpoints: ProviderEndpoints, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(
+        path: PathBuf,
+        endpoints: ProviderEndpoints,
+        clock: Arc<dyn Clock>,
+        vault: Arc<dyn crate::accounts::CredentialVault>,
+    ) -> Self {
         Self {
             path,
             endpoints,
             clock,
-            vault: None,
+            vault,
             google_registration: None,
             store_wait: std::time::Duration::from_secs(30),
         }
@@ -257,18 +262,13 @@ impl OwnedLogin {
         self.clock.utc_offset_secs()
     }
 
-    #[must_use]
-    pub fn with_vault(mut self, vault: Arc<dyn crate::accounts::CredentialVault>) -> Self {
-        self.vault = Some(vault);
-        self
+    pub fn open_registry(&self) -> Result<AccountRegistry, ConnectionError> {
+        AccountRegistry::with_vault(&self.path, Arc::clone(&self.vault))
+            .map(|registry| registry.with_lock_wait(self.store_wait))
     }
 
-    pub(crate) fn open_registry(&self) -> Result<AccountRegistry, ConnectionError> {
-        match &self.vault {
-            Some(vault) => AccountRegistry::with_vault(&self.path, Arc::clone(vault)),
-            None => AccountRegistry::open(&self.path),
-        }
-        .map(|registry| registry.with_lock_wait(self.store_wait))
+    pub fn open_read_only_registry(&self) -> Result<Option<AccountRegistry>, ConnectionError> {
+        AccountRegistry::open_read_only_with_vault(&self.path, Arc::clone(&self.vault))
     }
 
     pub async fn with_registry<T: Send + 'static>(
@@ -302,9 +302,10 @@ impl OwnedLogin {
         lease: &std::fs::File,
     ) -> Result<CredentialVersion, LoginError> {
         let guard = lease.try_clone().map_err(ConnectionError::from)?;
+        let write = CriticalWrite::begin();
         self.with_registry(move |mut db| {
             let _lease = guard;
-            db.rotate(id, expected, &material)
+            db.rotate(&write, id, expected, &material)
         })
         .await
     }
@@ -358,7 +359,8 @@ impl OwnedLogin {
             Http::new(self.endpoints.timeout()).with_proxy(url.expose())?;
         }
         let encoded = proxy.map(|p| SecretBytes::new(p.expose().as_bytes().to_vec()));
-        self.with_registry(move |mut db| db.set_proxy(encoded.as_ref()))
+        let write = CriticalWrite::begin();
+        self.with_registry(move |mut db| db.set_proxy(&write, encoded.as_ref()))
             .await
     }
 
@@ -407,14 +409,11 @@ impl OwnedLogin {
             ()=cancel.cancelled()=>return Err(LoginError::Cancelled),
             validated=self.candidate(provider,auth,region,replace,prompts,cancel)=>validated?,
         };
-        if cancel.is_cancelled() {
-            return Err(LoginError::Cancelled);
-        }
         let fetched = self.clock.now().0;
-        let cancel = cancel.clone();
+        let write = CriticalWrite::begin();
         tokio::task::spawn_blocking(move || {
             let _lease = lease;
-            persist_candidate(&mut db, provider, candidate, existing, fetched, &cancel)
+            persist_candidate(&write, &mut db, provider, candidate, existing, fetched)
         })
         .await
         .map_err(|_| LoginError::Worker)?
@@ -923,12 +922,12 @@ impl RefreshTrigger {
 }
 
 fn persist_candidate(
+    write: &CriticalWrite,
     db: &mut AccountRegistry,
     provider: UsageProvider,
     candidate: Candidate,
     existing: Option<(Uuid, CredentialVersion)>,
     fetched: i64,
-    cancel: &CancellationToken,
 ) -> Result<Uuid, LoginError> {
     use crate::accounts::{InitialRead, KeptGrant};
     let read = candidate.snapshot;
@@ -936,12 +935,12 @@ fn persist_candidate(
         return match read {
             Ok(payload) => {
                 db.replace_candidate(
+                    write,
                     id,
                     version,
                     &candidate.identity,
                     &candidate.material,
                     Some((fetched, &payload)),
-                    cancel,
                 )?;
                 Ok(id)
             }
@@ -951,6 +950,7 @@ fn persist_candidate(
                     .unwrap_or((FailureKind::Service, None));
                 let message = error.to_string();
                 db.replace_grant_keeping_reading(
+                    write,
                     id,
                     version,
                     KeptGrant {
@@ -961,7 +961,6 @@ fn persist_candidate(
                         retry_after,
                         message: &message,
                     },
-                    cancel,
                 )?;
                 Err(error)
             }
@@ -983,12 +982,12 @@ fn persist_candidate(
         }
     };
     let id = db.add_candidate(
+        write,
         provider,
         &candidate.label,
         &candidate.identity,
         &candidate.material,
         initial,
-        cancel,
     )?;
     if provider == UsageProvider::Antigravity {
         read.map(|_| id)
@@ -1086,4 +1085,16 @@ async fn renew_tokens(
                 .await?
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_busy_credential_store_is_recorded_as_a_timeout_naming_the_keychain() {
+        let error = LoginError::from(ConnectionError::StoreBusy);
+        assert_eq!(error.failure_class(), Some((FailureKind::Timeout, None)));
+        assert!(error.to_string().contains("Keychain"));
+    }
 }
