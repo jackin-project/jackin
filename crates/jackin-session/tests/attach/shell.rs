@@ -4,13 +4,16 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{EnvName, Labels, Phase, SandboxName, SandboxPath, sandbox_layout};
-use jackin_openshell::{GatewayError, PowerAction, TerminalEvent};
+use std::time::Duration;
+
+use jackin_openshell::{GatewayError, GatewayOp, PowerAction, TerminalEvent};
 use jackin_session::{AttachError, EnvFileProblem, LaunchStep, ShellRequest};
-use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard, launch_id};
+use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard, guard_within, launch_id};
 use tokio_util::sync::CancellationToken;
 
 use super::support::size;
 
+const WITHIN: Duration = Duration::from_secs(20);
 const HOSTILE: &str = "a'b \"c\" $x";
 
 fn request(name: &SandboxName) -> Result<ShellRequest, Box<dyn std::error::Error>> {
@@ -169,6 +172,79 @@ async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -
                 other => return Err(format!("{ended:?}: saw {other:?}").into()),
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_before_the_shell_terminal_is_requested_opens_no_terminal() -> TestResult {
+    guard_within(WITHIN, async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.sandbox_name(1)?;
+        let session = &rig.world.session;
+
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let before_lookup = session.open_shell(request(&name)?, &cancelled).await;
+        assert!(
+            matches!(
+                before_lookup,
+                Err(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            ),
+            "{before_lookup:?}"
+        );
+
+        let hold = Trigger::Op(GatewayOp::ReadFiles);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let opening = session.open_shell(request(&name)?, &token);
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+        };
+        let (during_env_read, ()) = tokio::join!(opening, driver);
+        assert!(
+            matches!(
+                during_env_read,
+                Err(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            ),
+            "{during_env_read:?}"
+        );
+        assert_eq!(rig.gateway().calls(GatewayOp::Terminal), 0);
+        rig.gateway().release(&hold);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_shell_on_a_sandbox_jackin_does_not_manage_says_so() -> TestResult {
+    guard_within(WITHIN, async {
+        let rig = Rig::new().await?;
+        let ghost = SandboxName::parse("jackin-ghost-0000")?;
+        rig.gateway()
+            .insert_unmanaged(&ghost, Labels::from_pairs([])?, Phase::Ready)?;
+        let session = &rig.world.session;
+        let refused = session
+            .open_shell(request(&ghost)?, &CancellationToken::new())
+            .await;
+        assert!(
+            matches!(&refused, Err(AttachError::NotManaged(name)) if *name == ghost),
+            "{refused:?}"
+        );
+        let missing = SandboxName::parse("jackin-missing-0001")?;
+        let absent = session
+            .open_shell(request(&missing)?, &CancellationToken::new())
+            .await;
+        assert!(
+            matches!(&absent, Err(AttachError::NotFound(name)) if *name == missing),
+            "{absent:?}"
+        );
+        assert_eq!(rig.gateway().calls(GatewayOp::Terminal), 0);
         Ok(())
     })
     .await

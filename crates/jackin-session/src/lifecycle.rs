@@ -66,9 +66,12 @@ pub enum PurgeError {
     #[error("{sandbox} exists but is not a jackin sandbox; nothing was deleted")]
     NotManaged { sandbox: SandboxName },
     #[error(
-        "the gateway could not confirm whether the delete of {sandbox} took effect; jackin ls shows the current state"
+        "the gateway could not confirm whether the delete of {sandbox} took effect ({cause}); jackin ls shows the current state"
     )]
-    DeleteUnconfirmed { sandbox: SandboxName },
+    DeleteUnconfirmed {
+        sandbox: SandboxName,
+        cause: Box<GatewayError>,
+    },
     #[error("cancelled before {sandbox} was deleted; nothing was deleted")]
     Cancelled { sandbox: SandboxName },
     #[error(transparent)]
@@ -142,6 +145,13 @@ fn summary(view: &SandboxView) -> Result<SandboxSummary, LifecycleError> {
         phase: view.phase,
         created_at: created_at(view),
     })
+}
+
+fn unconfirmed(sandbox: &SandboxName, cause: GatewayError) -> PurgeError {
+    PurgeError::DeleteUnconfirmed {
+        sandbox: sandbox.clone(),
+        cause: Box::new(cause),
+    }
 }
 
 fn lifecycle_gateway(error: GatewayError) -> LifecycleError {
@@ -247,9 +257,6 @@ impl Session {
             sandbox: sandbox.clone(),
             was,
         };
-        let unconfirmed = || PurgeError::DeleteUnconfirmed {
-            sandbox: sandbox.clone(),
-        };
         let fresh = CancellationToken::new();
         let lookup = self.locate(sandbox, &fresh);
         let budget = self.deps.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
@@ -260,11 +267,11 @@ impl Session {
                 Ok(Located::Found(now)) if now.phase == Phase::Deleting => Ok(outcome),
                 Ok(Located::Found(now)) => match (deleted.created_at, now.created_at) {
                     (Some(before), Some(current)) if current != before => Ok(outcome),
-                    _ => Err(error.into()),
+                    _ => Err(unconfirmed(sandbox, error)),
                 },
-                Err(_) => Err(unconfirmed()),
+                Err(_) => Err(unconfirmed(sandbox, error)),
             },
-            () = budget => Err(unconfirmed()),
+            () = budget => Err(unconfirmed(sandbox, error)),
         }
     }
 

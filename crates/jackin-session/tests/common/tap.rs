@@ -53,6 +53,15 @@ struct Hooks {
     pause: Duration,
     active: BTreeMap<SandboxName, usize>,
     peak: usize,
+    duplicate_names: bool,
+    deleted: bool,
+    finds_after_delete: Option<Lookup>,
+}
+
+#[derive(Debug)]
+pub(crate) enum Lookup {
+    Fail(GatewayError),
+    Hang,
 }
 
 #[derive(Debug)]
@@ -114,6 +123,14 @@ impl Tap {
             config: world.config.clone(),
             limits,
         })
+    }
+
+    pub(crate) fn lookups_after_a_delete(&self, lookup: Lookup) {
+        self.hooks().finds_after_delete = Some(lookup);
+    }
+
+    pub(crate) fn list_each_sandbox_twice_by_name(&self) {
+        self.hooks().duplicate_names = true;
     }
 
     pub(crate) fn replace_next_download(&self, bytes: Vec<u8>) {
@@ -316,7 +333,32 @@ impl Gateway for Tap {
             self.entered.notify_one();
             std::future::pending::<()>().await;
         }
-        self.inner.find_sandboxes(query).await
+        let hang = {
+            let mut hooks = self.hooks();
+            if hooks.deleted {
+                match hooks.finds_after_delete.take() {
+                    Some(Lookup::Fail(error)) => return Err(error),
+                    Some(Lookup::Hang) => {
+                        hooks.finds_after_delete = Some(Lookup::Hang);
+                        true
+                    }
+                    None => false,
+                }
+            } else {
+                false
+            }
+        };
+        if hang {
+            std::future::pending::<()>().await;
+        }
+        let found = self.inner.find_sandboxes(query).await?;
+        if matches!(query, SandboxQuery::Name(_)) && self.hooks().duplicate_names {
+            return Ok(found
+                .into_iter()
+                .flat_map(|view| [view.clone(), view])
+                .collect());
+        }
+        Ok(found)
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
@@ -339,7 +381,9 @@ impl Gateway for Tap {
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
-        self.inner.delete_sandbox(name).await
+        let result = self.inner.delete_sandbox(name).await;
+        self.hooks().deleted = true;
+        result
     }
 
     async fn run_program(

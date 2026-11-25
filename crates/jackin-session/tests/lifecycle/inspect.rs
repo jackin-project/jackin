@@ -100,7 +100,8 @@ async fn inspect_reports_the_sandbox_and_flags_only_a_foreign_rule_on_a_codex_ho
 }
 
 #[tokio::test]
-async fn inspect_of_an_absent_or_foreign_sandbox_is_not_found() -> TestResult {
+async fn inspect_of_an_absent_sandbox_is_not_found_and_of_a_foreign_one_is_not_managed()
+-> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         let session = &rig.world.session;
@@ -112,7 +113,7 @@ async fn inspect_of_an_absent_or_foreign_sandbox_is_not_found() -> TestResult {
             .gateway
             .insert_unmanaged(&foreign, Labels::from_pairs([])?, Phase::Ready)?;
         let ghost = session.inspect(&foreign, &CancellationToken::new()).await;
-        assert!(matches!(ghost, Err(LifecycleError::NotFound(found)) if found == foreign));
+        assert!(matches!(ghost, Err(LifecycleError::NotManaged(found)) if found == foreign));
         Ok(())
     })
     .await

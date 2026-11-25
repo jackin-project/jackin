@@ -102,7 +102,7 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
                 &CancellationToken::new(),
             )
             .await;
-        assert!(matches!(ghost, Err(AttachError::NotFound(found)) if found == foreign));
+        assert!(matches!(ghost, Err(AttachError::NotManaged(found)) if found == foreign));
 
         let request = AttachRequest::owner(target(&rig, 1).await?, size()?);
         session

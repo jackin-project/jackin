@@ -4,4 +4,5 @@
 mod cancel;
 mod inspect;
 mod list;
+mod lookups;
 mod power;

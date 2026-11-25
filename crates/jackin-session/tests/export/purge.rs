@@ -233,7 +233,10 @@ async fn a_repeated_purge_is_already_gone_a_failed_delete_keeps_the_sandbox_and_
                 &CancellationToken::new(),
             )
             .await;
-        assert!(matches!(failed, Err(PurgeError::Gateway(_))), "{failed:?}");
+        assert!(
+            matches!(failed, Err(PurgeError::DeleteUnconfirmed { .. })),
+            "{failed:?}"
+        );
         assert!(gateway.sandbox(&first).is_some());
 
         gateway.force_phase(&second, Phase::Deleting);

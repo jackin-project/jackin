@@ -349,9 +349,14 @@ impl Session {
     ) -> Result<AgentInstances, GatewayError> {
         let view = match self.locate(sandbox, cancel).await? {
             Located::Found(view) => *view,
-            Located::Absent | Located::Unmanaged => {
+            Located::Absent => {
                 return Err(GatewayError::NotFound {
                     what: Missing::Sandbox(sandbox.clone()),
+                });
+            }
+            Located::Unmanaged => {
+                return Err(GatewayError::FailedPrecondition {
+                    message: crate::sandbox_unmanaged(sandbox),
                 });
             }
         };

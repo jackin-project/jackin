@@ -976,6 +976,7 @@ impl Gateway for FakeGateway {
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Delete, None, None).await?;
         let removed = {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Delete)?;
