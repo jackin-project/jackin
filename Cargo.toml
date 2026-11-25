@@ -85,6 +85,7 @@ windows-native-keyring-store = "1.1.0"
 libsecret = "0.9.0"
 gio = "0.22"
 webbrowser = { version = "1.2.7", default-features = false }
+x509-parser = { version = "0.18.1", default-features = false }
 url = "2.5.9"
 uuid = { version = "1.29.0", features = ["v4", "serde"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }

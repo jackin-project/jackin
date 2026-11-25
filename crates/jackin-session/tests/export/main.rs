@@ -6,6 +6,7 @@ mod aliases;
 mod bundle_limits;
 mod cancel;
 mod changes;
+mod checkouts;
 mod concurrent;
 mod detached;
 mod empty;

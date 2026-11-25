@@ -219,6 +219,15 @@
               ]
             },
             {
+              "name": "rustls",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "aws_lc_rs",
+                "std"
+              ]
+            },
+            {
               "name": "serde",
               "kind": "normal",
               "manifest": null,
@@ -260,6 +269,11 @@
                 "parse",
                 "serde"
               ]
+            },
+            {
+              "name": "x509-parser",
+              "kind": "normal",
+              "manifest": null
             },
             {
               "name": "zeroize",
@@ -428,6 +442,16 @@
               "tests": true,
               "doctest": false,
               "source": "crates/jackin-core/tests/engine_cert.rs",
+              "requires_features": false
+            },
+            {
+              "name": "engine_pair",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/engine_pair.rs",
               "requires_features": false
             },
             {
@@ -653,6 +677,14 @@
               "manifest": null
             },
             {
+              "name": "base64",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "std"
+              ]
+            },
+            {
               "name": "clap",
               "kind": "normal",
               "manifest": null,
@@ -709,6 +741,15 @@
               "manifest": null,
               "features": [
                 "crossterm_0_29"
+              ]
+            },
+            {
+              "name": "rcgen",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "aws_lc_rs",
+                "pem"
               ]
             },
             {
@@ -3120,12 +3161,12 @@
     }
   },
   "manifests": {
-    "Cargo.toml": "982532cdc8aacaf75aa4c39a440a119def0871047bf7d49e03a8b8faa08d75c7",
-    "crates/jackin-core/Cargo.toml": "2aaf16f5373ba4736f842d4ad961f1c77fc551b6120587def2cd4bc524a7d0cb",
+    "Cargo.toml": "c96d7dbeb3d1a101d04b2ed2448a99504bb5c9fe94b443f4434ac50adbe4b2c1",
+    "crates/jackin-core/Cargo.toml": "b871d103affec6cb8259dfc9757d8fcb4ca5a80a2f55cf7378106f21f568d245",
     "crates/jackin-image/Cargo.toml": "9b97498a682f4cb9550f4019c4839a2c3a5ff99c142235d9e34edab30cb062f3",
     "crates/jackin-openshell/Cargo.toml": "6f0bc40a09df45272e0697b20345ed999e8f0118abc80a860c9fd57adfc7a4f3",
     "crates/jackin-session/Cargo.toml": "8cfe405cc6a03c342610da59ced121a806d356a0b85b414d514c957a0d4dc5f2",
-    "crates/jackin-testkit/Cargo.toml": "0e57b6be30f4aa4a90038aee093c2842090820353d015785c98a954065b3e7fe",
+    "crates/jackin-testkit/Cargo.toml": "fd7d46b8ffdecdf0a729ac518cf1626c6b6d7ceab948ba7844958db574feaf07",
     "crates/jackin-tui/Cargo.toml": "6f540ae8df1d9b2c85dbafc7e1eceaf0327f9c575b6657df78a0aa4187e0342f",
     "crates/jackin/Cargo.toml": "e09c3b3344011f7cc087879ce2ffa485e096901723a6fac811e1c6f55e249f2e",
     "crates/usage/jackin-usage-provider-claude/Cargo.toml": "8a585594e1c95c6301ad39e7173cac73f6695253fbea3d13316dcb0af570dbd7",
@@ -3143,5 +3184,5 @@
     "crates/usage/jackin-usage/Cargo.toml": "d2f38eff19a1d8fdb59357d822759a9871c7b5b0932cf60a4746b13aebe750dd",
     "crates/xtask/Cargo.toml": "8a80645825f1a28861ca030bcc830651a97e2ec12f9528d47c9f8dbc46ef8048"
   },
-  "layout": "d44863775704a36ade34301dd248d159baeb45abbc208bf165a589439046e407"
+  "layout": "95d6db9ce7b12fec19bd404dea77254321f3644ee18f82b155102f0fe3ab0ed6"
 }
