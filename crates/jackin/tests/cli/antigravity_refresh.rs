@@ -19,7 +19,7 @@ use uuid::Uuid;
 use super::support::{Failure, Harness, Ran, ScriptedTerminal};
 
 #[derive(Debug, Default)]
-struct Memory {
+pub(super) struct Memory {
     values: Mutex<HashMap<Uuid, Vec<u8>>>,
 }
 

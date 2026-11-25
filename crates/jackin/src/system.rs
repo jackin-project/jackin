@@ -10,7 +10,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     ConfigStore, EnvName, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
-    ProcessRunner,
+    ProcessRunner, settle_critical_writes,
 };
 use jackin_openshell::{Gateway, GrpcGateway, GrpcGatewayConfig, TermSize, resolve_gateway};
 use jackin_session::{
@@ -29,6 +29,7 @@ use crate::terminal::{RawMode, Terminal, TerminalInput};
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+const CRITICAL_WRITE_LIMIT: Duration = Duration::from_secs(120);
 const READ_CHUNK: usize = 4096;
 const FALLBACK_SIZE: (u16, u16) = (80, 24);
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
@@ -40,6 +41,7 @@ pub fn drive<F: Future>(future: F) -> io::Result<F::Output> {
         .enable_all()
         .build()?;
     let output = runtime.block_on(future);
+    settle_critical_writes(CRITICAL_WRITE_LIMIT);
     runtime.shutdown_timeout(SHUTDOWN_GRACE);
     Ok(output)
 }

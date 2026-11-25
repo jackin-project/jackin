@@ -15,7 +15,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use jackin_core::{Clock, Provider, Secret, SecretBytes, Timestamp};
+use jackin_core::{Clock, CriticalWrite, Provider, Secret, SecretBytes, Timestamp};
 use jackin_usage_provider_core::{Http, ProviderError};
 use serde_json::Value;
 use thiserror::Error;
@@ -302,7 +302,9 @@ impl OwnedLogin {
         lease: &std::fs::File,
     ) -> Result<CredentialVersion, LoginError> {
         let guard = lease.try_clone().map_err(ConnectionError::from)?;
+        let write = CriticalWrite::begin();
         self.with_registry(move |mut db| {
+            let _write = write;
             let _lease = guard;
             db.rotate(id, expected, &material)
         })
@@ -412,7 +414,9 @@ impl OwnedLogin {
         }
         let fetched = self.clock.now().0;
         let cancel = cancel.clone();
+        let write = CriticalWrite::begin();
         tokio::task::spawn_blocking(move || {
+            let _write = write;
             let _lease = lease;
             persist_candidate(&mut db, provider, candidate, existing, fetched, &cancel)
         })
@@ -1086,4 +1090,16 @@ async fn renew_tokens(
                 .await?
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_busy_credential_store_is_recorded_as_a_timeout_naming_the_keychain() {
+        let error = LoginError::from(ConnectionError::StoreBusy);
+        assert_eq!(error.failure_class(), Some((FailureKind::Timeout, None)));
+        assert!(error.to_string().contains("Keychain"));
+    }
 }
