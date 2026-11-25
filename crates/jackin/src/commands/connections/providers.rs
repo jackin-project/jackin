@@ -166,10 +166,6 @@ fn cells(
     }
 }
 
-fn pad(text: &str, width: usize) -> String {
-    text::pad(text, width)
-}
-
 fn widest(cells: &[Cells], column: fn(&Cells) -> &str, header: &str) -> usize {
     cells
         .iter()
@@ -212,16 +208,16 @@ fn table(
         Line::blank(),
         Line::of(vec![Span::dim(format!(
             "{}  {}  {:>count_width$}  NOTE",
-            pad("PROVIDER", name_width),
-            pad("ID", id_width),
+            text::pad("PROVIDER", name_width),
+            text::pad("ID", id_width),
             "ACCOUNTS"
         ))]),
     ]);
     for cell in cells {
         let figure = format!("{:>count_width$}", cell.count);
         let mut spans = vec![
-            Span::strong(pad(cell.name, name_width)),
-            Span::plain(format!("  {}  ", pad(cell.id, id_width))),
+            Span::strong(text::pad(cell.name, name_width)),
+            Span::plain(format!("  {}  ", text::pad(cell.id, id_width))),
             if cell.connected {
                 Span::plain(figure)
             } else {

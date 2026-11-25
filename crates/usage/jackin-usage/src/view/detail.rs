@@ -19,7 +19,7 @@ const MIN_KIND_WIDTH: usize = 6;
 const TOP_MODELS: usize = 3;
 const DETAILS_JSON: (&str, &str) = ("per-day counts:", "jackin usage details --json");
 const REDEEM_COMMAND: &str = "jackin usage redeem <id> <n>";
-const REDEEM: &str = "redeem a reset: jackin usage redeem <id> <n>";
+const REDEEM_LABEL: &str = "redeem a reset:";
 const UNKNOWN_FETCH: &str = "not fetched yet";
 
 pub fn meter_lines(
@@ -81,7 +81,11 @@ pub fn footer(account: &AccountQuota, view: &UsageView, ctx: &Ctx) -> Vec<Line> 
         |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.status == ResetStatus::Ready)),
     );
     if redeemable {
-        lines.extend(foot(REDEEM.to_owned(), &[REDEEM_COMMAND.to_owned()], ctx));
+        lines.extend(foot(
+            format!("{REDEEM_LABEL} {REDEEM_COMMAND}"),
+            &[REDEEM_COMMAND.to_owned()],
+            ctx,
+        ));
     }
     lines.extend(fact_lines(&account.facts, view, ctx));
     lines

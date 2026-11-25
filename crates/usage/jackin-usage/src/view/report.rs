@@ -237,7 +237,7 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
         Attention::Duplicate { accounts, remove } => {
             let (group, first) = view.account(*accounts.first()?)?;
             let shorts: Vec<String> = accounts.iter().copied().map(short_id).collect();
-            let command = format!("jackin account usage rm {}", remove.hyphenated());
+            let command = text::remove_command(*remove, text::IdForm::Hyphenated);
             Some(AttentionText {
                 tag: "DUPLICATE",
                 tone: Tone::Warn,

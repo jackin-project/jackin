@@ -332,12 +332,19 @@ pub enum IdForm {
     Simple,
 }
 
-pub fn reconnect_command(id: uuid::Uuid, form: IdForm) -> String {
-    let id = match form {
+fn id_text(id: uuid::Uuid, form: IdForm) -> String {
+    match form {
         IdForm::Hyphenated => id.hyphenated().to_string(),
         IdForm::Simple => id.simple().to_string(),
-    };
-    format!("jackin account usage reconnect {id}")
+    }
+}
+
+pub fn reconnect_command(id: uuid::Uuid, form: IdForm) -> String {
+    format!("jackin account usage reconnect {}", id_text(id, form))
+}
+
+pub fn remove_command(id: uuid::Uuid, form: IdForm) -> String {
+    format!("jackin account usage rm {}", id_text(id, form))
 }
 
 pub const STATUS_LINE_FEED: &str = "updated by the Antigravity status-line hook";
@@ -422,6 +429,17 @@ struct Token<'a> {
     spaced: bool,
 }
 
+fn glued_len(after: &str, atoms: &[String]) -> usize {
+    let word = after.find(char::is_whitespace).unwrap_or(after.len());
+    let word_text = after.get(..word).unwrap_or(after);
+    atoms
+        .iter()
+        .filter(|atom| !atom.is_empty())
+        .filter_map(|atom| word_text.find(atom.as_str()))
+        .min()
+        .unwrap_or(word)
+}
+
 fn tokens<'a>(text: &'a str, atoms: &[String]) -> Vec<Token<'a>> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -431,11 +449,12 @@ fn tokens<'a>(text: &'a str, atoms: &[String]) -> Vec<Token<'a>> {
             .iter()
             .filter(|atom| !atom.is_empty())
             .filter_map(|atom| rest.find(atom.as_str()).map(|at| (at, atom.len())))
-            .min_by_key(|(at, _)| *at);
+            .min_by_key(|(at, len)| (*at, std::cmp::Reverse(*len)));
         let (prose, atom, after) = match next {
             Some((at, len)) => {
                 let (head, tail) = rest.split_at_checked(at).unwrap_or((rest, ""));
-                let (atom, after) = tail.split_at_checked(len).unwrap_or((tail, ""));
+                let glued = tail.get(len..).map_or(0, |after| glued_len(after, atoms));
+                let (atom, after) = tail.split_at_checked(len + glued).unwrap_or((tail, ""));
                 (head, Some(atom), after)
             }
             None => (rest, None, ""),
@@ -532,20 +551,13 @@ impl Flow {
         }
         let mut chunk = " ".repeat(text.len() - text.trim_start().len());
         let mut empty = true;
-        let mut after_atom = false;
         for token in tokens(text, &part.atoms) {
-            if !empty && !token.spaced && after_atom {
-                chunk.push_str(token.text);
-                after_atom = token.atomic;
-                continue;
-            }
             let gap = usize::from(!empty && token.spaced);
             let reach = self.used + width(&chunk) + gap + width(token.text);
             if reach <= self.columns {
                 chunk.push_str(&" ".repeat(gap));
                 chunk.push_str(token.text);
                 empty = false;
-                after_atom = token.atomic;
                 continue;
             }
             if token.atomic {
@@ -557,7 +569,6 @@ impl Flow {
                 self.relocate(width(token.text));
                 chunk.push_str(token.text);
                 empty = false;
-                after_atom = true;
                 continue;
             }
             if !empty {
@@ -567,7 +578,6 @@ impl Flow {
             let room = self.columns.saturating_sub(self.used + width(&chunk));
             chunk.push_str(&truncate(token.text, room));
             empty = false;
-            after_atom = false;
         }
         if !chunk.is_empty() {
             self.push(chunk, tone);

@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use jackin::ExitClass;
 use jackin_core::{Clock, Provider, Secret, SecretBytes};
-use jackin_testkit::{Method, Route, TestResult, UsageServer, World, guard};
+use jackin_testkit::{
+    Method, Route, TestResult, UsageServer, World, guard, is_unsplittable_command,
+};
 use jackin_usage::accounts::{
     AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
 };
@@ -699,15 +701,11 @@ async fn mixed_refresh_lab(world: &World) -> Result<(Harness, Uuid), Failure> {
     Ok((cli, id))
 }
 
-fn is_command_line(line: &str) -> bool {
-    line.trim_start().starts_with("jackin ")
-}
-
 fn assert_summary_fits(stdout: &str, width: usize, id: Uuid) {
     assert!(!stdout.contains('\u{1b}'), "{stdout:?}");
     let wide: Vec<String> = stdout
         .lines()
-        .filter(|line| !is_command_line(line))
+        .filter(|line| !is_unsplittable_command(line, width))
         .filter(|line| text::width(line) > width)
         .map(|line| format!("{:>3}  {line}", text::width(line)))
         .collect();
@@ -748,6 +746,39 @@ async fn the_refresh_summary_wraps_to_80_columns_on_a_pipe() -> TestResult {
             "{}",
             human.stdout
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_refresh_summary_keeps_each_view_command_whole() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let (cli, _) = mixed_refresh_lab(&world).await?;
+        for width in [80, 60] {
+            let terminal = ScriptedTerminal::new(Vec::new())?.0.sized(width)?;
+            let human = cli
+                .command(&["usage", "refresh"])
+                .terminal(terminal)
+                .run()
+                .await?;
+            for command in [
+                "jackin usage",
+                "jackin usage details",
+                "jackin usage refresh --json",
+            ] {
+                assert!(
+                    human
+                        .stdout
+                        .lines()
+                        .any(|line| line.split(" · ").any(|part| part.trim() == command
+                            || part.trim().ends_with(&format!(": {command}")))),
+                    "{command:?} is split at {width}:\n{}",
+                    human.stdout
+                );
+            }
+        }
         Ok(())
     })
     .await
