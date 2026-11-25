@@ -188,7 +188,9 @@ impl CommandError {
             | CommandError::Usage(UsageError::Cancelled)
             | CommandError::Role(RoleError::Cancelled)
             | CommandError::Lifecycle(
-                LifecycleError::Cancelled | LifecycleError::PowerCancelled { .. },
+                LifecycleError::Cancelled
+                | LifecycleError::PowerCancelled { .. }
+                | LifecycleError::Gateway(GatewayError::Cancelled { .. }),
             )
             | CommandError::Purge(
                 PurgeError::Cancelled { .. } | PurgeError::Gateway(GatewayError::Cancelled { .. }),
@@ -248,6 +250,49 @@ mod tests {
     use jackin_session::{AttachError, CredentialError};
 
     use super::*;
+
+    #[test]
+    fn every_not_managed_error_is_refused_and_the_purge_outcomes_classify()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let sandbox = SandboxName::parse("jackin-sandbox-a1b2")?;
+        for error in [
+            CommandError::Purge(PurgeError::NotManaged {
+                sandbox: sandbox.clone(),
+            }),
+            CommandError::Attach(AttachError::NotManaged(sandbox.clone())),
+            CommandError::Restart(RestartError::NotManaged(sandbox.clone())),
+            CommandError::Lifecycle(LifecycleError::NotManaged(sandbox.clone())),
+            CommandError::Export(ExportError::NotManaged(sandbox.clone())),
+            CommandError::Integrate(IntegrateError::NotManaged(sandbox.clone())),
+        ] {
+            assert_eq!(error.class(), ExitClass::Refused, "{error:?}");
+        }
+        for error in [
+            CommandError::Purge(PurgeError::Cancelled {
+                sandbox: sandbox.clone(),
+            }),
+            CommandError::Lifecycle(LifecycleError::Gateway(GatewayError::Cancelled {
+                op: GatewayOp::ReadFiles,
+                group: None,
+            })),
+            CommandError::WorkspaceInUse(WorkspaceGuardError::Listing {
+                gateway: GatewayName::parse("home")?,
+                source: LifecycleError::Cancelled,
+            }),
+        ] {
+            assert_eq!(error.class(), ExitClass::Cancelled, "{error:?}");
+        }
+        let unconfirmed = CommandError::Purge(PurgeError::DeleteUnconfirmed {
+            sandbox,
+            cause: Box::new(GatewayError::Timeout {
+                op: GatewayOp::Delete,
+                after: std::time::Duration::from_secs(30),
+                group: None,
+            }),
+        });
+        assert_eq!(unconfirmed.class(), ExitClass::Failure);
+        Ok(())
+    }
 
     #[test]
     fn a_cancelled_attach_setup_classifies_as_cancelled() {

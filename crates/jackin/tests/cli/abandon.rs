@@ -71,7 +71,7 @@ async fn a_second_interrupt_reports_that_a_purge_in_flight_is_not_confirmed() ->
 }
 
 #[tokio::test]
-async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandbox() -> TestResult {
+async fn a_second_interrupt_during_a_load_never_prints_an_env_value() -> TestResult {
     guard_within(WITHIN, async {
         let (rig, harness) = with_env().await?;
         let hold = Trigger::Op(GatewayOp::Create);
@@ -86,7 +86,7 @@ async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandb
                 "--launch-id",
                 &id,
                 "--env",
-                "TOKENISH=SECRET-xyz-never-printed",
+                "TOKENISH=unique-env-value-7c1f",
             ])
             .abandon(abandon.clone());
         let (ran, ()) = tokio::try_join!(command.run(), async {
@@ -104,13 +104,54 @@ async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandb
             "{}",
             ran.stderr
         );
+        assert!(ran.stderr.contains("sandbox jackin-"), "{}", ran.stderr);
+        assert!(
+            !ran.stderr.contains("unique-env-value-7c1f"),
+            "{}",
+            ran.stderr
+        );
+        assert!(
+            !ran.stdout.contains("unique-env-value-7c1f"),
+            "{}",
+            ran.stdout
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandbox() -> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, harness) = rigged().await?;
+        let hold = Trigger::Op(GatewayOp::Create);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let id = launch_id(1).to_string();
+        let abandon = CancellationToken::new();
+        let command = harness
+            .command(&["load", "--launch-id", &id])
+            .abandon(abandon.clone());
+        let (ran, ()) = tokio::try_join!(command.run(), async {
+            assert!(rig.gateway().until_held(&hold).await);
+            abandon.cancel();
+            Ok::<_, Failure>(())
+        })?;
+        rig.gateway().release(&hold);
+
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stderr.contains("not confirmed"), "{}", ran.stderr);
+        assert!(
+            ran.stderr.contains(&format!("--launch-id {id}")),
+            "{}",
+            ran.stderr
+        );
         assert!(
             ran.stderr.contains(rig.sandbox_name(1)?.as_str()),
             "{}",
             ran.stderr
         );
-        assert!(!ran.stderr.contains("SECRET-xyz"), "{}", ran.stderr);
-        assert!(!ran.stdout.contains("SECRET-xyz"), "{}", ran.stdout);
         Ok(())
     })
     .await
@@ -232,6 +273,71 @@ async fn a_second_interrupt_during_an_account_edit_says_provider_state_may_be_pa
             "{}",
             ran.stderr
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_second_interrupt_during_a_command_that_records_nothing_gives_a_neutral_line()
+-> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, harness) = rigged().await?;
+        let hold = Trigger::Op(GatewayOp::Find);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let abandon = CancellationToken::new();
+        let command = harness.command(&["ls"]).abandon(abandon.clone());
+        let (ran, ()) = tokio::try_join!(command.run(), async {
+            assert!(rig.gateway().until_held(&hold).await);
+            abandon.cancel();
+            Ok::<_, Failure>(())
+        })?;
+        rig.gateway().release(&hold);
+
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stderr.contains("interrupted again"), "{}", ran.stderr);
+        assert!(
+            ran.stderr.contains("may or may not be complete"),
+            "{}",
+            ran.stderr
+        );
+        assert!(!ran.stderr.contains("may exist"), "{}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_second_interrupt_during_an_export_says_the_host_may_hold_part_of_it() -> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, harness) = rigged().await?;
+        rig.launch(1).await?;
+        let name = rig.sandbox_name(1)?;
+        let hold = Trigger::Op(GatewayOp::Program);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let abandon = CancellationToken::new();
+        let command = harness
+            .command(&["export", name.as_str()])
+            .abandon(abandon.clone());
+        let (ran, ()) = tokio::try_join!(command.run(), async {
+            assert!(rig.gateway().until_held(&hold).await);
+            abandon.cancel();
+            Ok::<_, Failure>(())
+        })?;
+        rig.gateway().release(&hold);
+
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(
+            ran.stderr
+                .contains("the export may have written refs and files on the host"),
+            "{}",
+            ran.stderr
+        );
+        assert!(ran.stderr.contains(name.as_str()), "{}", ran.stderr);
         Ok(())
     })
     .await
