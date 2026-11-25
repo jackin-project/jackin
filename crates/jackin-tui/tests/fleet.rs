@@ -435,42 +435,49 @@ async fn slow_reads_and_queued_permits_share_one_deadline_and_keep_every_sandbox
     .await
 }
 
-#[tokio::test]
-async fn stalled_sandboxes_cost_only_their_own_reading_even_when_they_hold_every_permit()
--> TestResult {
-    guard(async {
-        let rig = Rig::new().await?;
-        for id in 1..=4 {
-            rig.launch(id).await?;
-            rig.handle(id).await?.exit_codex(0);
-        }
-        let config = seeded(&rig).await?;
-        let stuck = [rig.sandbox_name(1)?, rig.sandbox_name(2)?];
-        let probe = Tap::new(&rig);
-        probe.stall_only(&stuck);
-        let set = sessions(&rig, &config, Arc::<Tap>::clone(&probe));
+async fn stalled_pair_costs_only_itself(stuck: [u8; 2], healthy: [u8; 2]) -> TestResult {
+    let rig = Rig::new().await?;
+    for id in 1..=4 {
+        rig.launch(id).await?;
+        rig.handle(id).await?.exit_codex(0);
+    }
+    let config = seeded(&rig).await?;
+    let stuck = [rig.sandbox_name(stuck[0])?, rig.sandbox_name(stuck[1])?];
+    let healthy = [rig.sandbox_name(healthy[0])?, rig.sandbox_name(healthy[1])?];
+    let probe = Tap::new(&rig);
+    probe.stall_only(&stuck);
+    let set = sessions(&rig, &config, Arc::<Tap>::clone(&probe));
 
-        let fleet = read_fleet(
-            &set,
-            &config,
-            limits(Duration::from_secs(3), 2),
-            &CancellationToken::new(),
-        )
-        .await
-        .ok_or("an uncancelled pass returns a fleet")?;
-
-        assert_eq!(fleet.sandboxes.len(), 4);
-        for observed in &fleet.sandboxes {
-            if stuck.contains(&observed.summary.name) {
-                assert!(observed.supervisor.is_none() && observed.work.is_none());
-            } else {
-                assert!(observed.supervisor.is_some());
-                assert_eq!(observed.work, Some(WorkState::Exported));
-            }
-        }
-        Ok(())
-    })
+    let fleet = read_fleet(
+        &set,
+        &config,
+        limits(Duration::from_secs(3), 2),
+        &CancellationToken::new(),
+    )
     .await
+    .ok_or("an uncancelled pass returns a fleet")?;
+
+    assert_eq!(fleet.sandboxes.len(), 4);
+    for observed in &fleet.sandboxes {
+        if stuck.contains(&observed.summary.name) {
+            assert!(observed.supervisor.is_none() && observed.work.is_none());
+        } else {
+            assert!(healthy.contains(&observed.summary.name));
+            assert!(observed.supervisor.is_some());
+            assert_eq!(observed.work, Some(WorkState::Exported));
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn stalled_sandboxes_listed_first_cost_only_their_own_reading() -> TestResult {
+    guard(stalled_pair_costs_only_itself([1, 2], [3, 4])).await
+}
+
+#[tokio::test]
+async fn stalled_sandboxes_listed_last_cost_only_their_own_reading() -> TestResult {
+    guard(stalled_pair_costs_only_itself([3, 4], [1, 2])).await
 }
 
 async fn cancelled_pass(rig: &Rig, probe: &Arc<Tap>) -> TestResult {
