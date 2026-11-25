@@ -696,3 +696,40 @@ async fn a_credential_view_that_never_finishes_is_given_up_on() -> TestResult {
     })
     .await
 }
+
+fn padded_key_json(total: usize) -> String {
+    let frame = key_json("");
+    let pad = total - frame.len() - KEY.len();
+    key_json(&format!("{KEY}{}", "k".repeat(pad)))
+}
+
+#[tokio::test]
+async fn a_credential_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unreadable()
+-> TestResult {
+    guard(async {
+        let exact = started(&[(1, &padded_key_json(64 * 1024))]).await?;
+        let padded = format!(
+            "{KEY}{}",
+            "k".repeat(64 * 1024 - key_json("").len() - KEY.len())
+        );
+        exact.harness.server.replace(
+            Provider::Zai,
+            Method::Get,
+            PATH,
+            Route::json(200, QUOTA).requires_header("authorization", &padded),
+        );
+        assert_eq!(windows_of(&exact.report().await?).len(), 2);
+
+        let over = started(&[(1, &padded_key_json(64 * 1024 + 1))]).await?;
+        let outcome = over.report().await?;
+        assert!(
+            matches!(
+                unavailable(&outcome),
+                UnavailableReason::Provider(message) if message == "the OMP store could not be read"
+            ),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
+}

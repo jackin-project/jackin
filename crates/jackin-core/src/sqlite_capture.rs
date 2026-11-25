@@ -81,7 +81,11 @@ async fn read_file(
             ..
         }) => Ok(Read::Absent),
         Ok(Err(RegularFileProblem::Symlink | RegularFileProblem::NotARegularFile)) => Err(unusable),
-        Err(_) => Err(unusable),
+        Err(_) => Err(if matches!(unusable, CaptureProblem::LogUnreadable) {
+            unusable
+        } else {
+            CaptureProblem::Unreadable
+        }),
     }
 }
 
