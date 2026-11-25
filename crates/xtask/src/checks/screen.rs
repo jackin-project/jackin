@@ -42,7 +42,7 @@ const KEYWORDS_BEFORE_ARRAY: [&str; 13] = [
     "match",
 ];
 
-const NON_PATTERN_KEYWORDS: [&str; 7] = ["for", "struct", "impl", "enum", "trait", "type", "mut"];
+const NON_PATTERN_KEYWORDS: [&str; 6] = ["for", "struct", "impl", "enum", "trait", "type"];
 
 const SILENCING_ATTRIBUTES: [&str; 2] = ["allow", "expect"];
 
@@ -421,11 +421,27 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
+fn buffer_names(tokens: &[Token]) -> Vec<&str> {
+    let mut names = vec!["Buffer"];
+    for (index, token) in tokens.iter().enumerate() {
+        if token.is_ident("Buffer")
+            && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
+            && let Some(alias) = tokens.get(index + 2).and_then(Token::ident)
+        {
+            names.push(alias);
+        }
+    }
+    names
+}
+
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
     let tests = test_modules(tokens);
+    let names = buffer_names(tokens);
     (1..tokens.len())
         .filter(|index| {
-            tokens[*index].is_ident("Buffer")
+            tokens[*index]
+                .ident()
+                .is_some_and(|name| names.contains(&name))
                 && tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
                 && opens_fields(tokens, index + 2)
                 && !is_type_position(tokens, *index)
@@ -463,12 +479,17 @@ fn is_type_position(tokens: &[Token], index: usize) -> bool {
     {
         start -= 3;
     }
+    while start >= 1
+        && (tokens[start - 1].is_punct('&')
+            || tokens[start - 1].is_ident("mut")
+            || tokens[start - 1].kind == Tok::Other)
+    {
+        start -= 1;
+    }
     let Some(before) = start.checked_sub(1).map(|at| &tokens[at]) else {
         return false;
     };
     (before.is_punct('>') && start >= 2 && tokens[start - 2].is_punct('-'))
-        || before.is_punct('&')
-        || before.kind == Tok::Other
         || NON_PATTERN_KEYWORDS
             .iter()
             .any(|keyword| before.is_ident(keyword))

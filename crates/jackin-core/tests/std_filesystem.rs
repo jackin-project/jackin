@@ -645,7 +645,7 @@ async fn listing_refuses_a_name_that_is_not_utf8_instead_of_aliasing_it() -> Tes
 async fn a_lock_on_a_file_owned_by_another_user_is_refused_and_leaves_it_alone() -> TestResult {
     let dir = tempfile::tempdir()?;
     let fs = StdFileSystem::default();
-    let foreign = if rustix::process::geteuid().is_root() {
+    let foreigns = if rustix::process::geteuid().is_root() {
         let owned = at(&dir, "foreign.lock")?;
         fs.write_new(&owned, b"", FileMode(0o600)).await?;
         rustix::fs::chown(
@@ -653,25 +653,30 @@ async fn a_lock_on_a_file_owned_by_another_user_is_refused_and_leaves_it_alone()
             Some(rustix::fs::Uid::from_raw(65534)),
             None,
         )?;
-        owned
+        vec![owned]
     } else {
-        HostPath::parse(std::path::Path::new("/dev/null"))?
+        ["/etc/passwd", "/dev/null"]
+            .iter()
+            .map(|path| HostPath::parse(std::path::Path::new(path)))
+            .collect::<Result<Vec<_>, _>>()?
     };
-    let before = std::fs::metadata(foreign.as_path())?;
-    assert_ne!(before.uid(), rustix::process::geteuid().as_raw());
-    let refused = fs.lock(&foreign).await;
-    assert!(
-        matches!(
-            refused,
-            Err(FsError::UnsafeEntry {
-                problem: EntryProblem::ForeignOwner,
-                ..
-            })
-        ),
-        "{refused:?}"
-    );
-    let after = std::fs::metadata(foreign.as_path())?;
-    assert_eq!((after.mode(), after.uid()), (before.mode(), before.uid()));
+    for foreign in foreigns {
+        let before = std::fs::metadata(foreign.as_path())?;
+        assert_ne!(before.uid(), rustix::process::geteuid().as_raw());
+        let refused = fs.lock(&foreign).await;
+        assert!(
+            matches!(
+                refused,
+                Err(FsError::UnsafeEntry {
+                    problem: EntryProblem::ForeignOwner,
+                    ..
+                })
+            ),
+            "{foreign}: {refused:?}"
+        );
+        let after = std::fs::metadata(foreign.as_path())?;
+        assert_eq!((after.mode(), after.uid()), (before.mode(), before.uid()));
+    }
     Ok(())
 }
 

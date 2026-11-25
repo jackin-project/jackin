@@ -126,11 +126,7 @@ fn is_display_call(arguments: &[Token], index: usize) -> bool {
 }
 
 fn is_qualified_display(arguments: &[Token], index: usize) -> bool {
-    arguments[index].is_ident("display")
-        && is_path_separator(arguments, index.wrapping_sub(2))
-        && index
-            .checked_sub(3)
-            .is_some_and(|before| arguments[before].is_ident("Path"))
+    arguments[index].is_ident("display") && is_path_separator(arguments, index.wrapping_sub(2))
 }
 
 fn is_path_separator(arguments: &[Token], index: usize) -> bool {

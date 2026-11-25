@@ -311,6 +311,9 @@ fn lock_file(path: &Path) -> io::Result<Opened<Result<File, ()>>> {
         Err(failure) => {
             return match fs::symlink_metadata(path) {
                 Ok(meta) if meta.file_type().is_symlink() => Ok(Opened::Symlink),
+                Ok(meta) if meta.uid() != geteuid().as_raw() => {
+                    Ok(Opened::Unsafe(EntryProblem::ForeignOwner))
+                }
                 Ok(meta) if !meta.is_file() => Ok(Opened::Unsafe(EntryProblem::NotARegularFile)),
                 _ => Err(failure.into()),
             };

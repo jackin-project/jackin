@@ -423,7 +423,10 @@ fn destructuring_a_buffer_fails() -> TestResult {
          #[cfg(test)]\n\
          mod tests {\n\
          \x20   fn t(b: Buffer) { let Buffer { content, .. } = b; }\n\
-         }\n",
+         }\n\
+         use ratatui::buffer::Buffer as Cells;\n\
+         fn l(b: Cells) { let Cells { content, .. } = b; }\n\
+         fn m(b: &Buffer) { let &Buffer { ref content, .. } = b; }\n",
         &[
             ("C1", 3, "Buffer"),
             ("C1", 6, "Buffer"),
@@ -431,6 +434,8 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 14, "Buffer"),
             ("C1", 28, "Buffer"),
             ("C1", 34, "Buffer"),
+            ("C1", 41, "destructures"),
+            ("C1", 42, "destructures"),
         ],
     )
 }

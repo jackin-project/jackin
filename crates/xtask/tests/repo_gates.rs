@@ -1977,8 +1977,10 @@ mod error_paths {
             "    D { path: PathBuf },",
             "    #[error(\"mapped {}\", .paths.iter().map(Path::display).count())] // p_mapped",
             "    F { paths: Vec<PathBuf> },",
-            "    #[error(\"other {}\", Label::display(.0))]",
-            "    E(Label),",
+            "    #[error(\"aliased {}\", P::display(.0.as_path()))] // p_aliased",
+            "    E(PathBuf),",
+            "    #[error(\"ufcs {}\", <Path>::display(.0.as_path()))] // p_ufcs",
+            "    G(PathBuf),",
             "}",
         ]);
         assert_eq!(
@@ -1987,7 +1989,14 @@ mod error_paths {
                 CiStep::Errors,
                 LIB,
                 &source,
-                &["p_qualified", "p_full", "p_multi", "p_mapped"]
+                &[
+                    "p_qualified",
+                    "p_full",
+                    "p_multi",
+                    "p_mapped",
+                    "p_aliased",
+                    "p_ufcs"
+                ]
             )
         );
         Ok(())
