@@ -43,6 +43,7 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
         config: app.store.clone(),
         desk: app.desk(),
         usage: Arc::new(usage),
+        vault: jackin_usage::accounts::system_vault(),
         sessions,
         connect,
         roles: Arc::new(app.catalog()),

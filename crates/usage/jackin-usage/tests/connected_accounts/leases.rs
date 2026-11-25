@@ -32,8 +32,7 @@ async fn cancelling_refresh_during_key_prompt_preserves_last_snapshot_and_new_ke
         (10, &initial),
     )?;
     let server = UsageServer::start().await?;
-    let service =
-        OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new())).with_vault(vault);
+    let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()), vault);
     let quota = "/api/monitor/usage/quota/limit";
     let reading = |used: u32, key: &str| {
         Route::json(200,&json!({"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":used}]}}).to_string()).requires_header("authorization",key)
@@ -117,8 +116,12 @@ async fn hub_sync_requires_a_vault_key_bound_to_the_saved_authority() -> Result<
     let vault = Arc::new(Vault::default());
     let source = UsageServer::start().await?;
     let other = UsageServer::start().await?;
-    let service = OwnedLogin::new(path.clone(), source.endpoints(), Arc::new(FakeClock::new()))
-        .with_vault(vault);
+    let service = OwnedLogin::new(
+        path.clone(),
+        source.endpoints(),
+        Arc::new(FakeClock::new()),
+        vault,
+    );
     let listing = "/v0/management/auth-files";
     source.serve(
         Provider::Claude,

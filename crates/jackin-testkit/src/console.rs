@@ -36,6 +36,7 @@ use crate::doctor_host::DoctorHost;
 use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
 use crate::host::FakeClock;
+use crate::vault::MemoryVault;
 use crate::world::World;
 
 const USAGE_DIR: &str = "usage";
@@ -547,6 +548,7 @@ impl ConsoleRigBuilder<'_> {
             config: world.config.clone(),
             desk: world.desk(),
             usage,
+            vault: Arc::<MemoryVault>::clone(&world.vault),
             sessions: SessionSet::new(&config, default, entries),
             connect,
             roles: Arc::clone(&world.roles),

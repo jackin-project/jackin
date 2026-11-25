@@ -6,6 +6,7 @@ use jackin_usage::view::{
     self, Ctx, Line, Reading, Report, Span, Tone, UsageView, ViewFilter, render,
 };
 use serde_json::json;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use super::{RefreshOutcome, database, failure, providers, selected};
@@ -14,7 +15,11 @@ use crate::cli::UsageFilter;
 use crate::error::CommandError;
 
 pub(in crate::commands) fn overview(app: &mut App, json: bool) -> Result<(), CommandError> {
-    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?;
     if json {
         let snapshots = db
             .as_ref()
@@ -89,7 +94,11 @@ fn show(app: &mut App, filter: &UsageFilter, kind: Report) -> Result<(), Command
         .as_deref()
         .map(providers::connector)
         .transpose()?;
-    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?;
     let filtered = provider.is_some() || filter.account.is_some();
     let Some(db) = db else {
         return if filtered {
@@ -141,7 +150,11 @@ pub(super) fn snapshot(
         .as_deref()
         .map(providers::connector)
         .transpose()?;
-    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?;
     emit(app, db.as_ref(), filter, provider, &[], None)
 }
 

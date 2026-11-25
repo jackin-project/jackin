@@ -11,7 +11,7 @@ use jackin_console::backend::Ticket;
 use jackin_console::usage_connections::{UsageAction, UsageConnections, UsageEntry, UsageUpdate};
 use jackin_console::world::Msg;
 use jackin_core::Secret;
-use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, ConnectionError};
+use jackin_usage::accounts::{ConnectedAccount, ConnectionError};
 use jackin_usage::onboarding::{LoginPrompt, OwnedLogin, open_browser};
 use jackin_usage::presentation as display;
 use serde_json::Value;
@@ -140,7 +140,7 @@ impl JackinBackend {
             else {
                 return;
             };
-            let Ok(Some(db)) = AccountRegistry::open_read_only(service.database()) else {
+            let Ok(Some(db)) = service.open_read_only_registry() else {
                 return;
             };
             if let Ok(data) = jackin_usage::dashboard::Dashboard::load(
@@ -171,6 +171,7 @@ impl JackinBackend {
             dir.join(jackin_usage::accounts::DATABASE_PATH),
             self.inputs.usage.endpoints().clone(),
             Arc::clone(&self.inputs.host.clock),
+            Arc::clone(&self.inputs.vault),
         )
         .with_google_registration(self.inputs.google_registration.clone()))
     }
@@ -283,11 +284,7 @@ impl UsageConnections for JackinBackend {
     fn has_connected_accounts(&self) -> bool {
         self.usage_service()
             .ok()
-            .and_then(|service| {
-                AccountRegistry::open_read_only(service.database())
-                    .ok()
-                    .flatten()
-            })
+            .and_then(|service| service.open_read_only_registry().ok().flatten())
             .is_some_and(|db| db.list().is_ok_and(|accounts| !accounts.is_empty()))
     }
 
@@ -441,7 +438,7 @@ async fn refresh_accounts(
     provider: Option<&str>,
     cancel: &CancellationToken,
 ) -> Result<(), ConnectionError> {
-    let Some(db) = AccountRegistry::open_read_only(service.database())? else {
+    let Some(db) = service.open_read_only_registry()? else {
         return Ok(());
     };
     if check_hubs {
@@ -493,7 +490,7 @@ pub fn read_usage_board(
 }
 
 fn hubs(service: &OwnedLogin) -> Result<UsageUpdate, ConnectionError> {
-    let Some(db) = AccountRegistry::open_read_only(service.database())? else {
+    let Some(db) = service.open_read_only_registry()? else {
         return Ok(UsageUpdate::Hubs(Vec::new()));
     };
     Ok(UsageUpdate::Hubs(
@@ -642,7 +639,9 @@ mod tui_refresh {
     use jackin_console::usage_connections::BoardEdit;
     use jackin_core::{Clock, Provider, SecretBytes};
     use jackin_testkit::{FakeClock, Method, Route, UsageServer};
-    use jackin_usage::accounts::{CandidateIdentity, CredentialVault, UsageProvider};
+    use jackin_usage::accounts::{
+        AccountRegistry, CandidateIdentity, CredentialVault, UsageProvider,
+    };
     use jackin_usage::dashboard::DashboardMemory;
     use serde_json::json;
 
@@ -744,8 +743,12 @@ mod tui_refresh {
         drop(db);
         let clock_port = Arc::<FakeClock>::clone(&clock);
         let clock_port: Arc<dyn Clock> = clock_port;
-        let service = OwnedLogin::new(path.clone(), server.endpoints(), clock_port)
-            .with_vault(Arc::clone(&vault));
+        let service = OwnedLogin::new(
+            path.clone(),
+            server.endpoints(),
+            clock_port,
+            Arc::clone(&vault),
+        );
         refresh_accounts(&service, true, true, None, &CancellationToken::new())
             .await
             .expect("tui refresh");

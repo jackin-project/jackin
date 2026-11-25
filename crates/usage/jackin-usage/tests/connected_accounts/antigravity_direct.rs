@@ -182,9 +182,13 @@ impl Fixture {
         let vault_for_login = Arc::clone(&vault);
         let clock_for_login: Arc<dyn Clock> = clock_for_login;
         let vault_for_login: Arc<dyn jackin_usage::accounts::CredentialVault> = vault_for_login;
-        let service = OwnedLogin::new(path.clone(), server.endpoints(), clock_for_login)
-            .with_vault(vault_for_login)
-            .with_google_registration(Some(registration));
+        let service = OwnedLogin::new(
+            path.clone(),
+            server.endpoints(),
+            clock_for_login,
+            vault_for_login,
+        )
+        .with_google_registration(Some(registration));
         Ok(Self {
             server,
             service,
@@ -419,7 +423,7 @@ async fn browser_sign_in_checks_pkce_state_identity_and_duplicates() -> Result<(
         Route::json(200, &complete_body()).requires_header("authorization", "Bearer access-1"),
     );
     drop(fixture.service);
-    let restarted = OwnedLogin::new(path, endpoints, clock).with_vault(vault);
+    let restarted = OwnedLogin::new(path, endpoints, clock, vault);
     let row = restarted
         .with_registry(|db| db.list())
         .await?
@@ -460,7 +464,7 @@ async fn identity_lookup_precedes_quota_and_cancel_stores_nothing() -> Result<()
         fixture.server.mismatches()
     );
     assert!(
-        AccountRegistry::open(&fixture.path).is_err()
+        db(&fixture.path, &fixture.vault).is_err()
             || db(&fixture.path, &fixture.vault)?.list()?.is_empty()
     );
 
@@ -1225,7 +1229,14 @@ async fn connect_without_registration_stops_before_browser_consent() -> Result<(
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("usage/accounts.sqlite3");
     let server = UsageServer::start().await?;
-    let service = OwnedLogin::new(path.clone(), server.endpoints(), Arc::new(FakeClock::new()));
+    let vault = Arc::new(Vault::default());
+    let shared: Arc<dyn jackin_usage::accounts::CredentialVault> = Arc::<Vault>::clone(&vault);
+    let service = OwnedLogin::new(
+        path.clone(),
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        shared,
+    );
     let cancel = CancellationToken::new();
     let (send, mut prompts) = tokio::sync::mpsc::channel(2);
     let pending = tokio::spawn(async move {
@@ -1246,8 +1257,7 @@ async fn connect_without_registration_stops_before_browser_consent() -> Result<(
         "sign-in sent a request: {:?}",
         server.mismatches()
     );
-    let vault = Arc::new(Vault::default());
-    assert!(AccountRegistry::open(&path).is_err() || db(&path, &vault)?.list()?.is_empty());
+    assert!(db(&path, &vault).is_err() || db(&path, &vault)?.list()?.is_empty());
     Ok(())
 }
 
@@ -1331,7 +1341,7 @@ async fn a_grant_with_an_escaped_slash_refreshes_and_the_stored_grant_reopens() 
     let vault: Arc<dyn jackin_usage::accounts::CredentialVault> = vault;
     let clock: Arc<dyn Clock> = clock;
     drop(fixture.service);
-    let restarted = OwnedLogin::new(path, endpoints, clock).with_vault(vault);
+    let restarted = OwnedLogin::new(path, endpoints, clock, vault);
     let row = restarted
         .with_registry(|db| db.list())
         .await?

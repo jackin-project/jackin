@@ -9,11 +9,10 @@ use jackin_console::screens::Go;
 use jackin_console::usage_connections::UsageBoard;
 use jackin_core::Clock;
 use jackin_testkit::{
-    ConsoleRig, ProfileAccount, Rig, SeedRow, TestResult, USAGE_VIEW_NOW, assert_golden,
-    pin_usage_view_clock, seed_usage_rows, seed_usage_view,
+    ConsoleRig, MemoryVault, ProfileAccount, Rig, SeedRow, TestResult, USAGE_VIEW_NOW,
+    assert_golden, pin_usage_view_clock, seed_usage_rows, seed_usage_view,
 };
-use jackin_usage::ProviderEndpoints;
-use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, FailureKind};
+use jackin_usage::accounts::{AccountRegistry, CredentialVault, DATABASE_PATH, FailureKind};
 use jackin_usage::onboarding::OwnedLogin;
 use jackin_usage::view::text;
 use termrock::core::id::WidgetId;
@@ -65,7 +64,7 @@ fn ids(accounts: &[ProfileAccount]) -> Vec<Uuid> {
     accounts.iter().map(|account| account.id).collect()
 }
 
-fn board(lab: &Lab, priority: bool) -> Result<UsageBoard, Box<dyn std::error::Error>> {
+async fn board(lab: &Lab, priority: bool) -> Result<UsageBoard, Box<dyn std::error::Error>> {
     let path = lab
         .console
         .config()
@@ -76,7 +75,9 @@ fn board(lab: &Lab, priority: bool) -> Result<UsageBoard, Box<dyn std::error::Er
         .join(DATABASE_PATH);
     let fake = Arc::clone(&lab.rig.world.clock);
     let clock: Arc<dyn Clock> = fake;
-    let service = OwnedLogin::new(path, ProviderEndpoints::real(), clock);
+    let endpoints = lab.rig.world.usage.get().await?.endpoints();
+    let vault: Arc<dyn CredentialVault> = Arc::<MemoryVault>::clone(&lab.rig.world.vault);
+    let service = OwnedLogin::new(path, endpoints, clock, vault);
     Ok(jackin_tui::read_usage_board(&service, priority)?)
 }
 
@@ -155,7 +156,7 @@ async fn a_duplicate_connection_is_flagged_with_its_short_id_and_its_failure() -
 async fn the_mapped_board_rows_carry_normalized_quantities_and_no_remaining_wording() -> TestResult
 {
     let (lab, accounts) = seeded().await?;
-    let all = board(&lab, false)?;
+    let all = board(&lab, false).await?;
     for row in &all.rows {
         assert!(
             text::width(&row.value) <= 32,
@@ -205,7 +206,7 @@ async fn the_mapped_board_rows_carry_normalized_quantities_and_no_remaining_word
 #[tokio::test]
 async fn priority_keeps_its_sections_and_speaks_in_used_percentages() -> TestResult {
     let (lab, _) = seeded().await?;
-    let priority = board(&lab, true)?;
+    let priority = board(&lab, true).await?;
     assert!(!priority.rows.is_empty());
     let sections = [
         "Pinned",
@@ -262,7 +263,8 @@ async fn rename_and_read(
         .parent()
         .ok_or("config dir")?
         .join(DATABASE_PATH);
-    let registry = AccountRegistry::open_read_only(&path)?.ok_or("registry")?;
+    let registry = AccountRegistry::open_read_only_with_vault(&path, MemoryVault::shared())?
+        .ok_or("registry")?;
     let renamed = registry
         .list()?
         .into_iter()
@@ -441,7 +443,7 @@ async fn all_usage_rows_carry_the_freshness_failure_and_duplicate_flags() -> Tes
             .to_string();
         Ok(id.chars().take(8).collect())
     };
-    let all = board(&lab, false)?;
+    let all = board(&lab, false).await?;
     let value = |title: &str| {
         all.rows
             .iter()
@@ -503,7 +505,7 @@ async fn priority_lists_the_cli_attention_entries_at_120x40() -> TestResult {
 #[tokio::test]
 async fn priority_rows_follow_the_attention_notices() -> TestResult {
     let (lab, accounts) = seeded().await?;
-    let priority = board(&lab, true)?;
+    let priority = board(&lab, true).await?;
     let tags = |texts: Vec<&str>| -> Vec<String> {
         texts
             .into_iter()
@@ -570,7 +572,7 @@ async fn a_duplicate_only_registry_does_not_claim_all_clear() -> TestResult {
         })
         .collect();
     seed_usage_rows(&path, seeds)?;
-    let priority = board(&lab, true)?;
+    let priority = board(&lab, true).await?;
     assert!(
         priority
             .rows

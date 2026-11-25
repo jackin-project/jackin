@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{AccountRegistry, LoginError, LoginPrompt, OwnedLogin, text_field};
+use crate::accounts::CredentialVault;
 use jackin_usage_provider_core::ProviderError;
 use jackin_usage_provider_gemini::{antigravity_account_email, antigravity_statusline};
-use std::{path::Path, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -13,12 +14,13 @@ pub fn receive_antigravity_statusline(
     path: &Path,
     input: &[u8],
     now: i64,
+    vault: Arc<dyn CredentialVault>,
 ) -> Result<bool, LoginError> {
     let Some(reading) = antigravity_statusline(input, now)? else {
         return Ok(false);
     };
     let Some(mut db) =
-        AccountRegistry::open_existing(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?
+        AccountRegistry::open_existing(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE, vault)?
     else {
         return Ok(false);
     };
@@ -88,7 +90,8 @@ impl OwnedLogin {
         let email = antigravity_account_email(&value)?;
         let now = self.now().0;
         let expires = now.saturating_add(600);
-        let mut registry = AccountRegistry::open_statusline(self.database())?;
+        let mut registry =
+            AccountRegistry::open_statusline(self.database(), Arc::clone(&self.vault))?;
         let ticket = Uuid::new_v4();
         registry.start_enrollment(ticket, &email, replace, now, expires)?;
         let mut enrollment = Enrollment { registry, ticket };

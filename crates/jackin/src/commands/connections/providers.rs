@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
 use std::{collections::BTreeMap, fmt};
 
 use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, UsageProvider};
@@ -274,12 +275,15 @@ fn footer() -> Vec<Line> {
 
 pub(crate) fn show(app: &mut App, id: Option<&str>, json: bool) -> Result<(), CommandError> {
     let selected = id.map(product).transpose()?;
-    let (accounts, identities) = AccountRegistry::open_read_only(&database(app)?)
-        .map_err(failure)?
-        .map(|db| Ok::<_, ConnectionError>((db.list()?, db.identities()?)))
-        .transpose()
-        .map_err(failure)?
-        .unwrap_or_default();
+    let (accounts, identities) = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?
+    .map(|db| Ok::<_, ConnectionError>((db.list()?, db.identities()?)))
+    .transpose()
+    .map_err(failure)?
+    .unwrap_or_default();
     let totals = catalog(accounts.iter().map(|a| a.provider));
     let rows: Vec<&ProviderRow> = totals
         .iter()

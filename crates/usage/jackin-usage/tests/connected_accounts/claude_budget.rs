@@ -25,8 +25,8 @@ async fn a_verified_mirrored_claude_login_shares_its_durable_request_window() ->
             path.clone(),
             server.endpoints(),
             Arc::<FakeClock>::clone(&clock),
+            Arc::<Vault>::clone(&vault),
         )
-        .with_vault(Arc::<Vault>::clone(&vault))
     };
     let p = Provider::Claude;
     let cancel = CancellationToken::new();

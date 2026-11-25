@@ -24,7 +24,7 @@ async fn claude_confirmation_checks_fresh_grant_and_remembers_spent_selection() 
     let server = UsageServer::start().await?;
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
-    let login = OwnedLogin::new(path, server.endpoints(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, server.endpoints(), clock, vault);
     let org = "00000000-0000-4000-8000-0000000000a1";
     let bytes = SecretBytes::new(serde_json::to_vec(&(
         "access",
@@ -119,7 +119,7 @@ async fn chatgpt_ambiguous_consume_can_replay_without_selecting_another_credit()
     let server = UsageServer::start().await?;
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
-    let login = OwnedLogin::new(path, server.endpoints(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, server.endpoints(), clock, vault);
     let bytes = SecretBytes::new(serde_json::to_vec(&(
         "scoped",
         Option::<String>::None,
@@ -226,7 +226,7 @@ async fn zai_earliest_reset_is_rechecked_and_ambiguous_claim_is_never_retried() 
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
     let endpoints = server.endpoints();
-    let login = OwnedLogin::new(path, endpoints.clone(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, endpoints.clone(), clock, vault);
     let key = Secret::new("plan-only".into());
     let p = Provider::Zai;
     server.serve(
@@ -312,7 +312,7 @@ async fn mirrored_claude_claim_uses_hub_login_and_verified_organization() -> Res
     let server = UsageServer::start().await?;
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
-    let login = OwnedLogin::new(path, server.endpoints(), clock).with_vault(vault);
+    let login = OwnedLogin::new(path, server.endpoints(), clock, vault);
     let p = Provider::Claude;
     server.serve(
         p,

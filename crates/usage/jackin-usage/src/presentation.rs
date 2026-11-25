@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, StoredSnapshot};
+use crate::accounts::{ConnectedAccount, ConnectionError, StoredSnapshot};
 use crate::dashboard::{DashboardRow, DashboardSettings};
 use crate::onboarding::OwnedLogin;
 use crate::view::{
@@ -165,7 +165,7 @@ pub(crate) fn detail(
 }
 
 pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionError> {
-    let Some(db) = AccountRegistry::open_read_only(service.database())? else {
+    let Some(db) = service.open_read_only_registry()? else {
         return Ok(Vec::new());
     };
     let settings = db.dashboard_settings()?;

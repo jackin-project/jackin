@@ -402,3 +402,13 @@ async fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Re
         body,
     }))
 }
+
+pub const CLOSED_ORIGIN: &str = "http://127.0.0.1:1";
+
+pub fn closed_endpoints() -> ProviderEndpoints {
+    Provider::ALL
+        .into_iter()
+        .fold(ProviderEndpoints::real(), |endpoints, provider| {
+            endpoints.with(provider, CLOSED_ORIGIN.to_owned())
+        })
+}

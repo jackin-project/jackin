@@ -30,7 +30,7 @@ pub use types::{
     AccountPreferences, CandidateIdentity, ConnectedAccount, CredentialVersion, KeyFingerprint,
     UsageProvider,
 };
-pub use vault::CredentialVault;
+pub use vault::{CredentialVault, system_vault};
 
 pub const DATABASE_PATH: &str = "usage/accounts.sqlite3";
 
@@ -178,17 +178,17 @@ impl AccountRegistry {
             })?)
     }
 
-    pub fn open(path: &Path) -> Result<Self, ConnectionError> {
-        Self::with_vault(path, Arc::new(vault::SystemVault))
-    }
-
-    pub fn open_read_only(path: &Path) -> Result<Option<Self>, ConnectionError> {
-        Self::open_existing(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    pub fn open_read_only_with_vault(
+        path: &Path,
+        vault: Arc<dyn CredentialVault>,
+    ) -> Result<Option<Self>, ConnectionError> {
+        Self::open_existing(path, OpenFlags::SQLITE_OPEN_READ_ONLY, vault)
     }
 
     pub(crate) fn open_existing(
         path: &Path,
         mode: OpenFlags,
+        vault: Arc<dyn CredentialVault>,
     ) -> Result<Option<Self>, ConnectionError> {
         match std::fs::symlink_metadata(path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -207,7 +207,7 @@ impl AccountRegistry {
         Ok(Some(Self {
             db,
             directory,
-            vault: Arc::new(vault::SystemVault),
+            vault,
             lock_wait: LOCK_WAIT,
         }))
     }

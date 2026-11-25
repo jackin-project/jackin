@@ -107,7 +107,7 @@ impl Lab {
         let vault = Arc::new(Memory::default());
         let shared = Arc::clone(&vault);
         let shared: Arc<dyn CredentialVault> = shared;
-        cli.usage_vault = Some(shared);
+        cli.usage_vault = shared;
         let path = cli
             .config_path
             .as_path()
@@ -267,8 +267,7 @@ async fn the_console_board_lists_every_bucket_of_the_account_the_cli_refreshed()
         let clock: Arc<dyn Clock> = clock;
         let vault = Arc::<Memory>::clone(&lab.vault);
         let vault: Arc<dyn CredentialVault> = vault;
-        let login =
-            OwnedLogin::new(lab.path.clone(), lab.server.endpoints(), clock).with_vault(vault);
+        let login = OwnedLogin::new(lab.path.clone(), lab.server.endpoints(), clock, vault);
         let board = jackin_tui::reload_usage_board(&login).await?;
         let titles: Vec<&str> = board
             .iter()
@@ -402,7 +401,13 @@ async fn statusline_account(
 ) -> Result<(Uuid, i64), Box<dyn std::error::Error>> {
     let clock = Arc::clone(&world.clock);
     let clock: Arc<dyn Clock> = clock;
-    let service = OwnedLogin::new(path.to_path_buf(), cli.usage_endpoints.clone(), clock);
+    let vault: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+    let service = OwnedLogin::new(
+        path.to_path_buf(),
+        cli.usage_endpoints.clone(),
+        clock,
+        Arc::clone(&vault),
+    );
     let cancel = tokio_util::sync::CancellationToken::new();
     let (send, mut prompts) = tokio::sync::mpsc::channel(2);
     let pending = tokio::spawn(async move {
@@ -427,7 +432,8 @@ async fn statusline_account(
     assert!(receive_antigravity_statusline(
         path,
         &serde_json::to_vec(&input)?,
-        observed
+        observed,
+        Arc::clone(&vault)
     )?);
     let id = pending.await?.map_err(|error| error.to_string())?;
     Ok((id, observed))
@@ -537,7 +543,7 @@ async fn a_real_failure_beside_a_skipped_status_line_account_still_fails_the_ref
         let world = World::builder().build()?;
         let mut cli = Harness::new(&world);
         let empty: Arc<dyn CredentialVault> = Arc::new(Memory::default());
-        cli.usage_vault = Some(empty);
+        cli.usage_vault = empty;
         let path = cli
             .config_path
             .as_path()
@@ -622,7 +628,7 @@ async fn a_missing_credential_failure_names_the_sign_in_command_and_no_retry() -
         let world = World::builder().build()?;
         let mut cli = Harness::new(&world);
         let empty: Arc<dyn CredentialVault> = Arc::new(Memory::default());
-        cli.usage_vault = Some(empty);
+        cli.usage_vault = empty;
         let path = cli
             .config_path
             .as_path()
@@ -677,7 +683,7 @@ async fn mixed_refresh_lab(world: &World) -> Result<(Harness, Uuid), Failure> {
     let mut cli = Harness::new(world);
     cli.env.push(("NO_COLOR".to_owned(), "1".to_owned()));
     let empty: Arc<dyn CredentialVault> = Arc::new(Memory::default());
-    cli.usage_vault = Some(empty);
+    cli.usage_vault = empty;
     let path = cli
         .config_path
         .as_path()
@@ -870,7 +876,7 @@ async fn failing_hub_lab(world: &World) -> Result<(Harness, UsageServer), Failur
     cli.usage_endpoints = server.endpoints();
     cli.env.push(("NO_COLOR".to_owned(), "1".to_owned()));
     let vault: Arc<dyn CredentialVault> = Arc::new(Memory::default());
-    cli.usage_vault = Some(Arc::clone(&vault));
+    cli.usage_vault = Arc::clone(&vault);
     let path = cli
         .config_path
         .as_path()
@@ -886,8 +892,7 @@ async fn failing_hub_lab(world: &World) -> Result<(Harness, UsageServer), Failur
     );
     let clock = Arc::clone(&world.clock);
     let clock: Arc<dyn Clock> = clock;
-    Login::new(path.clone(), cli.usage_endpoints.clone(), clock)
-        .with_vault(vault)
+    Login::new(path.clone(), cli.usage_endpoints.clone(), clock, vault)
         .connect_hub(
             &format!("{}/management.html", server.provider_base(Provider::Claude)),
             &Secret::new("fixture".into()),

@@ -40,7 +40,7 @@ pub struct OwnedLogin {
     endpoints: ProviderEndpoints,
     clock: Arc<dyn Clock>,
     google_registration: Option<GoogleRegistrationFile>,
-    vault: Option<Arc<dyn crate::accounts::CredentialVault>>,
+    vault: Arc<dyn crate::accounts::CredentialVault>,
     store_wait: std::time::Duration,
 }
 
@@ -208,12 +208,17 @@ fn core_provider(provider: UsageProvider) -> Provider {
 }
 
 impl OwnedLogin {
-    pub fn new(path: PathBuf, endpoints: ProviderEndpoints, clock: Arc<dyn Clock>) -> Self {
+    pub fn new(
+        path: PathBuf,
+        endpoints: ProviderEndpoints,
+        clock: Arc<dyn Clock>,
+        vault: Arc<dyn crate::accounts::CredentialVault>,
+    ) -> Self {
         Self {
             path,
             endpoints,
             clock,
-            vault: None,
+            vault,
             google_registration: None,
             store_wait: std::time::Duration::from_secs(30),
         }
@@ -257,18 +262,13 @@ impl OwnedLogin {
         self.clock.utc_offset_secs()
     }
 
-    #[must_use]
-    pub fn with_vault(mut self, vault: Arc<dyn crate::accounts::CredentialVault>) -> Self {
-        self.vault = Some(vault);
-        self
+    pub fn open_registry(&self) -> Result<AccountRegistry, ConnectionError> {
+        AccountRegistry::with_vault(&self.path, Arc::clone(&self.vault))
+            .map(|registry| registry.with_lock_wait(self.store_wait))
     }
 
-    pub(crate) fn open_registry(&self) -> Result<AccountRegistry, ConnectionError> {
-        match &self.vault {
-            Some(vault) => AccountRegistry::with_vault(&self.path, Arc::clone(vault)),
-            None => AccountRegistry::open(&self.path),
-        }
-        .map(|registry| registry.with_lock_wait(self.store_wait))
+    pub fn open_read_only_registry(&self) -> Result<Option<AccountRegistry>, ConnectionError> {
+        AccountRegistry::open_read_only_with_vault(&self.path, Arc::clone(&self.vault))
     }
 
     pub async fn with_registry<T: Send + 'static>(

@@ -28,8 +28,11 @@ impl Rows {
     }
 
     fn text(&self, kind: Report) -> Result<String> {
-        let registry = AccountRegistry::open_read_only(&self.dir.path().join(DATABASE_PATH))?
-            .ok_or("the usage registry is missing")?;
+        let registry = AccountRegistry::open_read_only_with_vault(
+            &self.dir.path().join(DATABASE_PATH),
+            jackin_testkit::MemoryVault::shared(),
+        )?
+        .ok_or("the usage registry is missing")?;
         let view = build(&registry, &ViewFilter::default(), NOW, OFFSET)?;
         Ok(render::plain(&report(&view, &Ctx::new(80), kind)))
     }

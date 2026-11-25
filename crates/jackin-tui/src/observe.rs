@@ -21,6 +21,7 @@ use jackin_session::{
     AccountDesk, DoctorInput, HostPorts, OnePasswordCli, RoleCatalog, SourceDesk, doctor,
 };
 use jackin_usage::HostUsage;
+use jackin_usage::accounts::CredentialVault;
 use tokio_util::sync::CancellationToken;
 
 use crate::console::ConsoleLimits;
@@ -67,6 +68,7 @@ pub(crate) struct Inputs {
     pub(crate) config: ConfigStore,
     pub(crate) desk: AccountDesk,
     pub(crate) usage: Arc<HostUsage>,
+    pub(crate) vault: Arc<dyn CredentialVault>,
     pub(crate) usage_gate: tokio::sync::Mutex<()>,
     refresh_gate: tokio::sync::Mutex<()>,
     pub(crate) op: OpSnapshot,
@@ -110,6 +112,7 @@ pub(crate) struct InputsParts {
     pub config: ConfigStore,
     pub desk: AccountDesk,
     pub usage: Arc<HostUsage>,
+    pub vault: Arc<dyn CredentialVault>,
     pub op: OpSnapshot,
     pub env: EnvSnapshot,
     pub sessions: SessionSet,
@@ -133,6 +136,7 @@ impl Inputs {
             config,
             desk,
             usage,
+            vault,
             op,
             env,
             sessions,
@@ -155,6 +159,7 @@ impl Inputs {
             config,
             desk,
             usage,
+            vault,
             usage_gate: tokio::sync::Mutex::new(()),
             refresh_gate: tokio::sync::Mutex::new(()),
             op,
