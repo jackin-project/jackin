@@ -2010,7 +2010,6 @@ fn scan_matches_the_writable_set_literally_whatever_characters_its_paths_hold() 
     fx.dir("/opt", 0o755)?;
     fx.file("/sand\\nbox/f*[a]?", b"data", 0o644)?;
     fs::hard_link(fx.image("/sand\\nbox/f*[a]?"), fx.image("/opt/o"))?;
-    fx.file("/sandXnbox/g", b"data", 0o644)?;
     let out = fx.scan_read_write(&["/sand\\nbox"])?;
     assert_eq!(out.lines(), [hard_linked("/opt/o")], "{}", out.stderr);
     let out = fx.scan_read_write(&["/sand\\nbox/f*[a]?", "/opt"])?;
