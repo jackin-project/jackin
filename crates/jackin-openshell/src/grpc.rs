@@ -20,9 +20,9 @@ use tokio_util::sync::CancellationToken;
 use crate::discovery::ResolvedGateway;
 use crate::error::{GatewayError, GatewayOp};
 use crate::gateway::{
-    Gateway, GatewayHealth, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderSpec,
-    ProviderState, ProviderWriteEffect, ProviderWriteError, SandboxCreate, SandboxDetail,
-    SandboxFile, SandboxQuery, SandboxView,
+    CreateOutcome, Gateway, GatewayHealth, PowerAction, ProfileSync, ProgramOutcome, ProgramRun,
+    ProviderSpec, ProviderState, ProviderWriteEffect, ProviderWriteError, SandboxCreate,
+    SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
 };
 use crate::policy::ProviderProfile;
 use crate::terminal::{TerminalRequest, TerminalSession};
@@ -216,6 +216,13 @@ impl Gateway for GrpcGateway {
         spec: &ProviderSpec,
     ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.inner.put_provider(spec).await
+    }
+
+    async fn create_provider_if_absent(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<CreateOutcome, ProviderWriteError> {
+        self.inner.create_provider_if_absent(spec).await
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {

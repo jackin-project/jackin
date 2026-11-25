@@ -30,6 +30,10 @@ pub trait Gateway: Send + Sync + Debug {
         &self,
         spec: &ProviderSpec,
     ) -> Result<ProviderWriteEffect, ProviderWriteError>;
+    async fn create_provider_if_absent(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<CreateOutcome, ProviderWriteError>;
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
@@ -107,6 +111,12 @@ pub enum ProfileSync {
 pub enum ProviderState {
     Absent,
     Present,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CreateOutcome {
+    Created,
+    PeerExists,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

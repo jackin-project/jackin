@@ -14,8 +14,8 @@ use jackin_core::{
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayHealth, GatewayOp, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
+    CreateOutcome, Gateway, GatewayError, GatewayHealth, GatewayOp, PowerAction, ProfileSync,
+    ProgramOutcome, ProgramRun, ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
     ProviderWriteError, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
     TerminalRequest, TerminalSession,
 };
@@ -318,6 +318,13 @@ impl Gateway for Tap {
         spec: &ProviderSpec,
     ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.inner.put_provider(spec).await
+    }
+
+    async fn create_provider_if_absent(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<CreateOutcome, ProviderWriteError> {
+        self.inner.create_provider_if_absent(spec).await
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {

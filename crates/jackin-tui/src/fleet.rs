@@ -275,7 +275,8 @@ async fn inspect(session: &Session, summary: SandboxSummary, reads: &Reads<'_>) 
     let (supervisor, stalled) = if summary.phase == Phase::Ready {
         match reads
             .run(session.inspect(&summary.name, reads.cancel))
-            .await {
+            .await
+        {
             Some(inspected) => (inspected.ok().map(|view| view.supervisor), false),
             None => (None, true),
         }

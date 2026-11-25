@@ -20,9 +20,9 @@ use jackin_core::{
     ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
 };
 use jackin_openshell::{
-    ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
-    Missing, NetworkRule, PolicyDocument, PolicyReport, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState,
+    ClosedPolicy, CreateOutcome, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp,
+    MainProcess, Missing, NetworkRule, PolicyDocument, PolicyReport, PowerAction, ProfileSync,
+    ProgramOutcome, ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState,
     ProviderWriteEffect, ProviderWriteError, RuleEndpoint, RuleKey, SandboxCreate, SandboxDetail,
     SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalKind, TerminalRequest,
     TerminalSession, TlsMode, TransferOp,
@@ -241,6 +241,67 @@ impl FakeGateway {
             }
             Fault::LoseResponse { op, error } => registry.lost_responses.push((op, error)),
         }
+    }
+
+    fn write_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
+        let mut registry = self.registry();
+        if let Err(error) = registry.strike(GatewayOp::Provider) {
+            let held = registry.providers.contains_key(&spec.name);
+            return Err(failed_write(held, error));
+        }
+        if !registry.profiles.contains_key(&spec.profile) {
+            return Err(ProviderWriteError::new(
+                GatewayError::NotFound {
+                    what: Missing::Profile(spec.profile.clone()),
+                },
+                ProviderWriteEffect::NoWrite,
+            ));
+        }
+        let record = match &spec.material {
+            ProviderMaterial::OAuth2RefreshToken {
+                access_token,
+                refresh_token,
+                client_id,
+                scopes,
+                expires_at,
+                additional_credentials,
+            } => ProviderRecord {
+                profile: spec.profile.clone(),
+                access_key: spec.keys.access_token.to_owned(),
+                access_token: access_token.expose().to_owned(),
+                refresh_token: refresh_token.expose().to_owned(),
+                client_id: client_id.clone(),
+                scopes: scopes.clone(),
+                expires_at: *expires_at,
+                additional_credentials: additional_credentials.clone(),
+            },
+            ProviderMaterial::StaticKey { key } => ProviderRecord {
+                profile: spec.profile.clone(),
+                access_key: spec.keys.access_token.to_owned(),
+                access_token: key.expose().to_owned(),
+                refresh_token: String::new(),
+                client_id: String::new(),
+                scopes: Vec::new(),
+                expires_at: None,
+                additional_credentials: BTreeMap::new(),
+            },
+        };
+        let effect = if registry.providers.contains_key(&spec.name) {
+            ProviderWriteEffect::Existing
+        } else {
+            ProviderWriteEffect::Created
+        };
+        registry.providers.insert(spec.name.clone(), record);
+        if let Some(error) = registry.put_fails_after_write.take() {
+            return Err(ProviderWriteError::new(error, effect));
+        }
+        if let Some(error) = registry.put_outcome_unknown.take() {
+            return Err(ProviderWriteError::new(error, ProviderWriteEffect::Unknown));
+        }
+        Ok(effect)
     }
 
     pub fn release(&self, trigger: &Trigger) -> bool {
@@ -683,61 +744,22 @@ impl Gateway for FakeGateway {
             let held = self.registry().providers.contains_key(&spec.name);
             return Err(failed_write(held, error));
         }
-        let mut registry = self.registry();
-        if let Err(error) = registry.strike(GatewayOp::Provider) {
-            let held = registry.providers.contains_key(&spec.name);
+        self.write_provider(spec)
+    }
+
+    async fn create_provider_if_absent(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<CreateOutcome, ProviderWriteError> {
+        tokio::task::yield_now().await;
+        if let Err(error) = self.pause(GatewayOp::Provider, None, None).await {
+            let held = self.registry().providers.contains_key(&spec.name);
             return Err(failed_write(held, error));
         }
-        if !registry.profiles.contains_key(&spec.profile) {
-            return Err(ProviderWriteError::new(
-                GatewayError::NotFound {
-                    what: Missing::Profile(spec.profile.clone()),
-                },
-                ProviderWriteEffect::NoWrite,
-            ));
+        if self.registry().providers.contains_key(&spec.name) {
+            return Ok(CreateOutcome::PeerExists);
         }
-        let record = match &spec.material {
-            ProviderMaterial::OAuth2RefreshToken {
-                access_token,
-                refresh_token,
-                client_id,
-                scopes,
-                expires_at,
-                additional_credentials,
-            } => ProviderRecord {
-                profile: spec.profile.clone(),
-                access_key: spec.keys.access_token.to_owned(),
-                access_token: access_token.expose().to_owned(),
-                refresh_token: refresh_token.expose().to_owned(),
-                client_id: client_id.clone(),
-                scopes: scopes.clone(),
-                expires_at: *expires_at,
-                additional_credentials: additional_credentials.clone(),
-            },
-            ProviderMaterial::StaticKey { key } => ProviderRecord {
-                profile: spec.profile.clone(),
-                access_key: spec.keys.access_token.to_owned(),
-                access_token: key.expose().to_owned(),
-                refresh_token: String::new(),
-                client_id: String::new(),
-                scopes: Vec::new(),
-                expires_at: None,
-                additional_credentials: BTreeMap::new(),
-            },
-        };
-        let effect = if registry.providers.contains_key(&spec.name) {
-            ProviderWriteEffect::Existing
-        } else {
-            ProviderWriteEffect::Created
-        };
-        registry.providers.insert(spec.name.clone(), record);
-        if let Some(error) = registry.put_fails_after_write.take() {
-            return Err(ProviderWriteError::new(error, effect));
-        }
-        if let Some(error) = registry.put_outcome_unknown.take() {
-            return Err(ProviderWriteError::new(error, ProviderWriteEffect::Unknown));
-        }
-        Ok(effect)
+        self.write_provider(spec).map(|_| CreateOutcome::Created)
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
