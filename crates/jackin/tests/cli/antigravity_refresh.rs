@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,7 +16,7 @@ use jackin_usage::onboarding::{LoginPrompt, OwnedLogin, receive_antigravity_stat
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::support::Harness;
+use super::support::{Failure, Harness, Ran};
 
 #[derive(Debug, Default)]
 struct Memory {
@@ -49,71 +49,42 @@ impl CredentialVault for Memory {
     }
 }
 
-fn quota_requests() -> &'static AtomicUsize {
-    static REQUESTS: AtomicUsize = AtomicUsize::new(0);
-    &REQUESTS
-}
-
-fn counted_reading(_: &[u8]) -> Value {
-    quota_requests().fetch_add(1, Ordering::SeqCst);
-    serde_json::from_str(&reading()).unwrap_or(Value::Null)
-}
-
-fn record_shared_board(
-    id: Uuid,
-    account: &Value,
-    resources: &serde_json::Map<String, Value>,
-    board: &[(Option<String>, String, String, Option<String>)],
-) -> TestResult {
-    for label in [
-        "Gemini weekly",
-        "Argon weekly",
-        "Claude 5h",
-        "Claude weekly",
-    ] {
-        if !board.iter().any(|(_, title, _, _)| title.contains(label)) {
-            return Err(format!("{board:?}").into());
-        }
-    }
-    if !board
-        .iter()
-        .any(|(account_id, _, _, _)| account_id.as_deref() == Some(id.to_string().as_str()))
-    {
-        return Err(format!("{board:?}").into());
-    }
-    if account["usage"]["plan"] != "Google AI Ultra" {
-        return Err(format!("{}", account["usage"]["plan"]).into());
-    }
-    for (key, fraction, reset) in [
-        ("gemini-5h", 0.99965, 1_803_996_000_i64),
-        ("gemini-weekly", 0.9742, 1_804_496_400_i64),
-        ("gemini-argon-wtu-weekly", 0.8, 1_804_550_400_i64),
-        ("3p-5h", 0.5, 1_803_999_600_i64),
-        ("3p-weekly", 0.4, 1_804_496_400_i64),
-    ] {
-        if resources[key]["remaining_fraction"] != fraction || resources[key]["resets_at"] != reset
-        {
-            return Err(format!("{key} {}", resources[key]).into());
-        }
-    }
-    Ok(())
-}
-
-fn reading() -> String {
-    r#"{"groups":[{"displayName":"Gemini","buckets":[
+const READING: &str = r#"{"groups":[{"displayName":"Gemini","buckets":[
         {"bucketId":"gemini-5h","remainingFraction":0.99965,"resetTime":"2027-03-02T14:00:00Z"},
         {"bucketId":"gemini-weekly","remainingFraction":0.9742,"resetTime":"2027-03-08T09:00:00Z"},
         {"bucketId":"3p-5h","remainingFraction":0.5,"resetTime":"2027-03-02T15:00:00Z"},
         {"bucketId":"3p-weekly","remainingFraction":0.4,"resetTime":"2027-03-08T09:00:00Z"}
     ]},{"displayName":"Gemini 4 Argon","buckets":[
         {"bucketId":"gemini-argon-wtu-weekly","window":"weekly","remainingFraction":0.8,"resetTime":"2027-03-09T00:00:00Z"}
-    ]}]}"#
-    .to_owned()
+    ]}]}"#;
+
+const DENIED: &str = r#"{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"reason":"SERVICE_DISABLED"}]}}"#;
+
+const LOAD: &str =
+    r#"{"paidTier":{"id":"g1-ultra-tier","name":"ignored"},"cloudaicompanionProject":"proj-1"}"#;
+
+const BUCKETS: [(&str, f64, i64); 5] = [
+    ("gemini-5h", 0.99965, 1_803_996_000),
+    ("gemini-weekly", 0.9742, 1_804_496_400),
+    ("gemini-argon-wtu-weekly", 0.8, 1_804_550_400),
+    ("3p-5h", 0.5, 1_803_999_600),
+    ("3p-weekly", 0.4, 1_804_496_400),
+];
+
+const QUOTA: &str = "/daily/v1internal:retrieveUserQuotaSummary";
+const QUOTA_FALLBACK: &str = "/production/v1internal:retrieveUserQuotaSummary";
+
+struct Lab {
+    world: World,
+    server: UsageServer,
+    cli: Harness,
+    vault: Arc<Memory>,
+    path: PathBuf,
+    id: Uuid,
 }
 
-#[tokio::test]
-async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> TestResult {
-    guard(async {
+impl Lab {
+    async fn open() -> Result<Lab, Failure> {
         let world = World::builder().build()?;
         let server = UsageServer::start().await?;
         let mut cli = Harness::new(&world);
@@ -122,12 +93,12 @@ async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> Tes
         let shared = Arc::clone(&vault);
         let shared: Arc<dyn CredentialVault> = shared;
         cli.usage_vault = Some(shared);
-        let root = cli
+        let path = cli
             .config_path
             .as_path()
             .parent()
-            .ok_or("config directory")?;
-        let path = root.join("usage/accounts.sqlite3");
+            .ok_or("config directory")?
+            .join("usage/accounts.sqlite3");
         let now = world.clock.now().0;
         let stored = Arc::clone(&vault);
         let stored: Arc<dyn CredentialVault> = stored;
@@ -148,104 +119,262 @@ async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> Tes
             &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}}),
         )?;
         drop(db);
-        let load = r#"{"paidTier":{"id":"g1-ultra-tier","name":"ignored"},"cloudaicompanionProject":"proj-1"}"#;
         server.serve(
             Provider::Antigravity,
             Method::Post,
             "/production/v1internal:loadCodeAssist",
-            Route::json(200, load),
+            Route::json(200, LOAD),
         );
-        quota_requests().store(0, Ordering::SeqCst);
-        server.serve(
+        let lab = Lab {
+            world,
+            server,
+            cli,
+            vault,
+            path,
+            id,
+        };
+        lab.serve_quota(READING);
+        Ok(lab)
+    }
+
+    fn serve_quota(&self, body: &str) {
+        self.server.replace(
             Provider::Antigravity,
             Method::Post,
-            "/daily/v1internal:retrieveUserQuotaSummary",
-            Route::json(200, "{}")
-                .requires_json_body(json!({"project": "proj-1"}))
-                .responding_with(counted_reading),
+            QUOTA,
+            Route::json(200, body).requires_json_body(json!({"project": "proj-1"})),
         );
-        let args = ["usage", "refresh", "--json", "--account", &id.to_string()];
-        let first = cli.run(&args).await?;
-        first.ok()?;
-        let after_first = quota_requests().load(Ordering::SeqCst);
-        assert!(after_first >= 1, "the first refresh made no quota request");
-        let second = cli.run(&args).await?;
-        second.ok()?;
-        assert!(
-            quota_requests().load(Ordering::SeqCst) > after_first,
-            "the second refresh made no quota request"
-        );
-        assert_eq!(first.stdout, second.stdout);
-        assert!(!first.stdout.contains("last report"));
-        assert!(!first.stderr.contains("last report"));
-        let body: Value = serde_json::from_str(&first.stdout)?;
-        let account = &body["accounts"][0];
-        assert_eq!(account["account"]["id"], id.to_string());
-        assert_eq!(account["usage"]["plan"], "Google AI Ultra");
-        let resources = account["usage"]["resources"]
-            .as_object()
-            .ok_or("missing resources")?;
-        for key in [
-            "gemini-5h",
-            "gemini-weekly",
-            "gemini-argon-wtu-weekly",
-            "3p-5h",
-            "3p-weekly",
-        ] {
-            assert!(resources.contains_key(key), "missing {key}");
+    }
+
+    fn fail_quota(&self, route: fn() -> Route) {
+        for path in [QUOTA, QUOTA_FALLBACK] {
+            self.server
+                .replace(Provider::Antigravity, Method::Post, path, route());
         }
-        let details = cli
-            .run(&["usage", "details", "--account", &id.to_string()])
-            .await?;
-        details.ok()?;
-        let gemini = details.stdout.find("Gemini weekly").ok_or("missing Gemini weekly")?;
-        let argon = details.stdout.find("Argon weekly").ok_or("missing Argon")?;
-        let claude = details.stdout.find("Claude 5h").ok_or("missing Claude")?;
-        assert!(claude < argon && argon < gemini, "{}", details.stdout);
-        assert!(!details.stdout.contains('\x1b'));
-        assert_eq!(resources["gemini-5h"]["remaining_fraction"], 0.99965);
-        assert_eq!(resources["gemini-5h"]["resets_at"], 1_803_996_000_i64);
-        assert_eq!(resources["gemini-weekly"]["resets_at"], 1_804_496_400_i64);
-        assert_eq!(resources["3p-5h"]["resets_at"], 1_803_999_600_i64);
-        assert_eq!(resources["3p-weekly"]["resets_at"], 1_804_496_400_i64);
-        assert_eq!(resources["gemini-argon-wtu-weekly"]["resets_at"], 1_804_550_400_i64);
-        let clock = Arc::<jackin_testkit::FakeClock>::clone(&world.clock);
-        let clock: Arc<dyn Clock> = clock;
-        let again = Arc::<Memory>::clone(&vault);
-        let again: Arc<dyn CredentialVault> = again;
-        let login = OwnedLogin::new(path.clone(), server.endpoints(), clock).with_vault(again);
-        let board = jackin_tui::reload_usage_board(&login).await?;
-        record_shared_board(id, account, resources, &board)?;
-        let fetched = account["fetched_at"].as_i64().ok_or("missing age")?;
-        world.clock.advance(Duration::from_secs(120));
-        server.replace(
-            Provider::Antigravity,
-            Method::Post,
-            "/daily/v1internal:retrieveUserQuotaSummary",
-            Route::status(500),
-        );
-        server.replace(
-            Provider::Antigravity,
-            Method::Post,
-            "/production/v1internal:retrieveUserQuotaSummary",
-            Route::status(500),
-        );
-        let failed = cli.run(&args).await?;
-        assert_ne!(failed.exit, first.exit);
-        let failed_body: Value = serde_json::from_str(&failed.stdout)?;
-        let failed_account = &failed_body["accounts"][0];
-        assert_eq!(failed_account["fetched_at"], fetched);
+    }
+
+    async fn refresh(&self) -> Result<Ran, Failure> {
+        self.cli
+            .run(&[
+                "usage",
+                "refresh",
+                "--json",
+                "--account",
+                &self.id.to_string(),
+            ])
+            .await
+    }
+
+    async fn succeeded_then_failed(&self) -> Result<(Ran, Ran), Failure> {
+        let first = self.refresh().await?;
+        first.ok()?;
+        self.world.clock.advance(Duration::from_secs(120));
+        self.fail_quota(|| Route::status(500));
+        let failed = self.refresh().await?;
+        Ok((first, failed))
+    }
+}
+
+#[tokio::test]
+async fn cli_refresh_prints_the_google_plan_and_every_quota_bucket_with_its_reset() -> TestResult {
+    guard(async {
+        let lab = Lab::open().await?;
+        let ran = lab.refresh().await?;
+        ran.ok()?;
+        let body = ran.value()?;
+        let account = &body["accounts"][0];
+        assert_eq!(account["account"]["id"], lab.id.to_string());
+        assert_eq!(account["usage"]["plan"], "Google AI Ultra");
+        let resources = &account["usage"]["resources"];
+        assert_eq!(resources.as_object().map(serde_json::Map::len), Some(5));
+        for (key, fraction, reset) in BUCKETS {
+            assert_eq!(resources[key]["remaining_fraction"], fraction, "{key}");
+            assert_eq!(resources[key]["resets_at"], reset, "{key}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_later_launch_replaces_the_saved_reading_with_the_new_quota() -> TestResult {
+    guard(async {
+        let lab = Lab::open().await?;
+        let first = lab.refresh().await?;
+        first.ok()?;
         assert_eq!(
-            failed_account["usage"]["resources"]["gemini-5h"]["remaining_fraction"],
+            first.value()?["accounts"][0]["usage"]["resources"]["gemini-5h"]["remaining_fraction"],
             0.99965
         );
-        let message = failed_account["failure"]["message"]
+        lab.serve_quota(&READING.replace("0.99965", "0.25"));
+        let second = lab.refresh().await?;
+        second.ok()?;
+        assert_eq!(
+            second.value()?["accounts"][0]["usage"]["resources"]["gemini-5h"]["remaining_fraction"],
+            0.25
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn details_lists_claude_5h_before_argon_weekly_before_gemini_weekly() -> TestResult {
+    guard(async {
+        let lab = Lab::open().await?;
+        lab.refresh().await?.ok()?;
+        let details = lab
+            .cli
+            .run(&["usage", "details", "--account", &lab.id.to_string()])
+            .await?;
+        details.ok()?;
+        assert!(!details.stdout.contains('\x1b'));
+        let at = |label: &str| {
+            details
+                .stdout
+                .find(label)
+                .ok_or_else(|| format!("missing {label}\n{}", details.stdout))
+        };
+        at("Claude weekly")?;
+        assert!(at("Claude 5h")? < at("Argon weekly")?);
+        assert!(at("Argon weekly")? < at("Gemini weekly")?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_console_board_lists_every_bucket_of_the_account_the_cli_refreshed() -> TestResult {
+    guard(async {
+        let lab = Lab::open().await?;
+        lab.refresh().await?.ok()?;
+        let clock = Arc::<jackin_testkit::FakeClock>::clone(&lab.world.clock);
+        let clock: Arc<dyn Clock> = clock;
+        let vault = Arc::<Memory>::clone(&lab.vault);
+        let vault: Arc<dyn CredentialVault> = vault;
+        let login =
+            OwnedLogin::new(lab.path.clone(), lab.server.endpoints(), clock).with_vault(vault);
+        let board = jackin_tui::reload_usage_board(&login).await?;
+        let titles: Vec<&str> = board
+            .iter()
+            .map(|(_, title, _, _)| title.as_str())
+            .collect();
+        for label in [
+            "Gemini weekly",
+            "Argon weekly",
+            "Claude 5h",
+            "Claude weekly",
+        ] {
+            assert!(
+                titles.iter().any(|title| title.contains(label)),
+                "{label} in {titles:?}"
+            );
+        }
+        let id = lab.id.to_string();
+        assert!(
+            board
+                .iter()
+                .any(|(account, _, _, _)| account.as_deref() == Some(id.as_str())),
+            "{board:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_refresh_keeps_the_last_reading_and_its_fetch_time() -> TestResult {
+    guard(async {
+        let lab = Lab::open().await?;
+        let (first, failed) = lab.succeeded_then_failed().await?;
+        let fetched = first.value()?["accounts"][0]["fetched_at"].clone();
+        assert!(fetched.is_i64(), "{fetched}");
+        let body = failed.value()?;
+        let account = &body["accounts"][0];
+        assert_eq!(account["fetched_at"], fetched);
+        assert_eq!(
+            account["usage"]["resources"]["gemini-5h"]["remaining_fraction"],
+            0.99965
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_refresh_exits_with_failure_and_says_the_quota_is_unavailable() -> TestResult {
+    guard(async {
+        let lab = Lab::open().await?;
+        let (_, failed) = lab.succeeded_then_failed().await?;
+        assert_eq!(failed.exit, ExitClass::Failure, "{}", failed.stderr);
+        let body = failed.value()?;
+        let account = &body["accounts"][0];
+        let message = account["failure"]["message"]
             .as_str()
             .ok_or("missing refresh error")?;
         assert!(message.contains("unavailable"), "{message}");
-        assert!(!failed.stdout.contains("fixture-not-a-secret"));
-        assert!(!failed.stderr.contains("fixture-not-a-secret"));
-        assert!(!failed.stdout.contains("old-access"));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_refresh_prints_no_credential_material() -> TestResult {
+    guard(async {
+        let lab = Lab::open().await?;
+        let (_, failed) = lab.succeeded_then_failed().await?;
+        assert!(
+            failed.stdout.contains(&lab.id.to_string()),
+            "{}",
+            failed.stdout
+        );
+        for secret in ["fixture-not-a-secret", "old-access", "refresh-1"] {
+            assert!(!failed.stdout.contains(secret), "{secret}");
+            assert!(!failed.stderr.contains(secret), "{secret}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_disabled_quota_api_is_a_limitation_that_waits_an_hour_and_never_escalates() -> TestResult
+{
+    guard(async {
+        let lab = Lab::open().await?;
+        lab.fail_quota(|| Route::json(403, DENIED));
+        let command = format!("jackin account usage reconnect {}", lab.id);
+        for round in 0..2 {
+            let refreshed = lab
+                .cli
+                .run(&["usage", "refresh", "--account", &lab.id.to_string()])
+                .await?;
+            assert_eq!(
+                refreshed.exit,
+                ExitClass::Failure,
+                "{round}: {}",
+                refreshed.stderr
+            );
+            let usage = lab.cli.run(&["usage"]).await?;
+            assert!(
+                usage
+                    .stdout
+                    .contains("HTTP 403 SERVICE_DISABLED · next retry in 1h"),
+                "{round}: {}",
+                usage.stdout
+            );
+            assert!(
+                !usage.stdout.contains(&command),
+                "{round}: {}",
+                usage.stdout
+            );
+            assert!(
+                !usage.stdout.contains("retry due"),
+                "{round}: {}",
+                usage.stdout
+            );
+            lab.world.clock.advance(Duration::from_hours(2));
+        }
         Ok(())
     })
     .await

@@ -68,7 +68,9 @@ fn ansi_output_adds_only_tone_codes_to_the_plain_characters() -> Result<()> {
     let ansi = render::ansi(&lines);
     assert!(!plain.contains('\u{1b}'));
     assert_eq!(strip_escapes(&ansi), plain);
-    assert!(ansi.contains("\u{1b}[31m ·") || ansi.contains("\u{1b}[31m 99%\u{1b}[0m"));
+    assert!(ansi.contains(
+        "\u{1b}[31m███████\u{1b}[0m\u{1b}[2m░\u{1b}[0m \u{1b}[31m 99%\u{1b}[0m used  resets in 5d 8h · Mon 07:00"
+    ));
     assert!(ansi.contains("\u{1b}[33mstale\u{1b}[0m"));
     assert!(ansi.contains("\u{1b}[1mMuse\u{1b}[0m"));
     assert!(ansi.contains("\u{1b}[2m1 account\u{1b}[0m"));

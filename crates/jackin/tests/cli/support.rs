@@ -204,6 +204,11 @@ pub(crate) fn term_size(cols: u16, rows: u16) -> Result<TermSize, Failure> {
 }
 
 impl ScriptedTerminal {
+    pub(crate) fn sized(mut self, cols: u16) -> Result<ScriptedTerminal, Failure> {
+        self.size = term_size(cols, 30)?;
+        Ok(self)
+    }
+
     pub(crate) fn new(steps: Vec<Step>) -> Result<(ScriptedTerminal, RawProbe), Failure> {
         let raw = Arc::new(AtomicBool::new(false));
         let reading = Arc::new(watch::channel(false).0);

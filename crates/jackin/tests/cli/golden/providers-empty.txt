@@ -17,4 +17,4 @@ Info  Gemini app (web): chat limits are not tracked; there is no usage source.
       Google AI plan quotas appear under Antigravity (Google AI).
 
 Connect: jackin account usage connect <id>
-Filter:  jackin usage --provider <id>
+Filter:  jackin usage details --provider <id>

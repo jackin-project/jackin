@@ -73,13 +73,13 @@ pub fn note_lines(_account: &AccountQuota, note: &Note, view: &UsageView, ctx: &
 
 pub fn footer(account: &AccountQuota, view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     let ctx = *ctx;
-    let mut lines = vec![foot(format!("id {}", account.id.hyphenated()))];
-    lines.push(foot(fetched_text(account, view)));
+    let mut lines = foot(format!("id {}", account.id.hyphenated()), ctx);
+    lines.extend(foot(fetched_text(account, view), ctx));
     let redeemable = account.notes.iter().any(
         |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.status == ResetStatus::Ready)),
     );
     if redeemable {
-        lines.push(foot(REDEEM.to_owned()));
+        lines.extend(foot(REDEEM.to_owned(), ctx));
     }
     lines.extend(fact_lines(&account.facts, view, ctx));
     lines
@@ -95,8 +95,13 @@ fn sub(parts: &[String], indent: usize, ctx: Ctx) -> Vec<Line> {
     )
 }
 
-fn foot(text: String) -> Line {
-    Line::of(vec![Span::plain(" ".repeat(FOOT_INDENT)), Span::dim(text)])
+fn foot(text: String, ctx: Ctx) -> Vec<Line> {
+    text::wrap(
+        vec![Span::plain(" ".repeat(FOOT_INDENT))],
+        FOOT_INDENT,
+        &text::split_parts(&text, Tone::Dim),
+        ctx.columns(),
+    )
 }
 
 fn left(used: UsedFraction) -> String {
@@ -235,7 +240,11 @@ fn balance_lines(amount: f64, unit: Unit, approx: Option<(f64, Currency)>, ctx: 
 }
 
 fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line> {
-    let index_width = credits.len().to_string().len();
+    let index_width = credits
+        .iter()
+        .map(|credit| credit.number().to_string().len())
+        .max()
+        .unwrap_or(1);
     let kind_width = credits
         .iter()
         .map(|credit| credit.kind.chars().count())
@@ -244,12 +253,16 @@ fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line>
         .max(MIN_KIND_WIDTH);
     credits
         .iter()
-        .enumerate()
-        .flat_map(|(position, credit)| {
-            let status = match credit.status {
+        .flat_map(|credit| {
+            let name = match credit.status {
                 ResetStatus::Ready => "ready",
                 ResetStatus::Queued => "queued",
                 ResetStatus::Unavailable => "unavailable",
+            };
+            let status = if credit.remaining > 1 {
+                format!("{name} ×{}", credit.remaining)
+            } else {
+                name.to_owned()
             };
             let expiry = format!(
                 "expires {}",
@@ -257,13 +270,13 @@ fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line>
             );
             let aligned = format!(
                 "{:<index_width$}  {:<kind_width$} {status:<STATUS_WIDTH$} {expiry}",
-                position + 1,
+                credit.number(),
                 credit.kind,
             );
             if SUB_INDENT + aligned.chars().count() <= ctx.columns() {
                 sub(&[aligned], SUB_INDENT, ctx)
             } else {
-                let head = format!("{} {} {status}", position + 1, credit.kind);
+                let head = format!("{} {} {status}", credit.number(), credit.kind);
                 sub(&[head, expiry], SUB_INDENT, ctx)
             }
         })
@@ -423,7 +436,7 @@ fn fact_lines(facts: &[Fact], view: &UsageView, ctx: Ctx) -> Vec<Line> {
     if !inline.is_empty() {
         lines.extend(foot_wrapped(&inline, ctx));
     }
-    lines.extend(apart.into_iter().map(|(_, text)| foot(text)));
+    lines.extend(apart.into_iter().flat_map(|(_, text)| foot(text, ctx)));
     lines
 }
 

@@ -47,7 +47,7 @@ pub fn card(account: &AccountQuota, view: &UsageView, ctx: &Ctx, depth: Depth) -
         }
     }
     lines.extend(failure_lines(account, view, ctx));
-    lines.extend(feed_lines(account, view));
+    lines.extend(feed_lines(account, view, ctx));
     lines.extend(duplicate_lines(account));
     if depth == Depth::Full {
         lines.extend(detail::footer(account, view, &ctx));
@@ -125,10 +125,12 @@ fn meter_block(
 ) -> Vec<Line> {
     let mut lines = vec![gauge(meter, indent, name_width, view, ctx)];
     if let Used::Amount { used, limit, unit } = &meter.used {
-        lines.push(Line::of(vec![
-            Span::plain(" ".repeat(SUB_INDENT)),
-            Span::dim(text::quantity(*used, limit.get(), *unit)),
-        ]));
+        lines.extend(text::wrap(
+            vec![Span::plain(" ".repeat(SUB_INDENT))],
+            SUB_INDENT,
+            &text::split_parts(&text::quantity(*used, limit.get(), *unit), Tone::Dim),
+            ctx.columns(),
+        ));
     }
     if depth == Depth::Full {
         lines.extend(detail::meter_lines(account, meter, view, &ctx));
@@ -248,10 +250,10 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
         }
         Note::Resets(credits) => {
             let with = |status| credits.iter().filter(move |credit| credit.status == status);
-            let ready: Vec<_> = with(ResetStatus::Ready).collect();
-            let queued = with(ResetStatus::Queued).count();
-            let unavailable = with(ResetStatus::Unavailable).count();
-            let mut count = format!("{} ready", ready.len());
+            let total = |status| with(status).map(|credit| credit.remaining).sum::<u64>();
+            let queued = total(ResetStatus::Queued);
+            let unavailable = total(ResetStatus::Unavailable);
+            let mut count = format!("{} ready", total(ResetStatus::Ready));
             if queued > 0 {
                 count.push_str(&format!(", {queued} queued"));
             }
@@ -260,8 +262,7 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
             }
             let mut parts = vec![count];
             parts.extend(
-                ready
-                    .iter()
+                with(ResetStatus::Ready)
                     .map(|credit| credit.expires_at)
                     .min()
                     .map(|at| {
@@ -375,12 +376,14 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
     text::wrap(Vec::new(), FAILURE_INDENT, &parts, ctx.columns())
 }
 
-fn feed_lines(account: &AccountQuota, view: &UsageView) -> Vec<Line> {
+fn feed_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line> {
     match (account.feed, &account.reading) {
-        (Feed::StatusLine, Reading::Stale { at }) => vec![Line::of(vec![
-            Span::plain(" ".repeat(MAIN_INDENT)),
-            Span::dim(text::status_line_note(*at, view.now)),
-        ])],
+        (Feed::StatusLine, Reading::Stale { at }) => text::wrap(
+            vec![Span::plain(" ".repeat(MAIN_INDENT))],
+            MAIN_INDENT,
+            &text::split_parts(&text::status_line_note(*at, view.now), Tone::Dim),
+            ctx.columns(),
+        ),
         _ => Vec::new(),
     }
 }
