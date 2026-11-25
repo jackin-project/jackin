@@ -326,8 +326,11 @@ fn accounts_sharing_a_label_with_different_identities_are_not_duplicates() -> Re
         })
         .into();
     let seeded = seed_usage_rows(&dir.path().join(DATABASE_PATH), rows)?;
-    let registry = AccountRegistry::open_read_only(&dir.path().join(DATABASE_PATH))?
-        .ok_or("the usage registry is missing")?;
+    let registry = AccountRegistry::open_read_only_with_vault(
+        &dir.path().join(DATABASE_PATH),
+        jackin_testkit::MemoryVault::shared(),
+    )?
+    .ok_or("the usage registry is missing")?;
     let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
     for account in &seeded {
         assert!(find(&view, account.id)?.duplicates.is_empty());
@@ -370,7 +373,8 @@ fn accounts_with_one_identity_are_duplicates_whatever_their_labels_or_case() -> 
     )?;
     drop(registry);
     let registry =
-        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("the usage registry is missing")?;
     let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
     assert_eq!(find(&view, first)?.duplicates, [second]);
     assert_eq!(find(&view, second)?.duplicates, [first]);
@@ -768,7 +772,8 @@ fn crafted_view(
     )?;
     drop(registry);
     let registry =
-        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("the usage registry is missing")?;
     let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
     Ok((view, id))
 }

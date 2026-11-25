@@ -7,6 +7,7 @@ use jackin_usage::view::{
     AccountQuota, Attention, Ctx, Feed, Line, Reading, Span, Tone, UsageView, ViewFilter, build,
 };
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 use super::overview::context;
 use super::{database, failure};
@@ -25,7 +26,11 @@ const NOTE_INDENT: usize = 4;
 pub(super) fn show(app: &mut App, args: &UsageLsArgs) -> Result<(), CommandError> {
     let now = app.deps.host.clock.now();
     let offset = app.deps.host.clock.utc_offset_secs();
-    let registry = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
+    let registry = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?;
     let Some(db) = registry else {
         return if args.json {
             app.io.json(&Vec::<Value>::new())

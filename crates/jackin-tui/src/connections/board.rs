@@ -548,12 +548,12 @@ pub(super) fn load(
         edit,
         BoardEdit::DefaultTab | BoardEdit::Read | BoardEdit::Refresh(_) | BoardEdit::Proxy(_)
     ) {
-        match AccountRegistry::open_read_only(service.database())? {
+        match service.open_read_only_registry()? {
             Some(db) => db,
-            None => AccountRegistry::open(service.database())?,
+            None => service.open_registry()?,
         }
     } else {
-        let mut db = AccountRegistry::open(service.database())?;
+        let mut db = service.open_registry()?;
         apply(&mut db, edit)?;
         db
     };

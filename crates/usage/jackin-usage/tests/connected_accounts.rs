@@ -194,7 +194,9 @@ fn reconnect_preserves_unique_scoped_accounts_and_settings() -> Result<()> {
         &bytes("new"),
         (6, &json!({"left":10})),
     )?;
-    let read = AccountRegistry::open_read_only(&path)?.ok_or("missing database")?;
+    let read =
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("missing database")?;
     let rows = read.snapshots()?;
     assert_eq!(rows.len(), 2);
     let (account, time, snapshot) = &rows[1];
@@ -307,16 +309,21 @@ fn offline_reader_leaves_missing_state_absent_and_rejects_symlinks() -> Result<(
     let temp = tempfile::tempdir()?;
     let dir = temp.path().join("usage");
     let path = dir.join("accounts.db");
-    assert!(AccountRegistry::open_read_only(&path)?.is_none());
+    assert!(
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .is_none()
+    );
     assert!(!dir.exists());
-    let registry = AccountRegistry::open(&path)?;
+    let registry = AccountRegistry::with_vault(&path, jackin_testkit::MemoryVault::shared())?;
     assert!(registry.list()?.is_empty());
     assert_eq!(path.metadata()?.permissions().mode() & 0o777, 0o600);
     assert_eq!(dir.metadata()?.permissions().mode() & 0o777, 0o700);
     let link = dir.join("other.db");
     symlink(&path, &link)?;
-    AccountRegistry::open_read_only(&link).expect_err("read-only open must reject symlinks");
-    AccountRegistry::open(&link).expect_err("read-write open must reject symlinks");
+    AccountRegistry::open_read_only_with_vault(&link, jackin_testkit::MemoryVault::shared())
+        .expect_err("read-only open must reject symlinks");
+    AccountRegistry::with_vault(&link, jackin_testkit::MemoryVault::shared())
+        .expect_err("read-write open must reject symlinks");
     Ok(())
 }
 
@@ -398,8 +405,12 @@ async fn hub_reconciliation_preserves_local_preferences_and_filters_upstream_log
         &bytes("fixture"),
     )?;
     let server = UsageServer::start().await?;
-    let service = OwnedLogin::new(path.clone(), server.endpoints(), Arc::new(FakeClock::new()))
-        .with_vault(Arc::<Vault>::clone(&vault));
+    let service = OwnedLogin::new(
+        path.clone(),
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    );
     let listing = "/v0/management/auth-files";
     let valid = Route::json(
         200,
@@ -642,7 +653,7 @@ mod regional_device;
 #[test]
 fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Result<()> {
     use jackin_testkit::FakeClock;
-    use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
+    use jackin_usage::{export, onboarding::OwnedLogin, presentation};
 
     for (key_type, console, expected) in [
         (
@@ -664,8 +675,12 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
         let path = temp.path().join("usage/accounts.db");
         let vault = Arc::new(Vault::default());
         let mut registry = db(&path, &vault)?;
-        let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
-            .with_vault(vault);
+        let login = OwnedLogin::new(
+            path,
+            jackin_testkit::closed_endpoints(),
+            Arc::new(FakeClock::new()),
+            vault,
+        );
         let mut snapshot = json!({"resources":{}});
         if let Some(kind) = key_type {
             snapshot["key_type"] = json!(kind);
@@ -707,14 +722,18 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
 fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<()> {
     use jackin_testkit::FakeClock;
     use jackin_usage::dashboard::{Dashboard, DashboardMemory};
-    use jackin_usage::{ProviderEndpoints, onboarding::OwnedLogin, presentation};
+    use jackin_usage::{onboarding::OwnedLogin, presentation};
 
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("usage/accounts.db");
     let vault = Arc::new(Vault::default());
     let mut registry = db(&path, &vault)?;
-    let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
-        .with_vault(vault);
+    let login = OwnedLogin::new(
+        path,
+        jackin_testkit::closed_endpoints(),
+        Arc::new(FakeClock::new()),
+        vault,
+    );
     let now = login.now().0;
     for (label, remaining, reset) in [("Work", 12, 3600), ("Personal", 100, 7200)] {
         registry.add_with_snapshot(
@@ -786,14 +805,18 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
 fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values() -> Result<()> {
     use jackin_testkit::FakeClock;
     use jackin_usage::dashboard::{Dashboard, DashboardMemory};
-    use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
+    use jackin_usage::{export, onboarding::OwnedLogin, presentation};
 
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("usage/accounts.db");
     let vault = Arc::new(Vault::default());
     let mut registry = db(&path, &vault)?;
-    let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
-        .with_vault(vault);
+    let login = OwnedLogin::new(
+        path,
+        jackin_testkit::closed_endpoints(),
+        Arc::new(FakeClock::new()),
+        vault,
+    );
     let now = login.now();
     registry.add_with_snapshot(
         &jackin_core::CriticalWrite::begin(),

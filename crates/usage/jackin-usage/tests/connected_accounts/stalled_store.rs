@@ -268,9 +268,13 @@ async fn refresh_names_the_keychain_when_one_credential_read_stalls_and_the_rest
     ] {
         server.serve(Provider::Zai, Method::Get, route, Route::json(200, body));
     }
-    let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()))
-        .with_vault(Arc::<Vault>::clone(&vault))
-        .with_store_wait(Duration::from_millis(400));
+    let service = OwnedLogin::new(
+        path,
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    )
+    .with_store_wait(Duration::from_millis(400));
     let accounts = registry.list()?;
     let account = |id: Uuid| {
         accounts
@@ -326,8 +330,12 @@ async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_the_key
     ] {
         server.serve(Provider::Zai, Method::Get, path, Route::json(200, body));
     }
-    let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()))
-        .with_vault(Arc::<Vault>::clone(&vault));
+    let service = OwnedLogin::new(
+        path,
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    );
     vault.stall_stores.store(true, Ordering::Release);
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
     let cancel = CancellationToken::new();
@@ -382,8 +390,12 @@ async fn a_hub_key_is_stored_when_the_cancel_arrives_with_the_listing() -> Resul
         Route::json(200, r#"{"files":[]}"#).requires_header("authorization", "Bearer hub-key"),
     );
     let held = server.hold(Provider::Claude, Method::Get, listing);
-    let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()))
-        .with_vault(Arc::<Vault>::clone(&vault));
+    let service = OwnedLogin::new(
+        path,
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    );
     let cancel = CancellationToken::new();
     let origin = server.provider_base(Provider::Claude);
     let key = Secret::new("hub-key".into());

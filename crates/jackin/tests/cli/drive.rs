@@ -155,8 +155,12 @@ fn drive_lets_a_rotation_stuck_in_the_keychain_store_its_tokens() -> TestResult 
                 r#"{"access_token":"new-access","refresh_token":"new-refresh","expires_in":7200}"#,
             ),
         );
-        let service = OwnedLogin::new(service_path.clone(), server.endpoints(), clock)
-            .with_vault(shared(&service_vault));
+        let service = OwnedLogin::new(
+            service_path.clone(),
+            server.endpoints(),
+            clock,
+            shared(&service_vault),
+        );
         let account = {
             AccountRegistry::with_vault(&service_path, shared(&service_vault))?
                 .list()?

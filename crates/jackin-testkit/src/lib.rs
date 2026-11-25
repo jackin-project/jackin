@@ -21,6 +21,7 @@ mod supervisor;
 mod sync;
 mod usage;
 mod usage_profile;
+mod vault;
 mod world;
 
 pub use connector::*;
@@ -41,4 +42,5 @@ pub use snapshot::*;
 pub use supervisor::*;
 pub use usage::*;
 pub use usage_profile::*;
+pub use vault::*;
 pub use world::*;

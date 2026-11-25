@@ -32,7 +32,9 @@ fn the_seeded_registry_lists_every_fixture_account_with_its_failure() -> TestRes
     let path = dir.path().join(DATABASE_PATH);
     let seeded = seed_usage_view(&path)?;
     assert_eq!(seeded.len(), 14);
-    let registry = AccountRegistry::open_read_only(&path)?.ok_or("registry")?;
+    let registry =
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("registry")?;
     let stored: Vec<_> = registry.snapshots()?;
     assert_eq!(stored.len(), 14);
     for ((account, fetched_at, snapshot), seeded) in stored.iter().zip(&seeded) {

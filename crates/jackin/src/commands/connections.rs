@@ -153,6 +153,7 @@ fn service(app: &App) -> Result<OwnedLogin, CommandError> {
         database(app)?,
         app.deps.usage_endpoints.clone(),
         Arc::clone(&app.deps.host.clock),
+        Arc::clone(&app.deps.usage_vault),
     )
     .with_google_registration(
         jackin_usage::onboarding::GoogleRegistrationFile::from_environment(
@@ -161,10 +162,7 @@ fn service(app: &App) -> Result<OwnedLogin, CommandError> {
             Arc::clone(&app.deps.host.fs),
         ),
     );
-    Ok(match &app.deps.usage_vault {
-        Some(vault) => login.with_vault(Arc::clone(vault)),
-        None => login,
-    })
+    Ok(login)
 }
 
 async fn connect(
@@ -311,7 +309,12 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
             .map_err(failure);
     }
     if matches!(command, UsageCommand::Share) {
-        let Some(db) = AccountRegistry::open_read_only(&database(app)?).map_err(failure)? else {
+        let Some(db) = AccountRegistry::open_read_only_with_vault(
+            &database(app)?,
+            Arc::clone(&app.deps.usage_vault),
+        )
+        .map_err(failure)?
+        else {
             return Err(CommandError::NoUsageSnapshot);
         };
         let dashboard = jackin_usage::dashboard::Dashboard::load(
@@ -353,6 +356,7 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
                 &destination,
                 &input,
                 app.deps.host.clock.now().0,
+                Arc::clone(&app.deps.usage_vault),
             )
             .map_err(failure)?;
             app.io.line(if stored {
@@ -547,9 +551,12 @@ async fn hub(
 }
 
 async fn redeem(app: &mut App, id: Uuid, index: usize) -> Result<(), CommandError> {
-    let db = AccountRegistry::open_read_only(&database(app)?)
-        .map_err(failure)?
-        .ok_or_else(|| CommandError::Argument("no saved usage accounts".into()))?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?
+    .ok_or_else(|| CommandError::Argument("no saved usage accounts".into()))?;
     let (account, _, snapshot) = db
         .snapshots()
         .map_err(failure)?

@@ -4,9 +4,8 @@
 use std::sync::Arc;
 
 use jackin_core::{Clock, Secret};
-use jackin_testkit::FakeClock;
-use jackin_usage::ProviderEndpoints;
-use jackin_usage::accounts::{AccountRegistry, ConnectionError, UsageProvider};
+use jackin_testkit::{FakeClock, MemoryVault, closed_endpoints};
+use jackin_usage::accounts::{AccountRegistry, ConnectionError, CredentialVault, UsageProvider};
 use jackin_usage::onboarding::{
     LoginError, LoginPrompt, OwnedLogin, receive_antigravity_statusline,
 };
@@ -16,12 +15,27 @@ use uuid::Uuid;
 
 use super::Result;
 
+fn offline(
+    path: &std::path::Path,
+    clock: Arc<FakeClock>,
+) -> (OwnedLogin, Arc<dyn CredentialVault>) {
+    let vault: Arc<dyn CredentialVault> = Arc::new(MemoryVault::default());
+    let service = OwnedLogin::new(
+        path.to_path_buf(),
+        closed_endpoints(),
+        clock,
+        Arc::clone(&vault),
+    );
+    (service, vault)
+}
+
 fn update(service: &OwnedLogin, email: &str, plan: Option<&str>, at: i64) -> Result<bool> {
     let input = json!({"product":"antigravity","email":email,"plan_tier":plan,"quota":{"3p-weekly":{"remaining_fraction":0.05}}});
     Ok(receive_antigravity_statusline(
         service.database(),
         &serde_json::to_vec(&input)?,
         at,
+        MemoryVault::shared(),
     )?)
 }
 
@@ -58,13 +72,13 @@ async fn a_stored_statusline_report_is_not_a_network_refresh() -> Result<()> {
     let path = tmp.path().join("usage/accounts.sqlite3");
     let clock = Arc::new(FakeClock::new());
     let observed = clock.now().0;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, vault) = offline(&path, clock);
     let cancel = CancellationToken::new();
     let email = "cached@example.com";
     let pending = begin(&service, email, None, &cancel).await?;
     assert!(update(&service, email, Some("ultra"), observed)?);
     let id = pending.await??;
-    let db = AccountRegistry::open(&path)?;
+    let db = AccountRegistry::with_vault(&path, Arc::clone(&vault))?;
     let account = db
         .list()?
         .into_iter()
@@ -105,7 +119,7 @@ async fn only_opted_in_reports_create_and_update_accounts() -> Result<()> {
     let path = tmp.path().join("usage/accounts.sqlite3");
     let clock = Arc::new(FakeClock::new());
     let now = clock.now().0;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, vault) = offline(&path, clock);
     let first = "first@example.com";
     let second = "second@example.com";
     assert!(!update(&service, first, None, now)?);
@@ -115,7 +129,7 @@ async fn only_opted_in_reports_create_and_update_accounts() -> Result<()> {
     assert!(!update(&service, second, None, now)?);
     cancel.cancel();
     assert!(matches!(pending.await?, Err(LoginError::Cancelled)));
-    let mut db = AccountRegistry::open(&path)?;
+    let mut db = AccountRegistry::with_vault(&path, Arc::clone(&vault))?;
     assert!(db.list()?.is_empty());
     assert!(!update(&service, first, None, now + 1)?);
 
@@ -171,7 +185,7 @@ async fn untouched_antigravity_sessions_hide_their_future_reset_and_pace() -> Re
     let path = tmp.path().join("usage/accounts.sqlite3");
     let clock = Arc::new(FakeClock::new());
     let now = clock.now().0;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, _) = offline(&path, clock);
     let email = "viewer@example.com";
     let pending = begin(&service, email, None, &CancellationToken::new()).await?;
     assert!(update(&service, email, None, now)?);
@@ -260,12 +274,12 @@ async fn account_summary_surfaces_a_limiting_fourth_window_and_counts_visible_ex
     let path = tmp.path().join("usage/accounts.sqlite3");
     let clock = Arc::new(FakeClock::new());
     let now = clock.now().0;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, vault) = offline(&path, clock);
     let email = "viewer@example.com";
     let pending = begin(&service, email, None, &CancellationToken::new()).await?;
     assert!(update(&service, email, None, now)?);
     let account = pending.await??;
-    let registry = AccountRegistry::open(&path)?;
+    let registry = AccountRegistry::with_vault(&path, Arc::clone(&vault))?;
     registry.put_snapshot(
         account,
         registry.version(account)?,
@@ -315,7 +329,7 @@ async fn direct_sign_in_for_a_status_line_google_account_is_a_duplicate() -> Res
     let path = tmp.path().join("usage/accounts.sqlite3");
     let clock = Arc::new(FakeClock::new());
     let now = clock.now().0;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, _) = offline(&path, clock);
     statusline_account(&service, "me@example.com", now).await?;
     let vault = Arc::new(super::Vault::default());
     let mut registry = super::db(&path, &vault)?;
@@ -351,7 +365,7 @@ async fn direct_sign_in_can_replace_a_status_line_account_of_the_same_google_acc
     let path = tmp.path().join("usage/accounts.sqlite3");
     let clock = Arc::new(FakeClock::new());
     let now = clock.now().0;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, _) = offline(&path, clock);
     let id = statusline_account(&service, "me@example.com", now).await?;
     let vault = Arc::new(super::Vault::default());
     let mut registry = super::db(&path, &vault)?;
@@ -391,7 +405,7 @@ async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> 
         &oauth("me@example.com"),
         &super::bytes("grant"),
     )?;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, _) = offline(&path, clock);
     let (send, mut prompts) = tokio::sync::mpsc::channel(2);
     let cancel = CancellationToken::new();
     let task = {
@@ -422,7 +436,7 @@ async fn direct_sign_in_cannot_convert_a_status_line_row_to_another_google_accou
     let path = tmp.path().join("usage/accounts.sqlite3");
     let clock = Arc::new(FakeClock::new());
     let now = clock.now().0;
-    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (service, _) = offline(&path, clock);
     let id = statusline_account(&service, "me@example.com", now).await?;
     let vault = Arc::new(super::Vault::default());
     let mut registry = super::db(&path, &vault)?;
