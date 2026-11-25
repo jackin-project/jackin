@@ -1964,6 +1964,7 @@ mod error_paths {
     fn a_qualified_display_call_and_a_multi_line_attribute_are_reported() -> TestResult {
         let source = text(&[
             "use std::path::Path as P;",
+            "use crate::sanitized::Path as Safe;",
             "type Q = std::path::Path;",
             "type R = S;",
             "type S = Q;",
@@ -1993,6 +1994,8 @@ mod error_paths {
             "    L(Label),",
             "    #[error(\"generic ufcs {}\", <Renderer<Path>>::display(.0))]",
             "    M(Label),",
+            "    #[error(\"own type {}\", Safe::display(.0))]",
+            "    O(Label),",
             "    #[error(\"chained {}\", R::display(.0.as_path()))] // p_chained",
             "    N(PathBuf),",
             "    #[error(\"aliased {}\", P::display(.0.as_path()))] // p_aliased",

@@ -131,16 +131,12 @@ fn path_names(tokens: &[Token]) -> Vec<&str> {
     loop {
         let known = names.len();
         for (index, token) in tokens.iter().enumerate() {
-            let imported =
-                token.is_ident("Path") && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"));
+            let imported = token.is_ident("Path")
+                && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
+                && imported_through(tokens, index, "path");
             let aliased = token.is_ident("type")
                 && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-                && tokens[index + 3..]
-                    .iter()
-                    .take_while(|t| !t.is_punct(';'))
-                    .filter_map(Token::ident)
-                    .last()
-                    .is_some_and(|last| names.contains(&last));
+                && alias_of_known(&tokens[index + 3..], "path", &names);
             let alias = if imported {
                 tokens.get(index + 2).and_then(Token::ident)
             } else if aliased {
@@ -158,6 +154,24 @@ fn path_names(tokens: &[Token]) -> Vec<&str> {
             return names;
         }
     }
+}
+
+fn imported_through(tokens: &[Token], index: usize, module: &str) -> bool {
+    tokens[..index]
+        .iter()
+        .rev()
+        .take_while(|t| !t.is_punct(';'))
+        .any(|t| t.is_ident(module))
+}
+
+fn alias_of_known(right: &[Token], module: &str, names: &[&str]) -> bool {
+    let path: Vec<&str> = right
+        .iter()
+        .take_while(|t| !t.is_punct(';'))
+        .filter_map(Token::ident)
+        .collect();
+    path.last().is_some_and(|last| names.contains(last))
+        && (path.len() == 1 || path.contains(&module))
 }
 
 fn is_qualified_display(arguments: &[Token], index: usize, paths: &[&str]) -> bool {
