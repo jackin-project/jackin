@@ -401,7 +401,11 @@ async fn hub_reconciliation_preserves_local_preferences_and_filters_upstream_log
     let service = OwnedLogin::new(path.clone(), server.endpoints(), Arc::new(FakeClock::new()))
         .with_vault(Arc::<Vault>::clone(&vault));
     let listing = "/v0/management/auth-files";
-    let valid=Route::json(200,r#"{"files":[{"id":"local","provider":"claude","auth_index":"1","email":"same"},{"id":"hidden","provider":"antigravity","auth_index":"2"},{"id":"disabled","provider":"codex","auth_index":"3","disabled":true},{"id":"no-key","provider":"xai"}]}"#).requires_header("authorization","Bearer fixture");
+    let valid = Route::json(
+        200,
+        r#"{"files":[{"id":"local","provider":"claude","auth_index":"1","email":"same"},{"id":"hidden","provider":"antigravity","auth_index":"2"},{"id":"disabled","provider":"codex","auth_index":"3","disabled":true},{"id":"no-key","provider":"xai"}]}"#,
+    )
+    .requires_header("authorization", "Bearer fixture");
     server.serve(Provider::Claude, Method::Get, listing, valid);
     let cancel = CancellationToken::new();
     let id = service

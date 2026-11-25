@@ -366,3 +366,45 @@ async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_the_key
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn a_hub_key_is_stored_even_when_cancelled_while_the_keychain_write_is_pending() -> Result<()>
+{
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let registry = db(&path, &vault)?;
+    let server = UsageServer::start().await?;
+    server.serve(
+        Provider::Claude,
+        Method::Get,
+        "/v0/management/auth-files",
+        Route::json(200, r#"{"files":[]}"#).requires_header("authorization", "Bearer hub-key"),
+    );
+    let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()))
+        .with_vault(Arc::<Vault>::clone(&vault));
+    vault.stall_stores.store(true, Ordering::Release);
+    let cancel = CancellationToken::new();
+    let origin = server.provider_base(Provider::Claude);
+    let key = Secret::new("hub-key".into());
+    let connecting = service.connect_hub(&origin, &key, None, &cancel);
+    tokio::pin!(connecting);
+    let started = Instant::now();
+    while vault.stores_entered.load(Ordering::Acquire) == 0 {
+        tokio::select! {
+            result = &mut connecting => return Err(format!("hub ended before the write: {result:?}").into()),
+            () = tokio::time::sleep(Duration::from_millis(10)) => {}
+        }
+        if started.elapsed() > PATIENCE {
+            return Err("the hub key write never began".into());
+        }
+    }
+    cancel.cancel();
+    vault.release_stalled_reads();
+    let id = connecting.await?;
+    let hubs = registry.hubs()?;
+    assert_eq!(hubs.len(), 1);
+    assert_eq!(hubs[0].id, id);
+    assert_eq!(vault.values.lock().map_err(|_| "vault poisoned")?.len(), 1);
+    Ok(())
+}
