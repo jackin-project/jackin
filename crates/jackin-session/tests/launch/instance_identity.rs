@@ -755,7 +755,11 @@ async fn public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead
                 handle.shells(),
                 handle.attachments(),
             );
-            let names = rig.world.session.sandbox_agent_names(&target.sandbox).await;
+            let names = rig
+                .world
+                .session
+                .sandbox_agent_names(&target.sandbox, &CancellationToken::new())
+                .await;
             match expected {
                 Some(expected) => assert_eq!(names?, expected),
                 None => assert!(matches!(names, Err(GatewayError::Protocol { .. }))),

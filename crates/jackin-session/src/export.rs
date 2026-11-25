@@ -73,6 +73,7 @@ pub enum UnknownReason {
     WorkspaceUnknown(WorkspaceName),
     NoRepository,
     InspectionFailed,
+    Cancelled,
 }
 
 impl fmt::Display for UnknownReason {
@@ -87,6 +88,7 @@ impl fmt::Display for UnknownReason {
             }
             UnknownReason::NoRepository => f.write_str("cannot be inspected (no repository)"),
             UnknownReason::InspectionFailed => f.write_str("cannot be inspected"),
+            UnknownReason::Cancelled => f.write_str("was not inspected (cancelled)"),
         }
     }
 }
@@ -542,7 +544,8 @@ impl Session {
             host: &host,
             refs: &refs,
         };
-        self.ensure_same_incarnation(sandbox, &view).await?;
+        self.ensure_same_incarnation(sandbox, &view, &cancel)
+            .await?;
         let result = self
             .ship(&observed, sandbox, &unique, &remote_bundle, &items, &cancel)
             .await;
@@ -559,9 +562,10 @@ impl Session {
         &self,
         sandbox: &SandboxName,
         inspected: &SandboxView,
+        cancel: &CancellationToken,
     ) -> Result<(), ExportError> {
         let now = self
-            .find_managed(sandbox)
+            .find_managed_until(sandbox, cancel)
             .await?
             .filter(|now| now.phase != Phase::Deleting)
             .ok_or_else(|| ExportError::NotFound(sandbox.clone()))?;
@@ -843,10 +847,15 @@ fn changes_error(sandbox: &SandboxName, error: RemoteError) -> ChangesError {
 }
 
 impl Session {
-    pub async fn work_state(&self, config: &Config, sandbox: &SandboxName) -> WorkState {
-        match self.find_managed(sandbox).await {
+    pub async fn work_state(
+        &self,
+        config: &Config,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> WorkState {
+        match self.find_managed_until(sandbox, cancel).await {
             Ok(Some(view)) => {
-                self.work_state_of(config, sandbox, view.phase, &view.labels)
+                self.work_state_of(config, sandbox, view.phase, &view.labels, cancel)
                     .await
             }
             Ok(None) | Err(_) => WorkState::Unknown(UnknownReason::InspectionFailed),
@@ -859,8 +868,9 @@ impl Session {
         sandbox: &SandboxName,
         phase: Phase,
         labels: &jackin_core::Labels,
+        cancel: &CancellationToken,
     ) -> WorkState {
-        match self.inspected(config, sandbox, phase, labels).await {
+        match self.inspected(config, sandbox, phase, labels, cancel).await {
             Ok(state) => state,
             Err(reason) => WorkState::Unknown(reason),
         }
@@ -872,6 +882,7 @@ impl Session {
         sandbox: &SandboxName,
         phase: Phase,
         labels: &jackin_core::Labels,
+        _cancel: &CancellationToken,
     ) -> Result<WorkState, UnknownReason> {
         if phase != Phase::Ready {
             return Err(UnknownReason::NotRunning(phase));

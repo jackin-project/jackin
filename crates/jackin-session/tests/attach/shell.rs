@@ -33,7 +33,7 @@ async fn a_shell_sees_the_role_env_untouched_and_starts_in_the_project_without_t
         let mut shell = rig
             .world
             .session
-            .open_shell(request(&handle.name())?)
+            .open_shell(request(&handle.name())?, &CancellationToken::new())
             .await?;
         shell
             .input(b"printf '%s' \"$GREETING\" > greeting.txt; touch marker; exit\n".to_vec())
@@ -72,7 +72,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         );
         let name = rig.sandbox_name(1)?;
         let session = &rig.world.session;
-        let missing = session.open_shell(request(&name)?).await;
+        let missing = session
+            .open_shell(request(&name)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 missing,
@@ -88,7 +90,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         rig.world
             .gateway
             .install_file(&env_path, b"not an env file\n".to_vec());
-        let invalid = session.open_shell(request(&name)?).await;
+        let invalid = session
+            .open_shell(request(&name)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 invalid,
@@ -105,7 +109,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         rig.world
             .gateway
             .insert_unmanaged(&unlabelled, managed, Phase::Ready)?;
-        let bare = session.open_shell(request(&unlabelled)?).await;
+        let bare = session
+            .open_shell(request(&unlabelled)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 bare,
@@ -121,7 +127,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         session
             .power(&name, PowerAction::Stop, &CancellationToken::new())
             .await?;
-        let stopped = session.open_shell(request(&name)?).await;
+        let stopped = session
+            .open_shell(request(&name)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 stopped,
@@ -149,7 +157,11 @@ async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -
             Phase::Error { exit_code: None },
         ] {
             rig.world.gateway.force_phase(&name, ended);
-            let refused = rig.world.session.open_shell(request(&name)?).await;
+            let refused = rig
+                .world
+                .session
+                .open_shell(request(&name)?, &CancellationToken::new())
+                .await;
             match refused {
                 Err(AttachError::MainProcessEnded { sandbox, phase }) => {
                     assert_eq!((sandbox, phase), (name.clone(), ended));

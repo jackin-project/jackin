@@ -84,6 +84,9 @@ fn purge_error(error: &PurgeError) -> String {
         PurgeError::Replaced { sandbox } => format!(
             "sandbox {sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted; run jackin purge {sandbox} again"
         ),
+        other @ (PurgeError::NotManaged { .. }
+        | PurgeError::DeleteUnconfirmed { .. }
+        | PurgeError::Cancelled { .. }) => other.to_string(),
         PurgeError::Gateway(error) => error_chain(error),
     }
 }

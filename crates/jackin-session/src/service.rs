@@ -71,19 +71,39 @@ where
     }
 }
 
+pub(crate) enum Located {
+    Found(Box<SandboxView>),
+    Unmanaged,
+    Absent,
+}
+
+impl Located {
+    pub(crate) fn managed(self) -> Option<SandboxView> {
+        match self {
+            Located::Found(view) => Some(*view),
+            Located::Unmanaged | Located::Absent => None,
+        }
+    }
+}
+
 impl Session {
+    pub(crate) async fn locate(
+        &self,
+        name: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<Located, GatewayError> {
+        read_until_cancelled(cancel, GatewayOp::Find, self.listed(name)).await
+    }
+
     pub(crate) async fn find_managed_until(
         &self,
         name: &SandboxName,
         cancel: &CancellationToken,
     ) -> Result<Option<SandboxView>, GatewayError> {
-        read_until_cancelled(cancel, GatewayOp::Find, self.find_managed(name)).await
+        Ok(self.locate(name, cancel).await?.managed())
     }
 
-    pub(crate) async fn find_managed(
-        &self,
-        name: &SandboxName,
-    ) -> Result<Option<SandboxView>, GatewayError> {
+    async fn listed(&self, name: &SandboxName) -> Result<Located, GatewayError> {
         let found = self
             .deps
             .gateway
@@ -91,6 +111,13 @@ impl Session {
             .await?;
         Ok(found
             .into_iter()
-            .find(|view| view.name == *name && view.labels.is_managed()))
+            .find(|view| view.name == *name)
+            .map_or(Located::Absent, |view| {
+                if view.labels.is_managed() {
+                    Located::Found(Box::new(view))
+                } else {
+                    Located::Unmanaged
+                }
+            }))
     }
 }

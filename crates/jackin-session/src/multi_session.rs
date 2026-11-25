@@ -345,9 +345,10 @@ impl Session {
     pub(crate) async fn sandbox_instances(
         &self,
         sandbox: &SandboxName,
+        cancel: &CancellationToken,
     ) -> Result<AgentInstances, GatewayError> {
         let view = self
-            .find_managed(sandbox)
+            .find_managed_until(sandbox, cancel)
             .await?
             .ok_or_else(|| GatewayError::NotFound {
                 what: Missing::Sandbox(sandbox.clone()),
@@ -378,9 +379,10 @@ impl Session {
     pub async fn sandbox_agent_names(
         &self,
         sandbox: &SandboxName,
+        cancel: &CancellationToken,
     ) -> Result<Vec<String>, GatewayError> {
         Ok(self
-            .sandbox_instances(sandbox)
+            .sandbox_instances(sandbox, cancel)
             .await?
             .canonical()
             .into_iter()
@@ -565,7 +567,7 @@ impl Session {
         agent: Agent,
         cancel: &CancellationToken,
     ) -> Result<(), IntegrateError> {
-        let names = self.sandbox_agent_names(sandbox).await?;
+        let names = self.sandbox_agent_names(sandbox, cancel).await?;
         if !names.is_empty() && !names.iter().any(|name| name == agent.as_str()) {
             return Err(IntegrateError::UnknownAgent {
                 agent: agent.as_str().to_owned(),
@@ -580,7 +582,7 @@ impl Session {
         sandbox: &SandboxName,
         cancel: &CancellationToken,
     ) -> Result<Vec<String>, IntegrateError> {
-        let names = self.sandbox_agent_names(sandbox).await?;
+        let names = self.sandbox_agent_names(sandbox, cancel).await?;
         let mut merged = Vec::new();
         for (index, name) in names.iter().enumerate() {
             if index == 0 {

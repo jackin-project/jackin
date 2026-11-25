@@ -436,7 +436,7 @@ impl Session {
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
         let names = self
-            .sandbox_agent_names(sandbox)
+            .sandbox_agent_names(sandbox, cancel)
             .await
             .map_err(AttachError::Gateway)?;
         if let Some(agent) = request.agent {
@@ -507,10 +507,14 @@ impl Session {
         })
     }
 
-    pub async fn open_shell(&self, request: ShellRequest) -> Result<TerminalSession, AttachError> {
+    pub async fn open_shell(
+        &self,
+        request: ShellRequest,
+        cancel: &CancellationToken,
+    ) -> Result<TerminalSession, AttachError> {
         let sandbox = &request.sandbox;
         let view = self
-            .find_managed(sandbox)
+            .find_managed_until(sandbox, cancel)
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;

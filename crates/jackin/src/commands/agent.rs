@@ -18,7 +18,9 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
     let agent = parse_agent(&args.agent)?;
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
-    let names = session.sandbox_agent_names(&args.sandbox).await?;
+    let names = session
+        .sandbox_agent_names(&args.sandbox, &app.cancel)
+        .await?;
     let is_lead = names.first().is_none_or(|lead| lead == agent.as_str());
     if is_lead {
         let size = app

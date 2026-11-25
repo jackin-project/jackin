@@ -6,6 +6,7 @@ use jackin_session::{Unexported, WorkState};
 use jackin_testkit::{RepoFixture, Rig, TestResult, guard};
 
 use super::support::{export, exports, ref_of, snapshot};
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn a_repository_with_no_commits_exports_a_sandbox_branch_into_a_missing_bundle_directory()
@@ -24,7 +25,9 @@ async fn a_repository_with_no_commits_exports_a_sandbox_branch_into_a_missing_bu
                 .starts_with(sandbox_layout::BUNDLE_DIR.as_str())
         }));
         let session = &rig.world.session;
-        let state = session.work_state(&rig.config, &name).await;
+        let state = session
+            .work_state(&rig.config, &name, &CancellationToken::new())
+            .await;
         assert_eq!(
             state,
             WorkState::Unexported(Unexported {
@@ -45,7 +48,9 @@ async fn a_repository_with_no_commits_exports_a_sandbox_branch_into_a_missing_bu
             Some(tip.as_str())
         );
         assert_eq!(
-            session.work_state(&rig.config, &name).await,
+            session
+                .work_state(&rig.config, &name, &CancellationToken::new())
+                .await,
             WorkState::Exported
         );
         Ok(())

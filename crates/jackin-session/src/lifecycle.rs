@@ -62,6 +62,14 @@ pub enum PurgeError {
         "{sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted"
     )]
     Replaced { sandbox: SandboxName },
+    #[error("{sandbox} exists but is not a jackin sandbox; nothing was deleted")]
+    NotManaged { sandbox: SandboxName },
+    #[error(
+        "the gateway could not confirm whether the delete of {sandbox} took effect; jackin ls shows the current state"
+    )]
+    DeleteUnconfirmed { sandbox: SandboxName },
+    #[error("cancelled before {sandbox} was deleted; nothing was deleted")]
+    Cancelled { sandbox: SandboxName },
     #[error(transparent)]
     Gateway(#[from] GatewayError),
 }
@@ -146,15 +154,16 @@ impl Session {
         config: &Config,
         sandbox: &SandboxName,
         mode: PurgeMode,
+        cancel: &CancellationToken,
     ) -> Result<PurgeOutcome, PurgeError> {
-        let found = self.find_managed(sandbox).await?;
+        let found = self.find_managed_until(sandbox, cancel).await?;
         let Some(view) = found.filter(|view| view.phase != Phase::Deleting) else {
             return Ok(PurgeOutcome::AlreadyGone {
                 sandbox: sandbox.clone(),
             });
         };
         let was = self
-            .work_state_of(config, sandbox, view.phase, &view.labels)
+            .work_state_of(config, sandbox, view.phase, &view.labels, cancel)
             .await;
         if mode == PurgeMode::Guarded && was != WorkState::Exported {
             return Err(PurgeError::WorkNotExported {
@@ -162,7 +171,7 @@ impl Session {
                 state: Box::new(was),
             });
         }
-        match self.find_managed(sandbox).await? {
+        match self.find_managed_until(sandbox, cancel).await? {
             Some(now) if now.phase != Phase::Deleting => {
                 let replaced = match (view.created_at, now.created_at) {
                     (Some(before), Some(current)) => current != before,
@@ -187,7 +196,10 @@ impl Session {
         })
     }
 
-    pub async fn list(&self) -> Result<SandboxListing, LifecycleError> {
+    pub async fn list(
+        &self,
+        _cancel: &CancellationToken,
+    ) -> Result<SandboxListing, LifecycleError> {
         let views = self
             .deps
             .gateway
@@ -219,7 +231,11 @@ impl Session {
         Ok(listing)
     }
 
-    pub async fn inspect(&self, sandbox: &SandboxName) -> Result<InspectView, LifecycleError> {
+    pub async fn inspect(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<InspectView, LifecycleError> {
         let detail = match self.deps.gateway.sandbox_detail(sandbox).await {
             Ok(detail) if detail.view.labels.is_managed() => detail,
             Ok(_) | Err(GatewayError::NotFound { .. }) => {
@@ -242,7 +258,7 @@ impl Session {
             }
         }
         if detail.view.phase == Phase::Ready {
-            let instances = self.sandbox_instances(sandbox).await?;
+            let instances = self.sandbox_instances(sandbox, cancel).await?;
             for instance in instances.canonical() {
                 let key = RuleKey::provider_rule(&ProviderName::for_account(
                     &instance.account,

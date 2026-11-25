@@ -400,7 +400,7 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
         let summary = rig
             .world
             .session
-            .list()
+            .list(&CancellationToken::new())
             .await?
             .sandboxes
             .into_iter()

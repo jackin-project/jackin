@@ -714,8 +714,9 @@ impl Run {
         sandbox: &SandboxName,
         origins: &Origins,
     ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
-        let inspected = session.inspect(sandbox).await?;
-        let work = session.work_state(config, sandbox).await;
+        let fresh = CancellationToken::new();
+        let inspected = session.inspect(sandbox, &fresh).await?;
+        let work = session.work_state(config, sandbox, &fresh).await;
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
             summary: inspected.summary,
