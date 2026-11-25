@@ -402,3 +402,67 @@ async fn no_parse_error_prints_a_value_the_user_typed_and_each_names_the_expecte
 -> TestResult {
     guard(never_echoed(ECHO_CASES, "sk-FAKE")).await
 }
+
+#[tokio::test]
+async fn the_usage_surfaces_accept_their_json_and_wide_flags() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let snapshot = harness.run(&["usage", "snapshot", "--json"]).await?;
+        assert_eq!(snapshot.exit, ExitClass::NoUsageSnapshot);
+        assert_eq!(
+            snapshot.value()?["accounts"],
+            serde_json::Value::Array(Vec::new())
+        );
+        let listed = harness.run(&["account", "usage", "ls", "--wide"]).await?;
+        listed.ok()?;
+        let wide = harness
+            .run(&["account", "usage", "ls", "--wide", "--json"])
+            .await?;
+        wide.ok()?;
+        assert_eq!(wide.value()?, serde_json::Value::Array(Vec::new()));
+        let after = harness.run(&["usage", "refresh", "--json"]).await?;
+        let before = harness.run(&["usage", "--json", "refresh"]).await?;
+        assert_eq!(before.exit, after.exit);
+        assert_eq!(before.stdout, after.stdout);
+        assert_eq!(
+            before.value()?["accounts"],
+            serde_json::Value::Array(Vec::new())
+        );
+        for args in [
+            &["usage", "snapshot", "--wide"][..],
+            &["usage", "refresh", "--wide"][..],
+        ] {
+            assert_eq!(harness.run(args).await?.exit, ExitClass::Usage, "{args:?}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_filter_hint_printed_by_the_providers_table_is_a_command_that_parses() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let table = harness.run(&["usage", "providers"]).await?;
+        table.ok()?;
+        let hint = table
+            .stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("Filter:"))
+            .ok_or("filter hint")?
+            .trim()
+            .replace("<id>", "claude");
+        let args: Vec<&str> = hint.split_whitespace().skip(1).collect();
+        assert_eq!(args.first(), Some(&"usage"), "{hint}");
+        let ran = harness.run(&args).await?;
+        assert!(
+            !ran.stderr.contains("unexpected argument"),
+            "{hint}\n{}",
+            ran.stderr
+        );
+        Ok(())
+    })
+    .await
+}

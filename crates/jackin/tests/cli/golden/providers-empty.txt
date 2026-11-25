@@ -1,0 +1,20 @@
+Providers · 11 tracked · 0 connected · 0 accounts
+
+PROVIDER                 ID                ACCOUNTS  NOTE
+Claude                   claude       not connected
+ChatGPT / Codex          codex        not connected
+Muse                     muse         not connected
+Grok                     grok         not connected
+Kimi                     kimi         not connected
+Z.AI                     zai          not connected
+MiniMax                  minimax      not connected
+MiMo                     mimo         not connected
+Antigravity (Google AI)  antigravity  not connected
+OpenCode                 opencode     not connected
+OpenRouter               openrouter   not connected
+
+Info  Gemini app (web): chat limits are not tracked; there is no usage source.
+      Google AI plan quotas appear under Antigravity (Google AI).
+
+Connect: jackin account usage connect <id>
+Filter:  jackin usage details --provider <id>

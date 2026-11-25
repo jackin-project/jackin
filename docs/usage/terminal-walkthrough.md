@@ -17,13 +17,13 @@ Open **Accounts** in the jackin console. With a provider selected in the tree, p
 
 Esc dismisses an active sign-in. After a successful connection, the dialog displays the account and its usage. When you return to **Accounts**, select its saved name under **Usage accounts** to open its readings again. A saved account awaiting its first quota response displays a waiting message. Open **Usage accounts…** in Accounts, or press **N**, to inspect it again. The account opens on its plan and key readings. Choose **Full details** for its complete readings and history. The same dialog offers refresh, sign in again, rename, and remove. When the provider reports reset inventory, select an available reset and review its confirmation before redeeming it.
 
-To check your Ultra subscription, open the saved Antigravity account. Compare **Gemini 5h**, **Gemini weekly**, **Claude 5h** and **Claude weekly** with the quotas in Antigravity. An Argon weekly window, when Google reports one, sits between the Gemini and Claude windows. Each percentage is the amount remaining.
+To check your Ultra subscription, open the saved Antigravity account. Compare **Gemini 5h**, **Gemini weekly**, **Claude 5h** and **Claude weekly** with the quotas in Antigravity. An Argon weekly window, when Google reports one, sits between the Gemini and Claude windows. Each percentage is the amount used.
 
 A fresh installation opens **Priority**. Under **All Usage**, scroll with the arrow keys or **PgUp/PgDn**. An account with several metrics opens a chooser. A single reading opens directly. For a combined metric, choose a member to inspect its account.
 
 Use **Refresh** on the usage board to read providers that support manual refresh, including a direct Antigravity account, while Antigravity is closed. The console checks polling providers every five minutes while it runs. A failed refresh keeps the previous reading and shows its age and the error.
 
-Open **Actions…** for settings and sharing. Settings control used or remaining amounts, warning thresholds, reset and pace displays, alerts, grouping and name concealment. **Copy report** exports a redacted dashboard. Hidden metrics can be restored through **Undo hide** or the hidden-metric settings.
+Open **Actions…** for settings and sharing. Settings control warning thresholds, reset and pace displays, alerts, grouping and name concealment. **Copy report** exports a redacted dashboard. Hidden metrics can be restored through **Undo hide** or the hidden-metric settings.
 
 ## Screen gallery
 

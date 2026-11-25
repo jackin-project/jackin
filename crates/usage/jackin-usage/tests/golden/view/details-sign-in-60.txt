@@ -1,0 +1,247 @@
+Usage details · 24 Nov 22:37 (+07) · 14 accounts
+  11 providers
+
+Stale  all 14 readings, fetched 13h 57m to 1d 7h ago
+       jackin usage refresh
+
+Claude                                            2 accounts
+  work@example.com · Ultra                     stale 13h 57m
+    Weekly           █░░░░░░░   9% used  resets in 2d 15h
+                     91% left
+                     7d window from Fri 20 Nov 13:59
+      Fable weekly   ░░░░░░░░   0% used  resets in 2d 15h
+                     100% left
+                     7d window from Fri 20 Nov 14:00
+      Limit resets   3 ready · next expires 11 Dec
+                     1 weekly ready
+                     expires Fri 11 Dec 2026 05:00
+                     2 fable ready
+                     expires Tue 9 Mar 2027 14:59
+                     3 fable ready
+                     expires Tue 9 Mar 2027 14:59
+    id a0000002-0000-4000-8000-000000000002
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    redeem a reset: jackin usage redeem <id> <n>
+
+  work2@example.com · Ultra                    stale 13h 57m
+    Weekly           █░░░░░░░   2% used  resets in 5d 3h
+                     98% left
+                     7d window from Mon 23 Nov 02:00
+      Fable weekly   █░░░░░░░   4% used  resets in 5d 3h
+                     96% left
+                     7d window from Mon 23 Nov 02:00
+      Extra usage    ░░░░░░░░   0% used  reset not reported
+                     0 of 20 SGD used · 20 SGD left
+                     100% left
+      Limit resets   2 ready · next expires 11 Dec
+                     1 weekly ready
+                     expires Fri 11 Dec 2026 05:00
+                     2 fable ready
+                     expires Tue 9 Mar 2027 14:59
+    id a0000003-0000-4000-8000-000000000003
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    redeem a reset: jackin usage redeem <id> <n>
+
+ChatGPT / Codex                                   2 accounts
+  work@example.com · Pro 200                   stale 13h 57m
+    Weekly           █░░░░░░░   1% used  resets in 4d 6h
+                     99% left
+                     7d window from Sun 22 Nov 05:12
+      Credits        19,290 credits · ≈ 771.60 USD
+                     exact 19,290 credits · 771.60 USD
+      Limit resets   1 ready · next expires 13 Dec
+                     1 full ready
+                     expires Sun 13 Dec 2026 05:19
+      Tokens         today n/a · yesterday 420K
+                     30 days 96.7B
+                     yesterday: 420,307 tokens · 2 turns
+                       354K cached in · 59,352 in
+                       6,779 out
+                     30 days: 96,689,333,883 tokens
+                     4,358 turns · 30/30 days
+                       95.7B cached in · 829M in · 140M out
+                     models, 30 days (turns)
+                     gpt-6.1-terra 2,484 · gpt-5.6-luna 754
+                     gpt-6.1-sol 558 · +5 more
+                     per-day counts:
+                     jackin usage details --json
+    id a0000001-0000-4000-8000-000000000001
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    redeem a reset: jackin usage redeem <id> <n>
+
+  home@example.com · Pro 200                   stale 13h 57m
+    Weekly           █░░░░░░░   2% used  resets in 4d 12h
+                     98% left
+                     7d window from Sun 22 Nov 11:35
+      Credits        44,515 credits · ≈ 1,780.60 USD
+                     exact 44,515 credits · 1,780.60 USD
+      Limit resets   2 ready · next expires 2 Dec
+                     1 full ready
+                     expires Wed 2 Dec 2026 05:49
+                     2 full ready
+                     expires Sun 13 Dec 2026 05:43
+      Tokens         today n/a · yesterday 4.17M
+                     30 days 60.8B
+                     yesterday: 4,169,838 tokens · 0 turns
+                       3.96M cached in · 204K in · 9,847 out
+                     30 days: 60,751,131,615 tokens
+                     1,557 turns · 30/30 days
+                       59.7B cached in · 869M in · 151M out
+                     models, 30 days (turns)
+                     gpt-6.1-sol 809 · gpt-5.6-sol 231
+                     gpt-6-luna 154 · +6 more
+                     per-day counts:
+                     jackin usage details --json
+    id a0000004-0000-4000-8000-000000000004
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    redeem a reset: jackin usage redeem <id> <n>
+
+Muse                                               1 account
+  work@example.com · Muse Code Max Usage       stale 13h 57m
+    Weekly           ███████░  99% used  resets in 5d 8h
+                     1% left
+                     7d window from Mon 23 Nov 07:00
+      Session        ╌╌╌╌╌╌╌╌    -       reset 11h 26m ago
+                     was 9% at fetch
+                     5h window from Tue 24 Nov 06:10
+    id a0000005-0000-4000-8000-000000000005
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+
+Grok                                               1 account
+  Grok Account · SuperGrok Heavy               stale 13h 57m
+    Weekly           ╌╌╌╌╌╌╌╌    -       reset 1h 49m ago
+                     was 55% at fetch
+                     7d window from Tue 17 Nov 20:47
+    id a0000007-0000-4000-8000-000000000007
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+
+Kimi                                               1 account
+  Kimi Code · plan not reported                stale 13h 57m
+    Weekly           █░░░░░░░  <1% used  resets in 5d 22h
+                     >99% left
+                     7d window from Mon 23 Nov 21:33
+                     exact 0.04%
+      Session        ╌╌╌╌╌╌╌╌    -       reset 10h 3m ago
+                     was 0% at fetch
+                     5h window from Tue 24 Nov 07:33
+    id a0000008-0000-4000-8000-000000000008
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    region Global · auth API key
+
+Z.AI                                               1 account
+  Z.ai Account · GLM Coding Max                stale 13h 57m
+    Weekly           ░░░░░░░░   0% used  resets in 5d 0h
+                     100% left
+                     7d window from Sun 22 Nov 22:49
+      Session        ░░░░░░░░   0% used  reset not reported
+                     100% left · 5h window
+      Web searches   █░░░░░░░  <1% used  resets in 7d 1h
+                     10 of 4,000 searches used · 3,990 left
+                     >99% left
+                     30d window from Mon 2 Nov 00:08
+                     exact 0.25%
+      Limit resets   1 ready, 1 queued · next expires 22 Dec
+                     1 weekly ready
+                     expires Tue 22 Dec 2026 22:59
+                     2 weekly queued
+                     expires Tue 22 Dec 2026 22:59
+    id a0000009-0000-4000-8000-000000000009
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    redeem a reset: jackin usage redeem <id> <n>
+
+MiniMax                                            1 account
+  MiniMax Token Plan · plan not reported       stale 13h 57m
+    General weekly   ███░░░░░  34% used  resets in 8h 27m
+                     66% left
+                     7d window from Wed 18 Nov 07:04
+      General 5h     ╌╌╌╌╌╌╌╌    -       reset 8h 57m ago
+                     was 0% at fetch
+                     5h window from Tue 24 Nov 08:39
+    id a0000010-0000-4000-8000-000000000010
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    region Global · auth API key
+
+MiMo                                               1 account
+  MiMo Token Plan · max                        stale 13h 57m
+    Token Plan       ███░░░░░  38% used  resets in 17d 8h
+                     31.5B of 82B credits used · 50.5B left
+                     62% left
+                     exact 31,525,748,922
+                     of 82,000,000,000 credits used
+    id a0000011-0000-4000-8000-000000000011
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    region Singapore · auto-renew on · MiMo Claw off
+    auth API key
+    period started Wed 11 Nov 21:27
+
+Antigravity (Google AI)                           2 accounts
+  personal@example.com #a0000013 · Google AI U…  stale 1d 7h
+    Claude weekly    ███████░ >99% used  resets in 1d 7h
+                     <1% left
+                     7d window from Thu 19 Nov 06:19
+                     exact 99.72%
+      Claude 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 5h ago
+                     was 0% at fetch
+                     5h window from Mon 23 Nov 12:15
+      Gemini 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 5h ago
+                     was 0% at fetch
+                     5h window from Mon 23 Nov 12:15
+      Gemini weekly  █░░░░░░░  <1% used  resets in 3d 20h
+                     >99% left
+                     7d window from Sat 21 Nov 19:05
+                     exact 0.28%
+    updated by the Antigravity status-line hook
+    last update 1d 7h ago
+    ! also connected as #a0000014 (same provider and label)
+    id a0000013-0000-4000-8000-000000000013
+    fetched Mon 23 Nov 14:53 · fresh until Mon 15:03
+
+  personal@example.com #a0000014 · Google AI …  failed 1d 5h
+    Claude weekly    ███████░ >99% used  resets in 1d 7h
+                     <1% left
+                     7d window from Thu 19 Nov 06:19
+                     exact 99.72%
+      Claude 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 0h ago
+                     was 0% at fetch
+                     5h window from Mon 23 Nov 17:06
+      Gemini 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 0h ago
+                     was 0% at fetch
+                     5h window from Mon 23 Nov 17:06
+      Gemini weekly  █░░░░░░░  <1% used  resets in 3d 20h
+                     >99% left
+                     7d window from Sat 21 Nov 19:05
+                     exact 0.28%
+    ! refresh failed:
+      the credential is missing; sign in again
+      run: jackin account usage reconnect
+      a0000014-0000-4000-8000-000000000014
+    ! also connected as #a0000013 (same provider and label)
+    id a0000014-0000-4000-8000-000000000014
+    fetched Mon 23 Nov 17:06 · fresh until Mon 17:16
+    Google project example-project
+
+OpenCode                                           1 account
+  work@example.com · Go Plus                   stale 13h 57m
+    Monthly          █░░░░░░░  11% used  resets in 13d 15h
+                     89% left
+                     30d window from Sun 8 Nov 14:15
+      Session        ╌╌╌╌╌╌╌╌    -       reset 9h 8m ago
+                     was 0% at fetch
+                     5h window from Tue 24 Nov 08:28
+      Weekly         █░░░░░░░   8% used  resets in 5d 8h
+                     92% left
+                     7d window from Mon 23 Nov 07:00
+    id a0000006-0000-4000-8000-000000000006
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+
+OpenRouter                                         1 account
+  OpenRouter Account · Pay-as-you-go           stale 13h 57m
+    Free requests    ░░░░░░░░   0% used  resets in 8h 23m
+                     0 of 1,000 requests used · 1,000 left
+                     100% left
+                     24h window from Tue 24 Nov 07:00
+      Spend          today 0 USD · week 0 USD · month 0 USD
+                     BYOK spend 0 USD in every period
+    id a0000012-0000-4000-8000-000000000012
+    fetched Tue 24 Nov 08:39 · fresh until 08:49
+    standard key; workspace balance needs a management key

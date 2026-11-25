@@ -852,6 +852,16 @@
               "requires_features": false
             },
             {
+              "name": "golden",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/golden.rs",
+              "requires_features": false
+            },
+            {
               "name": "host",
               "kinds": [
                 "test"
@@ -889,6 +899,16 @@
               "tests": true,
               "doctest": false,
               "source": "crates/jackin-testkit/tests/rig.rs",
+              "requires_features": false
+            },
+            {
+              "name": "usage_view",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/usage_view.rs",
               "requires_features": false
             }
           ]
@@ -2313,6 +2333,16 @@
               "doctest": false,
               "source": "crates/usage/jackin-usage/tests/usage/main.rs",
               "requires_features": false
+            },
+            {
+              "name": "view",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/view/main.rs",
+              "requires_features": false
             }
           ]
         },
@@ -3108,5 +3138,5 @@
     "crates/usage/jackin-usage/Cargo.toml": "d2c2a81c400ddbe691b221ef372afdbaa5287d08e143c3db36342454095374de",
     "crates/xtask/Cargo.toml": "8a80645825f1a28861ca030bcc830651a97e2ec12f9528d47c9f8dbc46ef8048"
   },
-  "layout": "d7ebbd3d21e1c8c77b9f89bea5c584d097300d188e7f47d9728e4a4a08308ebf"
+  "layout": "d44863775704a36ade34301dd248d159baeb45abbc208bf165a589439046e407"
 }

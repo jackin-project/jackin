@@ -25,6 +25,7 @@ mod sources;
 mod support;
 mod truth;
 mod usage;
+mod usage_view;
 mod usage_windows;
 mod vocabulary;
 mod workspaces;

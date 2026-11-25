@@ -1,10 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Agent, FileMode, HookKind, Provider, sandbox_layout};
+use std::time::Duration;
+
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use jackin_core::{
+    Agent, CODEX_PLACEHOLDER_ID_TOKEN, FileMode, HookKind, Provider, sandbox_layout,
+};
 use jackin_openshell::GatewayOp;
 use jackin_session::LaunchError;
-use jackin_testkit::{Fault, Outcome, ProgramScript, Rig, RoleFixture, Trigger};
+use jackin_testkit::{ACCOUNT_ID, Fault, Outcome, ProgramScript, Rig, RoleFixture, Trigger};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
@@ -169,6 +175,17 @@ async fn use_chatgpt_account(rig: &mut Rig) -> TestResult {
     Ok(())
 }
 
+fn sorted_keys(value: &serde_json::Value) -> Result<Vec<&str>, Box<dyn std::error::Error>> {
+    let mut keys: Vec<&str> = value
+        .as_object()
+        .ok_or("not a JSON object")?
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    Ok(keys)
+}
+
 async fn run_t01(rig: &Rig) -> Result<Outcome, Box<dyn std::error::Error>> {
     let request = rig
         .request(1)?
@@ -183,6 +200,7 @@ async fn t01_launch_writes_placeholder_auth_without_host_tokens() -> TestResult 
     guard(async {
         let mut rig = launch_rig().await?;
         use_chatgpt_account(&mut rig).await?;
+        rig.world.clock.advance(Duration::from_secs(3_600));
         rig.gateway().script_program(
             &sandbox_layout::PRINTENV,
             ProgramScript {
@@ -204,9 +222,39 @@ async fn t01_launch_writes_placeholder_auth_without_host_tokens() -> TestResult 
                 .ok_or("missing Codex auth state")?,
         )?;
         let value: serde_json::Value = serde_json::from_str(&auth)?;
+        assert_eq!(
+            sorted_keys(&value)?,
+            ["OPENAI_API_KEY", "auth_mode", "last_refresh", "tokens"]
+        );
+        assert_eq!(value["auth_mode"], "chatgptAuthTokens");
+        assert_eq!(value["last_refresh"], "2026-01-01T01:00:00Z");
+        assert_eq!(value["OPENAI_API_KEY"], serde_json::Value::Null);
+        assert_eq!(
+            sorted_keys(&value["tokens"])?,
+            ["access_token", "account_id", "id_token", "refresh_token"]
+        );
         assert_eq!(value["tokens"]["access_token"], PLACEHOLDER);
         assert_eq!(value["tokens"]["refresh_token"], "");
-        assert_eq!(value["OPENAI_API_KEY"], serde_json::Value::Null);
+        assert_eq!(value["tokens"]["account_id"], ACCOUNT_ID);
+        let id_token = value["tokens"]["id_token"]
+            .as_str()
+            .ok_or("id_token is not a string")?;
+        assert_eq!(id_token, CODEX_PLACEHOLDER_ID_TOKEN);
+        let parts: Vec<&str> = id_token.split('.').collect();
+        assert_eq!(parts.len(), 3, "id_token is not JWT-shaped");
+        let header: serde_json::Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[0])?)?;
+        assert_eq!(header, serde_json::json!({"alg": "none", "typ": "JWT"}));
+        let payload: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1])?)?;
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "iss": "https://auth.openai.com",
+                "aud": "codex",
+                "sub": "openshell-app-server"
+            })
+        );
+        assert_eq!(parts[2], "placeholder");
         assert!(!auth.contains(ACCESS));
         assert!(!auth.contains(REFRESH));
         Ok(())
