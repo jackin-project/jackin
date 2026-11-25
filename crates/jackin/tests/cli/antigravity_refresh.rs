@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use jackin::ExitClass;
@@ -21,10 +22,19 @@ use super::support::{Failure, Harness, Ran, ScriptedTerminal};
 #[derive(Debug, Default)]
 pub(super) struct Memory {
     values: Mutex<HashMap<Uuid, Vec<u8>>>,
+    pub(super) stalling: AtomicBool,
+    pub(super) entered: AtomicBool,
 }
 
 impl CredentialVault for Memory {
     fn store(&self, id: Uuid, secret: &SecretBytes) -> Result<(), ConnectionError> {
+        if self.stalling.load(Ordering::Acquire) {
+            self.entered.store(true, Ordering::Release);
+            while self.stalling.load(Ordering::Acquire) {
+                let (_hold, wait) = mpsc::channel::<()>();
+                let _timed_out = wait.recv_timeout(Duration::from_millis(5)).is_err();
+            }
+        }
         self.values
             .lock()
             .map_err(|_| ConnectionError::Vault)?
@@ -103,7 +113,8 @@ impl Lab {
         let stored = Arc::clone(&vault);
         let stored: Arc<dyn CredentialVault> = stored;
         let mut db = AccountRegistry::with_vault(&path, stored)?;
-        let id = db.add_with_snapshot(&jackin_core::CriticalWrite::begin(),
+        let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Antigravity,
             "Personal",
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
@@ -114,7 +125,8 @@ impl Lab {
                 "access": "old-access",
                 "refresh": "refresh-1",
                 "expires_at": now + 10_000
-            }))?), (now - 60, &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}})),
+            }))?),
+            (now - 60, &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}})),
         )?;
         drop(db);
         server.serve(

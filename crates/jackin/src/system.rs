@@ -42,23 +42,68 @@ pub fn drive<F: Future>(future: F) -> io::Result<F::Output> {
         .enable_all()
         .build()?;
     let output = runtime.block_on(future);
-    finish_critical_writes(
+    runtime.block_on(finish_critical_writes(
         &mut io::stderr(),
         CRITICAL_WRITE_NOTICE,
         CRITICAL_WRITE_LIMIT,
-    );
+        interrupted(),
+    ));
     runtime.shutdown_timeout(SHUTDOWN_GRACE);
     Ok(output)
 }
 
-fn finish_critical_writes(out: &mut impl Write, notice_after: Duration, limit: Duration) {
-    if settle_critical_writes(notice_after) {
+async fn interrupted() {
+    let (Ok(mut interrupt), Ok(mut terminate)) = (
+        signal(SignalKind::interrupt()),
+        signal(SignalKind::terminate()),
+    ) else {
+        return std::future::pending().await;
+    };
+    tokio::select! {
+        _ = interrupt.recv() => {}
+        _ = terminate.recv() => {}
+    }
+}
+
+async fn settle(limit: Duration) -> bool {
+    tokio::task::spawn_blocking(move || settle_critical_writes(limit))
+        .await
+        .unwrap_or(false)
+}
+
+async fn finish_critical_writes(
+    out: &mut impl Write,
+    notice_after: Duration,
+    limit: Duration,
+    interrupt: impl Future<Output = ()>,
+) {
+    if settle_critical_writes(Duration::ZERO) {
         return;
     }
-    drop(out.write_all(b"jackin: finishing a credential write...\n"));
-    if !settle_critical_writes(limit.saturating_sub(notice_after)) {
-        drop(out.write_all(b"jackin: gave up waiting for a credential write\n"));
+    tokio::pin!(interrupt);
+    let first = tokio::select! {
+        settled = settle(notice_after) => Some(settled),
+        () = &mut interrupt => None,
+    };
+    if first == Some(true) {
+        return;
     }
+    if first.is_some() {
+        drop(out.write_all(b"jackin: finishing a credential write (Ctrl-C abandons it)...\n"));
+        let rest = tokio::select! {
+            settled = settle(limit.saturating_sub(notice_after)) => Some(settled),
+            () = &mut interrupt => None,
+        };
+        match rest {
+            Some(true) => return,
+            Some(false) => {
+                drop(out.write_all(b"jackin: gave up waiting for a credential write\n"));
+                return;
+            }
+            None => {}
+        }
+    }
+    drop(out.write_all(b"jackin: abandoned the credential write\n"));
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -312,49 +357,129 @@ impl Terminal for SystemTerminal {
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
+    use std::time::Instant;
 
     use jackin_core::CriticalWrite;
 
     use super::*;
+
+    const NOTICE: &str = "jackin: finishing a credential write (Ctrl-C abandons it)...\n";
 
     fn pause(length: Duration) {
         let (_hold, wait) = mpsc::channel::<()>();
         let _timed_out = wait.recv_timeout(length).is_err();
     }
 
-    fn report(notice_after: Duration, limit: Duration) -> String {
+    async fn report(
+        notice_after: Duration,
+        limit: Duration,
+        interrupt: impl Future<Output = ()>,
+    ) -> String {
         let mut out = Vec::new();
-        finish_critical_writes(&mut out, notice_after, limit);
+        finish_critical_writes(&mut out, notice_after, limit, interrupt).await;
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    #[test]
-    fn nothing_is_printed_when_no_write_is_in_flight() {
-        assert_eq!(
-            report(Duration::from_millis(50), Duration::from_secs(5)),
-            ""
-        );
+    #[tokio::test]
+    async fn nothing_is_printed_when_no_write_is_in_flight() {
+        let text = report(
+            Duration::from_millis(50),
+            Duration::from_secs(5),
+            std::future::pending(),
+        )
+        .await;
+        assert_eq!(text, "");
     }
 
-    #[test]
-    fn a_slow_write_prints_one_notice_and_no_give_up_line() {
+    #[tokio::test]
+    async fn a_slow_write_prints_one_notice_and_no_give_up_line() {
         let write = CriticalWrite::begin();
         let releaser = std::thread::spawn(move || {
             pause(Duration::from_millis(300));
             drop(write);
         });
-        let text = report(Duration::from_millis(50), Duration::from_secs(10));
-        assert_eq!(text, "jackin: finishing a credential write...\n");
+        let text = report(
+            Duration::from_millis(50),
+            Duration::from_secs(10),
+            std::future::pending(),
+        )
+        .await;
+        assert_eq!(text, NOTICE);
         assert_eq!(releaser.join().ok(), Some(()));
     }
 
-    #[test]
-    fn a_write_that_never_ends_is_reported_as_given_up() {
+    #[tokio::test]
+    async fn a_write_that_never_ends_is_reported_as_given_up() {
         let _stuck = CriticalWrite::begin();
-        let text = report(Duration::from_millis(20), Duration::from_millis(200));
+        let text = report(
+            Duration::from_millis(20),
+            Duration::from_millis(200),
+            std::future::pending(),
+        )
+        .await;
         assert_eq!(
             text,
-            "jackin: finishing a credential write...\njackin: gave up waiting for a credential write\n"
+            format!("{NOTICE}jackin: gave up waiting for a credential write\n")
         );
+    }
+
+    #[tokio::test]
+    async fn an_interrupt_during_the_wait_abandons_the_write_promptly() {
+        let _stuck = CriticalWrite::begin();
+        let started = Instant::now();
+        let text = report(
+            Duration::from_millis(20),
+            Duration::from_secs(60),
+            tokio::time::sleep(Duration::from_millis(150)),
+        )
+        .await;
+        assert_eq!(
+            text,
+            format!("{NOTICE}jackin: abandoned the credential write\n")
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    async fn an_interrupt_before_the_notice_still_abandons_the_write() {
+        let _stuck = CriticalWrite::begin();
+        let text = report(
+            Duration::from_secs(60),
+            Duration::from_secs(120),
+            std::future::ready(()),
+        )
+        .await;
+        assert_eq!(text, "jackin: abandoned the credential write\n");
+    }
+
+    #[tokio::test]
+    async fn a_real_sigint_during_the_wait_abandons_the_write() {
+        let _stuck = CriticalWrite::begin();
+        let pid = std::process::id().to_string();
+        let sender = std::thread::spawn(move || {
+            pause(Duration::from_millis(300));
+            std::process::Command::new("kill")
+                .args(["-INT", &pid])
+                .status()
+                .map(|status| status.success())
+                .ok()
+        });
+        let started = Instant::now();
+        let text = tokio::time::timeout(
+            Duration::from_secs(5),
+            report(
+                Duration::from_millis(20),
+                Duration::from_secs(60),
+                interrupted(),
+            ),
+        )
+        .await
+        .unwrap_or_default();
+        assert_eq!(
+            text,
+            format!("{NOTICE}jackin: abandoned the credential write\n")
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(sender.join().ok().flatten(), Some(true));
     }
 }

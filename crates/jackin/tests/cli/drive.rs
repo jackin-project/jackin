@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-use jackin_core::{Clock, CriticalWrite, Provider, SecretBytes, settle_critical_writes};
+use jackin_core::{Clock, CriticalWrite, Provider, SecretBytes};
 use jackin_testkit::{Method, Route, TestResult, UsageServer, World};
 use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, CredentialVault, UsageProvider};
 use jackin_usage::onboarding::OwnedLogin;
@@ -133,13 +133,13 @@ fn seed_expiring_claude_account(
 }
 
 #[test]
-fn drive_lets_a_rotation_blocked_on_the_store_lock_store_its_tokens() -> TestResult {
+fn drive_lets_a_rotation_stuck_in_the_keychain_store_its_tokens() -> TestResult {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("usage/accounts.sqlite3");
     let vault = Arc::new(Memory::default());
     let world = World::builder().build()?;
     seed_expiring_claude_account(&path, &vault, world.clock.now().0)?;
-    let directory = path.parent().ok_or("accounts directory")?.to_owned();
+    vault.stalling.store(true, Ordering::Release);
     let (service_path, service_vault) = (path.clone(), Arc::clone(&vault));
     let clock = Arc::clone(&world.clock);
     let started = Instant::now();
@@ -161,15 +161,9 @@ fn drive_lets_a_rotation_blocked_on_the_store_lock_store_its_tokens() -> TestRes
                 .list()?
                 .remove(0)
         };
-        let held = std::fs::File::create(directory.join("credentials.lock"))?;
-        held.lock()?;
-        std::thread::spawn(move || {
-            pause(Duration::from_secs(4));
-            drop(held);
-        });
         let cancel = CancellationToken::new();
         let write_began = async {
-            while settle_critical_writes(Duration::ZERO) {
+            while !service_vault.entered.load(Ordering::Acquire) {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
         };
@@ -177,6 +171,11 @@ fn drive_lets_a_rotation_blocked_on_the_store_lock_store_its_tokens() -> TestRes
             biased;
             began = tokio::time::timeout(Duration::from_secs(3), write_began) => {
                 began.map_err(|_| "the credential write never began")?;
+                let releasing = Arc::clone(&service_vault);
+                std::thread::spawn(move || {
+                    pause(Duration::from_secs(4));
+                    releasing.stalling.store(false, Ordering::Release);
+                });
             }
             refreshed = service.refresh(&account, &cancel) => drop(refreshed),
         }

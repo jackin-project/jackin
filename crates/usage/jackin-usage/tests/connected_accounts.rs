@@ -25,6 +25,8 @@ struct Vault {
     lock_delete: AtomicBool,
     stall: Mutex<Option<Uuid>>,
     stalled_reads: AtomicUsize,
+    stall_stores: AtomicBool,
+    stores_entered: AtomicUsize,
     released: (Mutex<bool>, Condvar),
 }
 
@@ -42,11 +44,7 @@ impl Vault {
         }
     }
 
-    fn wait_if_stalled(&self, slot: Uuid) {
-        if self.stall.lock().ok().and_then(|stall| *stall) != Some(slot) {
-            return;
-        }
-        self.stalled_reads.fetch_add(1, Ordering::AcqRel);
+    fn wait_for_release(&self) {
         if let Ok(mut released) = self.released.0.lock() {
             while !*released {
                 match self.released.1.wait(released) {
@@ -56,10 +54,22 @@ impl Vault {
             }
         }
     }
+
+    fn wait_if_stalled(&self, slot: Uuid) {
+        if self.stall.lock().ok().and_then(|stall| *stall) != Some(slot) {
+            return;
+        }
+        self.stalled_reads.fetch_add(1, Ordering::AcqRel);
+        self.wait_for_release();
+    }
 }
 
 impl CredentialVault for Vault {
     fn store(&self, slot: Uuid, value: &SecretBytes) -> std::result::Result<(), ConnectionError> {
+        if self.stall_stores.load(Ordering::Acquire) {
+            self.stores_entered.fetch_add(1, Ordering::AcqRel);
+            self.wait_for_release();
+        }
         if self.lock_write.load(Ordering::Acquire) {
             return Err(ConnectionError::Vault);
         }
@@ -307,6 +317,59 @@ fn offline_reader_leaves_missing_state_absent_and_rejects_symlinks() -> Result<(
     symlink(&path, &link)?;
     AccountRegistry::open_read_only(&link).expect_err("read-only open must reject symlinks");
     AccountRegistry::open(&link).expect_err("read-write open must reject symlinks");
+    Ok(())
+}
+
+#[test]
+fn a_failed_add_leaves_no_row_and_no_orphaned_slot() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let mut registry = db(&path, &vault)?;
+    let slots = |path: &Path| -> Result<i64> {
+        Ok(rusqlite::Connection::open(path)?.query_row(
+            "SELECT COUNT(*) FROM retired_slots",
+            [],
+            |row| row.get(0),
+        )?)
+    };
+    vault.lock_write.store(true, Ordering::Release);
+    let failed = registry.add(
+        &jackin_core::CriticalWrite::begin(),
+        UsageProvider::Claude,
+        "label",
+        &scoped("member/org"),
+        &bytes("first"),
+    );
+    assert!(matches!(failed, Err(ConnectionError::Vault)));
+    assert!(registry.list()?.is_empty());
+    assert!(
+        vault
+            .values
+            .lock()
+            .map_err(|_| "vault poisoned")?
+            .is_empty()
+    );
+    assert_eq!(slots(&path)?, 0);
+    vault.lock_write.store(false, Ordering::Release);
+    registry.add(
+        &jackin_core::CriticalWrite::begin(),
+        UsageProvider::Claude,
+        "label",
+        &scoped("member/org"),
+        &bytes("first"),
+    )?;
+    let duplicate = registry.add(
+        &jackin_core::CriticalWrite::begin(),
+        UsageProvider::Claude,
+        "again",
+        &scoped("member/org"),
+        &bytes("second"),
+    );
+    assert!(matches!(duplicate, Err(ConnectionError::Duplicate)));
+    assert_eq!(registry.list()?.len(), 1);
+    assert_eq!(vault.values.lock().map_err(|_| "vault poisoned")?.len(), 1);
+    assert_eq!(slots(&path)?, 0);
     Ok(())
 }
 
@@ -650,11 +713,13 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
         .with_vault(vault);
     let now = login.now().0;
     for (label, remaining, reset) in [("Work", 12, 3600), ("Personal", 100, 7200)] {
-        registry.add_with_snapshot(&jackin_core::CriticalWrite::begin(),
+        registry.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             label,
             &CandidateIdentity::OAuth(Some(label.to_owned())),
-            &bytes(label), (now, &json!({
+            &bytes(label),
+            (now, &json!({
                 "resources": {
                     "session": {"kind":"quota", "remaining_percent":remaining, "resetsAt":now + reset},
                     "webSearches": {"kind":"quota", "unit":"searches", "used":0, "limit":50},
@@ -726,11 +791,13 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
     let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
         .with_vault(vault);
     let now = login.now();
-    registry.add_with_snapshot(&jackin_core::CriticalWrite::begin(),
+    registry.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Mimo,
         "Work",
         &CandidateIdentity::api_key(&Secret::new("fixture".into())),
-        &bytes("fixture"), (now.0, &json!({"resources": {
+        &bytes("fixture"),
+        (now.0, &json!({"resources": {
             "tokenPlan": {"kind":"quota", "unit":"credits", "used":1, "limit":50_474_251_079_i64, "available":50_474_251_078_i64},
             "booster": {"kind":"balance", "unit":"cny", "exponent":6, "available":125},
             "monthlyChargeUsed": {"kind":"amount", "unit":"usd", "amount":999_994_000},

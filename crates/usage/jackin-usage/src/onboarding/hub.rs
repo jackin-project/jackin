@@ -39,9 +39,6 @@ impl OwnedLogin {
             ()=cancel.cancelled()=>return Err(LoginError::Cancelled),
             result=list(&http,&address,key.expose())=>result?,
         };
-        if cancel.is_cancelled() {
-            return Err(LoginError::Cancelled);
-        }
         let key = SecretBytes::new(key.expose().as_bytes().to_vec());
         let write = CriticalWrite::begin();
         tokio::task::spawn_blocking(move || {

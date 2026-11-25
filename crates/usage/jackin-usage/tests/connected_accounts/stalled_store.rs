@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -54,11 +55,7 @@ fn slot_holding(vault: &Vault, value: &[u8]) -> Result<Uuid> {
 
 fn wait_for_stalled_read(vault: &Vault) -> Result<()> {
     let started = Instant::now();
-    while vault
-        .stalled_reads
-        .load(std::sync::atomic::Ordering::Acquire)
-        == 0
-    {
+    while vault.stalled_reads.load(Ordering::Acquire) == 0 {
         if started.elapsed() > PATIENCE {
             return Err("the stalled read never started".into());
         }
@@ -305,13 +302,12 @@ async fn refresh_names_the_keychain_when_one_credential_read_stalls_and_the_rest
 }
 
 #[tokio::test]
-async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_waiting_for_the_store()
+async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_the_keychain_write_is_pending()
 -> Result<()> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("usage/accounts.db");
     let vault = Arc::new(Vault::default());
-    let mut registry = db(&path, &vault)?;
-    registry.clean_retired()?;
+    let registry = db(&path, &vault)?;
     let server = UsageServer::start().await?;
     let quota = "/api/monitor/usage/quota/limit";
     server.serve(
@@ -332,7 +328,7 @@ async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_waiting
     }
     let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()))
         .with_vault(Arc::<Vault>::clone(&vault));
-    let held = lock_file(&temp.path().join("usage"))?;
+    vault.stall_stores.store(true, Ordering::Release);
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
     let cancel = CancellationToken::new();
     let login = service.connect(UsageProvider::Zai, None, None, tx, &cancel);
@@ -348,7 +344,7 @@ async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_waiting
         .send(Secret::new("issued".into()))
         .map_err(|_| "key prompt closed")?;
     let started = Instant::now();
-    while jackin_core::settle_critical_writes(Duration::ZERO) {
+    while vault.stores_entered.load(Ordering::Acquire) == 0 {
         tokio::select! {
             result = &mut login => return Err(format!("login ended before the write: {result:?}").into()),
             () = tokio::time::sleep(Duration::from_millis(10)) => {}
@@ -358,7 +354,7 @@ async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_waiting
         }
     }
     cancel.cancel();
-    drop(held);
+    vault.release_stalled_reads();
     let id = login.await?;
     assert_eq!(registry.list()?.len(), 1);
     assert_eq!(registry.list()?[0].id, id);
