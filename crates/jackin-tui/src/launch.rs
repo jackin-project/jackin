@@ -708,16 +708,19 @@ impl Run {
             }
         };
         let fresh = CancellationToken::new();
-        let recorded = tokio::time::timeout(
-            RECOVERY_LOOKUP_BUDGET,
-            self.record(session, config, gateway, &sandbox, &Origins::new(), &fresh),
-        )
-        .await;
+        let budget = self.backend.inputs.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
+        let origins = Origins::new();
+        let record = self.record(session, config, gateway, &sandbox, &origins, &fresh);
+        let recorded = tokio::select! {
+            biased;
+            recorded = record => Some(recorded),
+            () = budget => None,
+        };
         match recorded {
-            Ok(Ok(instance)) => self.backend.bridge.send(Msg::LaunchCancelled {
+            Some(Ok(instance)) => self.backend.bridge.send(Msg::LaunchCancelled {
                 instance: Box::new(instance),
             }),
-            Ok(Err(_)) | Err(_) => self.left(format!(
+            Some(Err(_)) | None => self.left(format!(
                 "Cancelled · sandbox {sandbox} was seen during this launch, but its details could not be read · the fleet shows the current state"
             )),
         }

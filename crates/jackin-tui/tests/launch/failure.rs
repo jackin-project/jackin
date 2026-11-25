@@ -271,7 +271,7 @@ async fn cancel_after_a_lost_create_response_says_the_gateway_could_not_confirm_
     .await
 }
 
-async fn shown_status(console: &mut ConsoleRig) -> String {
+fn shown_status(console: &mut ConsoleRig) -> String {
     console
         .console()
         .app()
@@ -312,7 +312,7 @@ async fn a_cancel_that_finds_two_sandboxes_for_the_launch_says_so_on_the_status_
                 .starts_with("Cancelled · several sandboxes match this launch")
         })
         .await?;
-        let status = shown_status(&mut console).await;
+        let status = shown_status(&mut console);
         assert!(status.contains(twin.as_str()), "{status}");
         assert!(status.contains(first.name().as_str()), "{status}");
         Ok(())
@@ -349,7 +349,7 @@ async fn a_cancel_whose_sandbox_cannot_be_read_in_time_says_so_on_the_status_lin
                 .starts_with("Cancelled · sandbox")
         })
         .await?;
-        let status = shown_status(&mut console).await;
+        let status = shown_status(&mut console);
         assert!(status.contains(name.as_str()), "{status}");
         assert!(status.contains("could not be read"), "{status}");
         rig.gateway().release(&detail);
