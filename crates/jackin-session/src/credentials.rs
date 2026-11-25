@@ -226,10 +226,10 @@ fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Se
     }
     let data: Zeroizing<String> = connection
         .query_row(
-            "SELECT data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
-            [provider_id],
+            jackin_core::OMP_API_KEY_QUERY,
+            rusqlite::params![provider_id, jackin_core::STORE_LENGTH_LIMIT],
             |row| {
-                let text = row.get_ref(0)?.as_str()?;
+                let text = row.get_ref(1)?.as_str()?;
                 if text.len() > jackin_core::STORE_VALUE_MAX_BYTES {
                     return Err(rusqlite::Error::InvalidQuery);
                 }

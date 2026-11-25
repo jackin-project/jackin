@@ -49,6 +49,8 @@ pub const STORE_QUERY_STEP: i32 = 1000;
 const STORE_QUERY_GRACE: Duration = Duration::from_secs(1);
 pub const STORE_QUERY_MAX_STEPS: usize = 200_000;
 pub const STORE_LENGTH_LIMIT: i32 = 128 * 1024;
+pub const OMP_API_KEY_QUERY: &str = "SELECT id, CASE WHEN octet_length(data) > ?2 THEN NULL ELSE data END FROM auth_credentials \
+     WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CaptureProblem {

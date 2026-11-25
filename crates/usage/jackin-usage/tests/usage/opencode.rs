@@ -1236,3 +1236,124 @@ async fn a_link_at_the_store_whose_target_never_resolves_is_given_up_on() -> Tes
     assert_eq!(probe.abandoned(), 1);
     Ok(())
 }
+
+fn row_at(connection: &Connection, id: &str, integration: &str, value: &str, updated: i64) {
+    connection
+        .execute(
+            "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES (?1, ?2, 'opencode', ?3, 1, ?4, ?4)",
+            rusqlite::params![id, integration, value, updated],
+        )
+        .expect("the row");
+}
+
+fn api_credential(padding: usize) -> String {
+    format!("{{\"type\":\"api\",\"key\":\"{}\"}}", "k".repeat(padding))
+}
+
+async fn report_of_rows(
+    rows: impl FnOnce(&Connection),
+) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+    let directory = tempfile::tempdir()?;
+    let connection = Connection::open(directory.path().join("opencode.db"))?;
+    connection.execute_batch(SCHEMA)?;
+    rows(&connection);
+    drop(connection);
+    report_of_store(directory.path(), TOKEN).await
+}
+
+fn assert_unreadable(outcome: &jackin_usage::UsageOutcome, context: &str) {
+    assert!(
+        matches!(
+            unavailable(outcome),
+            UnavailableReason::Provider(message)
+                if message == "the OpenCode store could not be read"
+        ),
+        "{context}: {outcome:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_oversized_row_the_selection_skips_does_not_hide_the_selected_credential() -> TestResult {
+    guard(async {
+        for stale in [66_000_usize, 100_000, 200_000, 4_000_000] {
+            let outcome = report_of_rows(|connection| {
+                row_at(connection, "cred_1", "opencode", &"x".repeat(stale), 1);
+                row_at(connection, "cred_2", "opencode", &api_credential(stale), 2);
+                row_at(connection, "cred_3", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+                row_at(connection, "cred_4", "opencode", &api_credential(10), 7);
+            })
+            .await?;
+            assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_oversized_row_that_is_not_the_integrations_or_not_active_is_ignored() -> TestResult {
+    guard(async {
+        let outcome = report_of_rows(|connection| {
+            row_at(connection, "cred_1", "other", &"x".repeat(200_000), 9);
+            row_at(connection, "cred_2", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+            row_at(connection, "cred_3", &"i".repeat(200_000), &credential("x", EXPIRES, None), 9);
+            connection
+                .execute(
+                    "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_4', 'opencode', 'opencode', ?1, 0, 9, 9)",
+                    [&"x".repeat(200_000)],
+                )
+                .expect("the inactive row");
+        })
+        .await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_oversized_row_that_may_be_the_selected_credential_refuses_the_store() -> TestResult {
+    guard(async {
+        for (context, oversized) in [
+            ("newer", 7),
+            ("as new", 5),
+        ] {
+            let outcome = report_of_rows(|connection| {
+                row_at(connection, "cred_1", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+                row_at(connection, "cred_2", "opencode", &"x".repeat(200_000), oversized);
+            })
+            .await?;
+            assert_unreadable(&outcome, context);
+        }
+        let only = report_of_rows(|connection| {
+            row_at(connection, "cred_1", "opencode", &"x".repeat(200_000), 5);
+        })
+        .await?;
+        assert_unreadable(&only, "the only row");
+        let id = report_of_rows(|connection| {
+            row_at(connection, &"i".repeat(200_000), "opencode", &credential(TOKEN, EXPIRES, None), 9);
+            row_at(connection, "cred_2", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+        })
+        .await?;
+        assert_unreadable(&id, "an oversized id on the newest row");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_oversized_row_in_a_utf16_store_is_skipped_like_any_other() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let connection = Connection::open(directory.path().join("opencode.db"))?;
+        connection.execute_batch("PRAGMA encoding = 'UTF-16le';")?;
+        connection.execute_batch(SCHEMA)?;
+        row_at(&connection, "cred_1", "opencode", &"x".repeat(70_000), 1);
+        row_at(&connection, "cred_2", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+        drop(connection);
+        let outcome = report_of_store(directory.path(), TOKEN).await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        Ok(())
+    })
+    .await
+}
