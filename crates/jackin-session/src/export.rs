@@ -463,6 +463,7 @@ impl Session {
             name,
             timeout: self.deps.limits.upload,
             cancel,
+            deadline: None,
         }
     }
 
@@ -813,7 +814,8 @@ impl Session {
                 phase: view.phase,
             });
         }
-        let remote = self.remote(sandbox, cancel);
+        let mut remote = self.remote(sandbox, cancel);
+        remote.deadline = Some(tokio::time::Instant::now() + remote.timeout);
         let repository = remote
             .repository()
             .await

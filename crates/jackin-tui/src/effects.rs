@@ -27,10 +27,10 @@ use jackin_core::{lock_path, plain};
 use jackin_image::Rebuild;
 use jackin_openshell::{GatewayError, PowerAction};
 use jackin_session::{
-    AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
-    RoleError, Session, Source, WorkspaceHold, build_observed, error_chain, launch_events,
-    plan_account_edits_for_agents, read_chatgpt_login, read_kimi_host_login, read_mimo_host_login,
-    read_minimax_host_login,
+    AccountPlan, BuildRequest, GatewayScope, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode,
+    RestartError, RoleError, Session, Source, WorkspaceHold, build_observed, error_chain,
+    launch_events, plan_account_edits_for_agents, read_chatgpt_login, read_kimi_host_login,
+    read_mimo_host_login, read_minimax_host_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -472,7 +472,7 @@ impl Inputs {
                 Ok(self.save_result(plan.apply(&self.cancel).await).await?)
             }
             AccountPlan::Gateway(plan) => {
-                let gateways = self.gateways(plan.config()).await?;
+                let gateways = self.gateways(plan.config(), plan.scope()).await?;
                 match plan.apply(&gateways, &self.cancel).await {
                     Ok(config) => Ok((config, None)),
                     Err(jackin_session::AccountEditError::Config(error)) if error.committed() => {
@@ -484,10 +484,20 @@ impl Inputs {
         }
     }
 
-    async fn gateways(&self, config: &Config) -> Result<Box<Gateways>, Refused> {
+    async fn gateways(
+        &self,
+        config: &Config,
+        scope: GatewayScope,
+    ) -> Result<Box<Gateways>, Refused> {
         let home = self
             .sessions
-            .home(config, self.connect.as_ref(), &self.cancel)
+            .home(
+                config,
+                scope,
+                self.connect.as_ref(),
+                self.limits.connect_deadline,
+                &self.cancel,
+            )
             .await;
         match home {
             Home::Ready(gateways) => Ok(gateways),
@@ -504,7 +514,7 @@ impl Inputs {
         if config.gateways().next().is_none() {
             return Ok(None);
         }
-        self.gateways(config)
+        self.gateways(config, GatewayScope::Every)
             .await?
             .ensure_workspace_unused(config, name, &self.cancel)
             .await

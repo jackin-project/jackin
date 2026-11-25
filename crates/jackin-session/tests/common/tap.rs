@@ -44,6 +44,7 @@ struct Hooks {
     rm_clock: Option<Arc<dyn Clock>>,
     rm_runs: Vec<RmRun>,
     download_dir_modes: Vec<u32>,
+    program_delay: Duration,
 }
 
 #[derive(Debug)]
@@ -124,6 +125,10 @@ impl Tap {
 
     pub(crate) fn stall_rm(&self, clock: Arc<dyn Clock>) {
         self.hooks().rm_clock = Some(clock);
+    }
+
+    pub(crate) fn slow_programs(&self, delay: Duration) {
+        self.hooks().program_delay = delay;
     }
 
     pub(crate) fn download_dir_modes(&self) -> Vec<u32> {
@@ -226,6 +231,10 @@ impl Gateway for Tap {
                     group: None,
                 });
             }
+        }
+        let delay = self.hooks().program_delay;
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
         }
         let gate = {
             let mut hooks = self.hooks();
