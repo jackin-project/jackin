@@ -723,6 +723,7 @@ mod tui_refresh {
         let now = clock.now().0;
         let id = db
             .add_with_snapshot(
+                &jackin_core::CriticalWrite::begin(),
                 UsageProvider::Antigravity,
                 "Personal",
                 &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
@@ -737,8 +738,7 @@ mod tui_refresh {
                     }))
                     .expect("grant"),
                 ),
-                now - 60,
-                &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}}),
+                (now - 60, &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}})),
             )
             .expect("seed");
         drop(db);

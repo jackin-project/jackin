@@ -71,12 +71,12 @@ pub fn seed_usage_profile(
         };
         let snapshot = row["snapshot"].clone();
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             provider,
             &label,
             &identity,
             &SecretBytes::new(vec![1]),
-            now,
-            &snapshot,
+            (now, &snapshot),
         )?;
         accounts.push(ProfileAccount {
             id,
@@ -119,12 +119,12 @@ pub fn seed_usage_view(path: &Path) -> Result<Vec<ProfileAccount>, Box<dyn std::
         };
         let snapshot = row["snapshot"].clone();
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             provider,
             &label,
             &identity,
             &SecretBytes::new(vec![1]),
-            fetched_at,
-            &snapshot,
+            (fetched_at, &snapshot),
         )?;
         if let Some(failure) = row.get("failure") {
             let kind: FailureKind = serde_json::from_value(failure["kind"].clone())?;
@@ -177,12 +177,12 @@ pub fn seed_usage_rows(
             _ => CandidateIdentity::OAuth(Some(format!("row-subject-{index}-{}", row.label))),
         };
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             row.provider,
             row.label,
             &identity,
             &SecretBytes::new(vec![1]),
-            row.fetched_at,
-            &row.snapshot,
+            (row.fetched_at, &row.snapshot),
         )?;
         if let Some((kind, message, failed_at)) = row.failure {
             let version = db.version(id)?;

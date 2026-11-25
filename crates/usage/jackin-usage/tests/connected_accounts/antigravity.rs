@@ -184,6 +184,7 @@ async fn untouched_antigravity_sessions_hide_their_future_reset_and_pace() -> Re
     registry.set_dashboard_settings(&settings)?;
 
     let other = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "Other",
         &super::scoped("other"),
@@ -319,6 +320,7 @@ async fn direct_sign_in_for_a_status_line_google_account_is_a_duplicate() -> Res
     let vault = Arc::new(super::Vault::default());
     let mut registry = super::db(&path, &vault)?;
     let error = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Direct",
         &oauth("Me@Example.com"),
@@ -332,6 +334,7 @@ async fn direct_sign_in_for_a_status_line_google_account_is_a_duplicate() -> Res
     assert!(text.contains("status line"), "{text}");
     assert_eq!(registry.list()?.len(), 1);
     registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Other",
         &oauth("other@example.com"),
@@ -354,6 +357,7 @@ async fn direct_sign_in_can_replace_a_status_line_account_of_the_same_google_acc
     let mut registry = super::db(&path, &vault)?;
     let version = registry.version(id)?;
     registry.replace(
+        &jackin_core::CriticalWrite::begin(),
         id,
         version,
         &oauth("me@example.com"),
@@ -362,6 +366,7 @@ async fn direct_sign_in_can_replace_a_status_line_account_of_the_same_google_acc
     assert_eq!(registry.list()?.len(), 1);
     assert_eq!(registry.credential(id)?.1.expose(), b"grant");
     let error = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Again",
         &oauth("me@example.com"),
@@ -380,6 +385,7 @@ async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> 
     let vault = Arc::new(super::Vault::default());
     let mut registry = super::db(&path, &vault)?;
     registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Direct",
         &oauth("me@example.com"),
@@ -422,6 +428,7 @@ async fn direct_sign_in_cannot_convert_a_status_line_row_to_another_google_accou
     let mut registry = super::db(&path, &vault)?;
     let version = registry.version(id)?;
     let error = registry.replace(
+        &jackin_core::CriticalWrite::begin(),
         id,
         version,
         &oauth("other@example.com"),
@@ -436,6 +443,7 @@ async fn direct_sign_in_cannot_convert_a_status_line_row_to_another_google_accou
     assert_eq!(kept.label, "me@example.com");
     let version = registry.version(id)?;
     registry.replace(
+        &jackin_core::CriticalWrite::begin(),
         id,
         version,
         &oauth("ME@example.com"),

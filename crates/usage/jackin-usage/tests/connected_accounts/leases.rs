@@ -24,12 +24,12 @@ async fn cancelling_refresh_during_key_prompt_preserves_last_snapshot_and_new_ke
     let old = Secret::new("first".into());
     let initial = json!({"resources":{"session":{"used":2}}});
     let id = registry.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Zai,
         "work",
         &CandidateIdentity::api_key(&old),
         &KeyConnection::Zai.encode(&old)?,
-        10,
-        &initial,
+        (10, &initial),
     )?;
     let server = UsageServer::start().await?;
     let service =

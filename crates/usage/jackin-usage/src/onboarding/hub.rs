@@ -7,7 +7,7 @@ use crate::accounts::hubs::{Listing, Mirror};
 use crate::accounts::{
     AccountRegistry, ConnectedAccount, ConnectionError, CredentialVersion, UsageProvider,
 };
-use jackin_core::{Secret, SecretBytes};
+use jackin_core::{CriticalWrite, Secret, SecretBytes};
 use jackin_usage_provider_core::{Auth, Http, HubAddress, HubProvider, ProviderError};
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -39,13 +39,10 @@ impl OwnedLogin {
             ()=cancel.cancelled()=>return Err(LoginError::Cancelled),
             result=list(&http,&address,key.expose())=>result?,
         };
-        if cancel.is_cancelled() {
-            return Err(LoginError::Cancelled);
-        }
         let key = SecretBytes::new(key.expose().as_bytes().to_vec());
-        let cancel = cancel.clone();
+        let write = CriticalWrite::begin();
         tokio::task::spawn_blocking(move || {
-            db.install_hub(existing, address.as_str(), &key, &listing, &cancel)
+            db.install_hub(&write, existing, address.as_str(), &key, &listing)
         })
         .await
         .map_err(|_| LoginError::Worker)?

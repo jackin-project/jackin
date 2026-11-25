@@ -515,12 +515,12 @@ fn seeded(fixture: &Fixture, email: &str, access: &str, expires: i64) -> Result<
     let mut registry = db(&fixture.path, &fixture.vault)?;
     let now = fixture.clock.now().0;
     Ok(registry.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Personal",
         &CandidateIdentity::OAuth(Some(email.into())),
         &grant(access, expires)?,
-        now - 60,
-        &json!({"plan":"Google AI Ultra","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.2,"window_seconds":18000,"resets_at":1803996000}}}),
+        (now - 60, &json!({"plan":"Google AI Ultra","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.2,"window_seconds":18000,"resets_at":1803996000}}})),
     )?)
 }
 
@@ -1292,12 +1292,12 @@ async fn a_grant_with_an_escaped_slash_refreshes_and_the_stored_grant_reopens() 
     let now = fixture.clock.now().0;
     let mut registry = db(&fixture.path, &fixture.vault)?;
     let id = registry.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Personal",
         &CandidateIdentity::OAuth(Some(EMAIL.into())),
         &escaped_slash_grant(now + 60),
-        now - 60,
-        &json!({"plan":"Google AI Ultra","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.2,"window_seconds":18000}}}),
+        (now - 60, &json!({"plan":"Google AI Ultra","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.2,"window_seconds":18000}}})),
     )?;
     drop(registry);
     let account = db(&fixture.path, &fixture.vault)?.list()?.remove(0);

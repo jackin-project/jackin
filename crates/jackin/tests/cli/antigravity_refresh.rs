@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use jackin::ExitClass;
@@ -20,12 +21,21 @@ use uuid::Uuid;
 use super::support::{Failure, Harness, Ran, ScriptedTerminal};
 
 #[derive(Debug, Default)]
-struct Memory {
+pub(super) struct Memory {
     values: Mutex<HashMap<Uuid, Vec<u8>>>,
+    pub(super) stalling: AtomicBool,
+    pub(super) entered: AtomicBool,
 }
 
 impl CredentialVault for Memory {
     fn store(&self, id: Uuid, secret: &SecretBytes) -> Result<(), ConnectionError> {
+        if self.stalling.load(Ordering::Acquire) {
+            self.entered.store(true, Ordering::Release);
+            while self.stalling.load(Ordering::Acquire) {
+                let (_hold, wait) = mpsc::channel::<()>();
+                let _timed_out = wait.recv_timeout(Duration::from_millis(5)).is_err();
+            }
+        }
         self.values
             .lock()
             .map_err(|_| ConnectionError::Vault)?
@@ -109,6 +119,7 @@ impl Lab {
         let stored: Arc<dyn CredentialVault> = stored;
         let mut db = AccountRegistry::with_vault(&path, stored)?;
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Antigravity,
             label,
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
@@ -120,8 +131,7 @@ impl Lab {
                 "refresh": "refresh-1",
                 "expires_at": now + 10_000
             }))?),
-            now - 60,
-            &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}}),
+            (now - 60, &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}})),
         )?;
         drop(db);
         server.serve(
@@ -538,12 +548,12 @@ async fn a_real_failure_beside_a_skipped_status_line_account_still_fails_the_ref
         let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
         let mut db = AccountRegistry::with_vault(&path, stored)?;
         db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Antigravity,
             "Personal",
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
             &SecretBytes::new(vec![1]),
-            world.clock.now().0,
-            &json!({"plan":"Ultra","resources":{}}),
+            (world.clock.now().0, &json!({"plan":"Ultra","resources":{}})),
         )?;
         drop(db);
         let human = cli.run(&["usage", "refresh"]).await?;
@@ -622,12 +632,12 @@ async fn a_missing_credential_failure_names_the_sign_in_command_and_no_retry() -
         let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
         let mut db = AccountRegistry::with_vault(&path, stored)?;
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Antigravity,
             "Personal",
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
             &SecretBytes::new(vec![1]),
-            world.clock.now().0,
-            &json!({"plan":"Ultra","resources":{}}),
+            (world.clock.now().0, &json!({"plan":"Ultra","resources":{}})),
         )?;
         drop(db);
         let refreshed = cli
@@ -678,12 +688,12 @@ async fn mixed_refresh_lab(world: &World) -> Result<(Harness, Uuid), Failure> {
     let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
     let mut db = AccountRegistry::with_vault(&path, stored)?;
     let id = db.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Personal",
         &CandidateIdentity::OAuth(Some("ultra.quota.owner@example.com".into())),
         &SecretBytes::new(vec![1]),
-        world.clock.now().0,
-        &json!({"plan":"Ultra","resources":{}}),
+        (world.clock.now().0, &json!({"plan":"Ultra","resources":{}})),
     )?;
     drop(db);
     Ok((cli, id))
