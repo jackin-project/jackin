@@ -681,7 +681,43 @@ async fn a_failed_refresh_configuration_reports_who_owns_the_provider() {
 }
 
 #[tokio::test]
-async fn a_rejected_update_of_an_existing_provider_is_no_write_unless_it_may_have_applied() {
+async fn a_rejected_update_after_the_refresh_was_deleted_is_reported_as_existing() {
+    for code in [
+        Code::PermissionDenied,
+        Code::InvalidArgument,
+        Code::FailedPrecondition,
+        Code::Unavailable,
+        Code::DeadlineExceeded,
+    ] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        guard(gateway.ensure_profile(&profile())).await.unwrap();
+        guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap();
+        assert_eq!(env.server.state().refresh.len(), 1);
+        env.server.state().faults.insert(
+            "update_provider",
+            Fault::Status(code, "update failed".to_owned()),
+        );
+        let error = guard(gateway.put_provider(&spec("next-access-token", "next-refresh-token")))
+            .await
+            .unwrap_err();
+        assert!(
+            env.server.state().refresh.is_empty(),
+            "{code:?}: the refresh configuration was deleted before the update was rejected"
+        );
+        assert_eq!(
+            error.effect(),
+            ProviderWriteEffect::Existing,
+            "{code:?}: {error:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_rejected_update_of_a_provider_that_had_no_refresh_changed_nothing_unless_it_may_have_applied()
+ {
     for (code, expected) in [
         (Code::PermissionDenied, ProviderWriteEffect::NoWrite),
         (Code::InvalidArgument, ProviderWriteEffect::NoWrite),
@@ -692,17 +728,50 @@ async fn a_rejected_update_of_an_existing_provider_is_no_write_unless_it_may_hav
         let env = env().await;
         let gateway = connect(&env, WORKSPACE).await;
         guard(gateway.ensure_profile(&profile())).await.unwrap();
+        guard(gateway.put_provider(&static_spec("static-key")))
+            .await
+            .unwrap();
+        assert!(env.server.state().refresh.is_empty());
+        env.server.state().faults.insert(
+            "update_provider",
+            Fault::Status(code, "update failed".to_owned()),
+        );
+        let error = guard(gateway.put_provider(&static_spec("next-static-key")))
+            .await
+            .unwrap_err();
+        assert_eq!(error.effect(), expected, "{code:?}: {error:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_rejected_refresh_removal_is_no_write_unless_it_may_have_applied() {
+    for (code, expected) in [
+        (Code::PermissionDenied, ProviderWriteEffect::NoWrite),
+        (Code::InvalidArgument, ProviderWriteEffect::NoWrite),
+        (Code::Unavailable, ProviderWriteEffect::Existing),
+        (Code::DeadlineExceeded, ProviderWriteEffect::Existing),
+    ] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        guard(gateway.ensure_profile(&profile())).await.unwrap();
         guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
             .await
             .unwrap();
         env.server.state().faults.insert(
-            "update_provider",
-            Fault::Status(code, "update failed".to_owned()),
+            "delete_provider_refresh",
+            Fault::Status(code, "rejected".to_owned()),
         );
         let error = guard(gateway.put_provider(&spec("next-access-token", "next-refresh-token")))
             .await
             .unwrap_err();
         assert_eq!(error.effect(), expected, "{code:?}: {error:?}");
+        if expected == ProviderWriteEffect::NoWrite {
+            assert_eq!(
+                env.server.state().refresh.len(),
+                1,
+                "{code:?}: nothing was changed"
+            );
+        }
     }
 }
 

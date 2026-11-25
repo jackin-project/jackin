@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use jackin_core::{ProfileId, ProviderName, Redactor};
 use openshell_sdk::raw::proto::{
     ConfigureProviderRefreshRequest, CreateProviderRequest, DeleteProviderProfileRequest,
-    DeleteProviderRefreshRequest, DeleteProviderRequest, GetProviderProfileRequest,
-    GetProviderRequest, ImportProviderProfilesRequest, ObjectMeta, Provider,
-    ProviderCredentialRefreshStrategy, ProviderProfile, ProviderProfileDiagnostic,
+    DeleteProviderRefreshRequest, DeleteProviderRequest, DeletionOutcome,
+    GetProviderProfileRequest, GetProviderRequest, ImportProviderProfilesRequest, ObjectMeta,
+    Provider, ProviderCredentialRefreshStrategy, ProviderProfile, ProviderProfileDiagnostic,
     ProviderProfileImportItem, UpdateProviderProfilesRequest, UpdateProviderRequest,
 };
 
@@ -328,21 +328,13 @@ impl Inner {
             provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
         record.credentials = credentials;
         let untouched = |error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite);
-        let rejected = |error: GatewayError| {
-            let effect = if error.outcome_unknown() {
-                ProviderWriteEffect::Existing
-            } else {
-                ProviderWriteEffect::NoWrite
-            };
-            ProviderWriteError::new(error, effect)
-        };
         let effect = match self.provider_state(&spec.name).await.map_err(untouched)? {
             ProviderState::Absent => match self.create_provider(spec, record.clone()).await {
                 Ok(()) => ProviderWriteEffect::Created,
                 Err(error @ GatewayError::AlreadyExists { .. }) => {
                     match self.provider_state(&spec.name).await.map_err(untouched)? {
                         ProviderState::Present => {
-                            self.update_provider(spec, record).await.map_err(rejected)?;
+                            self.update_provider(spec, record).await?;
                             ProviderWriteEffect::Existing
                         }
                         ProviderState::Absent => return Err(untouched(error)),
@@ -354,7 +346,7 @@ impl Inner {
                 }
             },
             ProviderState::Present => {
-                self.update_provider(spec, record).await.map_err(rejected)?;
+                self.update_provider(spec, record).await?;
                 ProviderWriteEffect::Existing
             }
         };
@@ -414,8 +406,9 @@ impl Inner {
         &self,
         spec: &ProviderSpec,
         mut record: Provider,
-    ) -> Result<(), GatewayError> {
-        let current = self.get_provider(&spec.name).await?;
+    ) -> Result<(), ProviderWriteError> {
+        let untouched = |error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite);
+        let current = self.get_provider(&spec.name).await.map_err(untouched)?;
         let removed = current
             .credentials
             .keys()
@@ -423,19 +416,29 @@ impl Inner {
             .map(|key| (key.clone(), String::new()))
             .collect::<Vec<_>>();
         record.credentials.extend(removed);
-        self.unary(
-            GatewayOp::Provider,
-            Some(Missing::Provider(spec.name.clone())),
-            self.grpc()
-                .delete_provider_refresh(DeleteProviderRefreshRequest {
-                    workspace_scope: Some(self.scope()),
-                    provider: spec.name.to_string(),
-                    credential_key: spec.keys.access_token.to_owned(),
-                    allow_missing: true,
-                    request_id: String::new(),
-                }),
-        )
-        .await?;
+        let cleared = self
+            .unary(
+                GatewayOp::Provider,
+                Some(Missing::Provider(spec.name.clone())),
+                self.grpc()
+                    .delete_provider_refresh(DeleteProviderRefreshRequest {
+                        workspace_scope: Some(self.scope()),
+                        provider: spec.name.to_string(),
+                        credential_key: spec.keys.access_token.to_owned(),
+                        allow_missing: true,
+                        request_id: String::new(),
+                    }),
+            )
+            .await
+            .map_err(|error| {
+                let effect = if error.outcome_unknown() {
+                    ProviderWriteEffect::Existing
+                } else {
+                    ProviderWriteEffect::NoWrite
+                };
+                ProviderWriteError::new(error, effect)
+            })?;
+        let refresh_removed = cleared.outcome != DeletionOutcome::AlreadyAbsent as i32;
         record.r#type.clear();
         record.profile_workspace.clear();
         self.unary(
@@ -449,6 +452,14 @@ impl Inner {
         )
         .await
         .map(|_| ())
+        .map_err(|error| {
+            let effect = if refresh_removed || error.outcome_unknown() {
+                ProviderWriteEffect::Existing
+            } else {
+                ProviderWriteEffect::NoWrite
+            };
+            ProviderWriteError::new(error, effect)
+        })
     }
 
     pub(crate) async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {

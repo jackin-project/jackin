@@ -53,6 +53,13 @@ fn failed(step: LaunchStep, error: impl Into<LaunchError>) -> Stop {
     Stop::Failed(step, error.into())
 }
 
+fn provider_unsettled(error: &LaunchError) -> bool {
+    matches!(
+        error,
+        LaunchError::ProviderUnavailable { source, .. } if source.leaves_provider_unsettled()
+    )
+}
+
 fn placeholder(
     sandbox: &SandboxName,
     key: &str,
@@ -201,7 +208,9 @@ impl Run<'_> {
 
     async fn stopped(&mut self, stop: Stop) -> Result<LaunchOutcome, LaunchFailure> {
         match stop {
-            Stop::Failed(step, error) if !self.cancel.is_cancelled() => {
+            Stop::Failed(step, error)
+                if !self.cancel.is_cancelled() || provider_unsettled(&error) =>
+            {
                 self.tracker
                     .enter(self.events, step, self.known.as_ref())
                     .await;
