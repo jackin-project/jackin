@@ -56,13 +56,16 @@ async fn an_errored_unknown_or_unmanaged_sandbox_cannot_be_stopped_or_started() 
             let ran = harness.run(&[verb, name.as_str()]).await?;
             failed(&ran, ExitClass::Failure, &[name.as_str(), "3"])?;
             assert_eq!(handle.phase(), Phase::Error { exit_code: Some(3) });
-            for other in [ghost.as_str(), "jackin-absent-0009"] {
-                failed(
-                    &harness.run(&[verb, other]).await?,
-                    ExitClass::Failure,
-                    &[other],
-                )?;
-            }
+            failed(
+                &harness.run(&[verb, "jackin-absent-0009"]).await?,
+                ExitClass::Failure,
+                &["jackin-absent-0009"],
+            )?;
+            failed(
+                &harness.run(&[verb, ghost.as_str()]).await?,
+                ExitClass::Refused,
+                &[ghost.as_str(), "not a jackin sandbox"],
+            )?;
         }
         let ghost_handle = rig.world.gateway.sandbox(&ghost).ok_or("ghost gone")?;
         assert_eq!(ghost_handle.phase(), Phase::Ready);
