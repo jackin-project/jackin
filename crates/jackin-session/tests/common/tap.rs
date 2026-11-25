@@ -322,7 +322,7 @@ impl Gateway for Tap {
     async fn sandbox_environment(
         &self,
         name: &SandboxName,
-    ) -> Result<std::collections::BTreeMap<jackin_core::EnvName, String>, GatewayError> {
+    ) -> Result<BTreeMap<jackin_core::EnvName, String>, GatewayError> {
         self.inner.sandbox_environment(name).await
     }
 
