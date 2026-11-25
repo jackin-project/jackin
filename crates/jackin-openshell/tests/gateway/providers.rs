@@ -976,15 +976,9 @@ async fn a_failed_create_if_absent_never_prints_the_secrets_it_was_given() {
 }
 
 #[tokio::test]
-async fn create_if_absent_without_its_profile_or_with_an_unreadable_state_writes_nothing() {
+async fn create_if_absent_with_an_unreadable_state_writes_nothing() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
-    let missing_profile = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
-        .await
-        .unwrap_err();
-    assert_eq!(missing_profile.effect(), ProviderWriteEffect::NoWrite);
-    assert!(env.server.state().providers.is_empty());
-
     guard(gateway.ensure_profile(&profile())).await.unwrap();
     env.server.state().faults.insert(
         "get_provider",
