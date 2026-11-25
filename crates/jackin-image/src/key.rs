@@ -79,9 +79,44 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
     Ok(())
 }
 
+const NO_READ_WRITE_PATHS: &str = "-";
+const SCAN_ROOT_PATH_BYTES: usize = 4095;
+const SCAN_ROOT: &str = "/image";
+pub(crate) const READ_WRITE_PATH_MAX_BYTES: usize = SCAN_ROOT_PATH_BYTES - SCAN_ROOT.len();
+const ARGUMENT_STRING_MAX_BYTES: usize = 131_072;
+const READ_WRITE_ARGUMENT_MAX_BYTES: usize =
+    ARGUMENT_STRING_MAX_BYTES - "--build-arg=READ_WRITE_PATHS=".len() - 1;
+
+fn read_write_argument(paths: &[SandboxPath]) -> Result<String, ImageError> {
+    if paths.is_empty() {
+        return Ok(build_arg("READ_WRITE_PATHS", NO_READ_WRITE_PATHS));
+    }
+    let mut sorted: Vec<&str> = paths.iter().map(SandboxPath::as_str).collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    if let Some(path) = sorted.iter().find(|path| {
+        **path == "/"
+            || path.len() > READ_WRITE_PATH_MAX_BYTES
+            || path.chars().any(char::is_control)
+    }) {
+        return Err(ImageError::ReadWritePath {
+            path: (*path).to_owned(),
+        });
+    }
+    let joined = sorted.join("\n");
+    if joined.len() > READ_WRITE_ARGUMENT_MAX_BYTES {
+        return Err(ImageError::ReadWritePathsTotal {
+            bytes: joined.len(),
+            limit: READ_WRITE_ARGUMENT_MAX_BYTES,
+        });
+    }
+    Ok(build_arg("READ_WRITE_PATHS", &joined))
+}
+
 pub(crate) fn derived_arguments_multi(
     agents: &[Agent],
     docker: DockerLayer,
+    read_write: &[SandboxPath],
 ) -> Result<Vec<String>, ImageError> {
     let mut sorted = agents.to_vec();
     sorted.sort_by_key(|agent| agent.as_str());
@@ -90,6 +125,7 @@ pub(crate) fn derived_arguments_multi(
         sorted.push(Agent::Codex);
     }
     let mut args = derived_arguments_prefixed(sorted[0], docker, "AGENT")?;
+    args.push(read_write_argument(read_write)?);
     if sorted.len() == 1 {
         return Ok(args);
     }
@@ -189,7 +225,11 @@ pub(crate) fn derived_arguments_prefixed(
 
 impl ImageKey {
     pub fn derive(request: &ImageRequest, construct: &ImageId) -> Result<ImageKey, ImageError> {
-        let derived_args = derived_arguments_multi(&request.sorted_agents(), request.docker)?;
+        let derived_args = derived_arguments_multi(
+            &request.sorted_agents(),
+            request.docker,
+            &request.read_write,
+        )?;
         Ok(ImageKey::compute(request, &derived_args, construct))
     }
 
@@ -213,6 +253,7 @@ impl ImageKey {
             platform,
             builder: _,
             docker,
+            read_write: _,
             rebuild: _,
         } = request;
         let SourceFile {
