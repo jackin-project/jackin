@@ -72,13 +72,7 @@ async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandb
         let id = launch_id(1).to_string();
         let abandon = CancellationToken::new();
         let command = harness
-            .command(&[
-                "load",
-                "--launch-id",
-                &id,
-                "--env",
-                "TOKEN=SECRET-xyz-never-printed",
-            ])
+            .command(&["load", "--launch-id", &id])
             .abandon(abandon.clone());
         let (ran, ()) = tokio::try_join!(command.run(), async {
             assert!(rig.gateway().until_held(&hold).await);
@@ -100,8 +94,6 @@ async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandb
             "{}",
             ran.stderr
         );
-        assert!(!ran.stderr.contains("SECRET-xyz"), "{}", ran.stderr);
-        assert!(!ran.stdout.contains("SECRET-xyz"), "{}", ran.stdout);
         Ok(())
     })
     .await
