@@ -14,6 +14,7 @@ mod ownership;
 mod peers;
 mod race;
 mod renewal;
+mod rollback;
 mod stale_launch;
 mod support;
 mod sync;

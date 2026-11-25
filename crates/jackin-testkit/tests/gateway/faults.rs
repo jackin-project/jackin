@@ -493,3 +493,44 @@ async fn put_provider_reports_what_it_wrote_and_the_injected_outcomes() -> TestR
     })
     .await
 }
+
+#[tokio::test]
+async fn create_provider_if_absent_writes_only_when_the_provider_is_absent() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let profile = jackin_openshell::ProviderProfile::parse(
+            &jackin_core::Agent::Codex
+                .spec()
+                .codex
+                .openshell
+                .chatgpt_profile,
+        )?;
+        fake.ensure_profile(&profile).await?;
+        let name = jackin_core::ProviderName::parse("jackin-work-codex")?;
+        let login =
+            |key: &str| -> Result<jackin_openshell::ProviderSpec, Box<dyn std::error::Error>> {
+                Ok(jackin_openshell::ProviderSpec {
+                    name: name.clone(),
+                    profile: profile.id.clone(),
+                    keys: jackin_core::Agent::Codex.spec().codex.openshell.keys,
+                    material: jackin_openshell::ProviderMaterial::StaticKey {
+                        key: jackin_core::Secret::new(key.to_owned()),
+                    },
+                })
+            };
+        assert_eq!(
+            fake.create_provider_if_absent(&login("one")?).await?,
+            jackin_openshell::CreateOutcome::Created
+        );
+        assert_eq!(
+            fake.create_provider_if_absent(&login("two")?).await?,
+            jackin_openshell::CreateOutcome::PeerExists
+        );
+        assert_eq!(
+            fake.provider(&name).map(|record| record.access_token),
+            Some("one".to_owned())
+        );
+        Ok(())
+    })
+    .await
+}

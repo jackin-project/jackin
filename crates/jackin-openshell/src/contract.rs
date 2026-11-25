@@ -15,9 +15,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{GatewayError, GatewayOp, Missing, TransferOp};
 use crate::gateway::{
-    Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProviderMaterial,
-    ProviderSpec, ProviderState, ProviderWriteEffect, Provisioning, SandboxCreate, SandboxFile,
-    SandboxQuery, SandboxView,
+    CreateOutcome, Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin,
+    ProviderMaterial, ProviderSpec, ProviderState, ProviderWriteEffect, Provisioning,
+    SandboxCreate, SandboxFile, SandboxQuery, SandboxView,
 };
 use crate::policy::{ClosedPolicy, ProviderProfile};
 use crate::terminal::{
@@ -953,6 +953,15 @@ async fn provider_put_and_delete(ctx: &Ctx<'_>) -> Outcome<()> {
         expect(
             first == ProviderWriteEffect::Created && second == ProviderWriteEffect::Existing,
             "the first put did not report a create, or the second did not report an update",
+        )?;
+        let peer = ctx
+            .gateway
+            .create_provider_if_absent(&spec)
+            .await
+            .map_err(text)?;
+        expect(
+            peer == CreateOutcome::PeerExists,
+            "a create-if-absent over a held provider did not report the peer",
         )?;
         expect(
             provider_state_is(ctx, &name, ProviderState::Present).await?,
