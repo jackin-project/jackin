@@ -440,6 +440,15 @@ fn glued_len(after: &str, atoms: &[String]) -> usize {
         .unwrap_or(word)
 }
 
+fn opening_len(before: &str) -> usize {
+    before
+        .chars()
+        .rev()
+        .take_while(|ch| !ch.is_whitespace() && !ch.is_alphanumeric())
+        .map(char::len_utf8)
+        .sum()
+}
+
 fn tokens<'a>(text: &'a str, atoms: &[String]) -> Vec<Token<'a>> {
     let mut out = Vec::new();
     let mut rest = text;
@@ -452,9 +461,13 @@ fn tokens<'a>(text: &'a str, atoms: &[String]) -> Vec<Token<'a>> {
             .min_by_key(|(at, len)| (*at, std::cmp::Reverse(*len)));
         let (prose, atom, after) = match next {
             Some((at, len)) => {
-                let (head, tail) = rest.split_at_checked(at).unwrap_or((rest, ""));
+                let (before, tail) = rest.split_at_checked(at).unwrap_or((rest, ""));
                 let glued = tail.get(len..).map_or(0, |after| glued_len(after, atoms));
-                let (atom, after) = tail.split_at_checked(len + glued).unwrap_or((tail, ""));
+                let start = at - opening_len(before);
+                let (head, group) = rest.split_at_checked(start).unwrap_or((rest, ""));
+                let (atom, after) = group
+                    .split_at_checked(at - start + len + glued)
+                    .unwrap_or((group, ""));
                 (head, Some(atom), after)
             }
             None => (rest, None, ""),
