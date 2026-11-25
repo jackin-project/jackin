@@ -184,47 +184,54 @@ async fn the_agent_names_of_a_sandbox_jackin_does_not_manage_say_so() -> TestRes
     .await
 }
 
+async fn replace_while_the_agent_record_is_read(
+    unmanaged: bool,
+) -> Result<Result<Vec<String>, AgentNamesError>, Box<dyn std::error::Error>> {
+    let rig = Rig::new().await?;
+    rig.launch(1).await?;
+    let name = rig.sandbox_name(1)?;
+    let hold = Trigger::Op(GatewayOp::ReadFiles);
+    rig.gateway().inject(Fault::HoldAt {
+        trigger: hold.clone(),
+    });
+    let token = CancellationToken::new();
+    let naming = rig.world.session.sandbox_agent_names(&name, &token);
+    let swapping = async {
+        assert!(rig.gateway().until_held(&hold).await);
+        rig.gateway().delete_sandbox(&name).await?;
+        if unmanaged {
+            rig.gateway()
+                .insert_unmanaged(&name, Labels::from_pairs([])?, Phase::Ready)?;
+        }
+        rig.gateway().release(&hold);
+        Ok::<(), Box<dyn std::error::Error>>(())
+    };
+    let (named, swapped) = tokio::join!(naming, swapping);
+    swapped?;
+    Ok(named)
+}
+
 #[tokio::test]
 async fn a_sandbox_replaced_while_its_agent_record_is_read_is_never_acted_on() -> TestResult {
     guard_within(WITHIN, async {
-        for unmanaged in [true, false] {
-            let rig = Rig::new().await?;
-            rig.launch(1).await?;
-            let name = rig.sandbox_name(1)?;
-            let hold = Trigger::Op(GatewayOp::ReadFiles);
-            rig.gateway().inject(Fault::HoldAt {
-                trigger: hold.clone(),
-            });
-            let token = CancellationToken::new();
-            let naming = rig.world.session.sandbox_agent_names(&name, &token);
-            let swapping = async {
-                assert!(rig.gateway().until_held(&hold).await);
-                rig.gateway().delete_sandbox(&name).await?;
-                if unmanaged {
-                    rig.gateway()
-                        .insert_unmanaged(&name, Labels::from_pairs([])?, Phase::Ready)?;
-                }
-                rig.gateway().release(&hold);
-                Ok::<(), Box<dyn std::error::Error>>(())
-            };
-            let (named, swapped) = tokio::join!(naming, swapping);
-            swapped?;
-            assert!(
-                matches!(
-                    (&named, unmanaged),
-                    (
-                        Err(AgentNamesError::Gateway(
-                            GatewayError::FailedPrecondition { .. }
-                        )),
-                        true
-                    ) | (
-                        Err(AgentNamesError::Gateway(GatewayError::NotFound { .. })),
-                        false
-                    )
-                ),
-                "unmanaged {unmanaged}: {named:?}"
-            );
-        }
+        let swapped = replace_while_the_agent_record_is_read(true).await?;
+        assert!(
+            matches!(
+                &swapped,
+                Err(AgentNamesError::Gateway(
+                    GatewayError::FailedPrecondition { .. }
+                ))
+            ),
+            "{swapped:?}"
+        );
+        let removed = replace_while_the_agent_record_is_read(false).await?;
+        assert!(
+            matches!(
+                &removed,
+                Err(AgentNamesError::Gateway(GatewayError::NotFound { .. }))
+            ),
+            "{removed:?}"
+        );
         Ok(())
     })
     .await
