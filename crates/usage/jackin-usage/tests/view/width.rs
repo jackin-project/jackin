@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Timestamp;
-use jackin_testkit::assert_golden;
+use jackin_testkit::{assert_golden, is_unsplittable_command};
 use jackin_usage::view::render::{self, Ctx, Span, Tone};
 use jackin_usage::view::text::Part;
 use jackin_usage::view::{
@@ -19,18 +19,10 @@ fn text(view: &UsageView, width: u16, kind: Report) -> String {
     render::plain(&report(view, &Ctx::new(width), kind))
 }
 
-fn is_atomic_line(line: &str) -> bool {
-    let line = line.trim();
-    line.starts_with("jackin ")
-        || line
-            .split_whitespace()
-            .any(|word| uuid::Uuid::parse_str(word).is_ok())
-}
-
 fn assert_fits(text: &str, width: u16) {
     let wide: Vec<String> = text
         .lines()
-        .filter(|line| !is_atomic_line(line))
+        .filter(|line| !is_unsplittable_command(line, usize::from(width)))
         .filter(|line| line.width() > usize::from(width))
         .map(|line| format!("{:>3}  {line}", line.width()))
         .collect();
@@ -276,6 +268,48 @@ fn an_atomic_command_overflows_instead_of_breaking_or_being_cut() {
         Some(command),
         "{shown}"
     );
+}
+
+#[test]
+fn punctuation_glued_to_an_atom_counts_toward_the_width() {
+    let command = "jackin account usage ls --wide";
+    for glue in [")", ".", ",", ").", ")."] {
+        for columns in [32, 33, 34, 38, 39, 40, 44] {
+            let text = format!("note (IDs: {command}{glue}");
+            let parts = [Part::new(text, Tone::Plain).atom(command)];
+            let lines = view_text::wrap(vec![Span::plain("  ")], 2, &parts, columns);
+            let shown = render::plain(&lines);
+            for line in shown.lines() {
+                assert!(
+                    line.width() <= columns || is_unsplittable_command(line, columns),
+                    "{columns} columns, glue {glue:?}:\n{shown}"
+                );
+            }
+            assert!(
+                shown
+                    .lines()
+                    .any(|line| line.trim().ends_with(&format!("{command}{glue}"))),
+                "{columns} columns, glue {glue:?}:\n{shown}"
+            );
+        }
+    }
+}
+
+#[test]
+fn only_a_command_wider_than_the_width_is_exempt_from_the_check() {
+    assert!(is_unsplittable_command(
+        "  jackin account usage ls --wide)",
+        31
+    ));
+    assert!(!is_unsplittable_command(
+        "  jackin account usage ls --wide)",
+        32
+    ));
+    assert!(!is_unsplittable_command(
+        "  jackin account usage ls --wide and more words",
+        20
+    ));
+    assert!(!is_unsplittable_command("  jackin is a word", 10));
 }
 
 #[test]

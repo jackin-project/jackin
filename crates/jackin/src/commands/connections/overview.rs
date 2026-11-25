@@ -78,7 +78,7 @@ fn introduce(app: &mut App) -> Result<(), CommandError> {
     note(
         app,
         "To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.",
-        &[],
+        &["jackin account usage connect <provider>".to_owned()],
     );
     Err(CommandError::NoUsageSnapshot)
 }
@@ -284,9 +284,10 @@ pub(super) fn refreshed(
     lines.extend(view::text::wrap(
         Vec::new(),
         0,
-        &view::text::split_parts(
+        &view::text::split_atomic(
             "View usage: jackin usage · jackin usage details · jackin usage refresh --json",
             Tone::Dim,
+            &VIEW_COMMANDS.map(str::to_owned),
         ),
         columns,
     ));
@@ -294,6 +295,11 @@ pub(super) fn refreshed(
 }
 
 const ENTRY_INDENT: usize = 10;
+const VIEW_COMMANDS: [&str; 3] = [
+    "jackin usage",
+    "jackin usage details",
+    "jackin usage refresh --json",
+];
 
 fn entry(tag: &str, tone: Tone, text: &str, columns: usize) -> Vec<Line> {
     view::text::wrap(

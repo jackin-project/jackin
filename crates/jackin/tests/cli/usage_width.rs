@@ -3,8 +3,8 @@
 
 use super::support::{Failure, Harness, ScriptedTerminal};
 use jackin_testkit::{
-    SeedRow, TestResult, World, assert_golden, guard, pin_usage_view_clock, seed_usage_rows,
-    seed_usage_view,
+    SeedRow, TestResult, World, assert_golden, guard, is_unsplittable_command,
+    pin_usage_view_clock, seed_usage_rows, seed_usage_view,
 };
 use jackin_usage::accounts::{DATABASE_PATH, FailureKind, UsageProvider};
 use jackin_usage::view::text;
@@ -94,7 +94,7 @@ fn assert_fits_outside_the_table(text: &str, width: u16) {
             }
             !table
         })
-        .filter(|line| !line.trim_start().starts_with("jackin "))
+        .filter(|line| !is_unsplittable_command(line, usize::from(width)))
         .filter(|line| text::width(line) > usize::from(width))
         .map(|line| format!("{:>3}  {line}", text::width(line)))
         .collect();
@@ -169,6 +169,30 @@ async fn ls_sign_in_notes_wrap_at_60_and_80_columns() -> TestResult {
             &run(&harness, &["account", "usage", "ls", "--wide"], 80).await?,
             &ids,
         )
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_empty_state_hint_keeps_its_command_whole() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = plain(&world);
+        for width in [80, 60] {
+            let ran = harness
+                .command(&["usage"])
+                .terminal(terminal(width)?)
+                .run()
+                .await?;
+            let shown = format!("{}{}", ran.stdout, ran.stderr);
+            assert!(
+                shown
+                    .lines()
+                    .any(|line| line.contains("jackin account usage connect <provider>")),
+                "split at {width}:\n{shown}"
+            );
+        }
+        Ok(())
     })
     .await
 }
@@ -254,7 +278,7 @@ async fn the_reports_fit_the_width_at_60_and_80_columns() -> TestResult {
                 let text = run(&harness, args, width).await?;
                 let over: Vec<&str> = text
                     .lines()
-                    .filter(|line| !line.trim_start().starts_with("jackin "))
+                    .filter(|line| !is_unsplittable_command(line, usize::from(width)))
                     .filter(|line| text::width(line) > usize::from(width))
                     .collect();
                 assert!(over.is_empty(), "{args:?} at {width}:\n{}", over.join("\n"));
