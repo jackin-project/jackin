@@ -401,9 +401,11 @@ async fn a_pipe_in_place_of_the_database_or_the_log_is_refused_without_blocking(
         if pipe != "agent.db" {
             std::fs::write(dir.path().join("agent.db"), database(512))?;
         }
-        let made = std::process::Command::new("mkfifo")
-            .arg(dir.path().join(pipe))
-            .status()?;
+        let fifo = dir.path().join(pipe);
+        let made = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("mkfifo").arg(fifo).status()
+        })
+        .await??;
         assert!(made.success(), "mkfifo failed");
         let finished = tokio::time::timeout(
             Duration::from_secs(10),
