@@ -431,6 +431,9 @@ fn destructuring_a_buffer_fails() -> TestResult {
          fn o(b: Buffer) { let Buffer { #[allow(unused)] content, .. } = b; }\n\
          type Grid = ratatui::buffer::Buffer;\n\
          fn p(b: Grid) { let Grid { content, .. } = b; }\n\
+         type Outer = Inner;\n\
+         type Inner = ratatui::buffer::Buffer;\n\
+         fn r(b: Outer) { let Outer { content, .. } = b; }\n\
          fn q() -> ::ratatui::buffer::Buffer {\n\
          \x20   Default::default()\n\
          }\n",
@@ -446,6 +449,7 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 43, "destructures"),
             ("C1", 44, "destructures"),
             ("C1", 46, "destructures"),
+            ("C1", 49, "destructures"),
         ],
     )
 }

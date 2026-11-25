@@ -1965,6 +1965,8 @@ mod error_paths {
         let source = text(&[
             "use std::path::Path as P;",
             "type Q = std::path::Path;",
+            "type R = S;",
+            "type S = Q;",
             "enum E {",
             "    #[error(\"qualified {}\", Path::display(.path.as_path()))] // p_qualified",
             "    A { path: PathBuf },",
@@ -1991,6 +1993,8 @@ mod error_paths {
             "    L(Label),",
             "    #[error(\"generic ufcs {}\", <Renderer<Path>>::display(.0))]",
             "    M(Label),",
+            "    #[error(\"chained {}\", R::display(.0.as_path()))] // p_chained",
+            "    N(PathBuf),",
             "    #[error(\"aliased {}\", P::display(.0.as_path()))] // p_aliased",
             "    E(PathBuf),",
             "    #[error(\"ufcs {}\", <Path>::display(.0.as_path()))] // p_ufcs",
@@ -2010,6 +2014,7 @@ mod error_paths {
                     "p_mapped",
                     "p_deep",
                     "p_typed",
+                    "p_chained",
                     "p_aliased",
                     "p_ufcs"
                 ]

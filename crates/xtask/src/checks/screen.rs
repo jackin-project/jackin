@@ -423,27 +423,36 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
 
 fn buffer_names(tokens: &[Token]) -> Vec<&str> {
     let mut names = vec!["Buffer"];
-    for (index, token) in tokens.iter().enumerate() {
-        if token.is_ident("Buffer")
-            && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
-            && let Some(alias) = tokens.get(index + 2).and_then(Token::ident)
-        {
-            names.push(alias);
+    loop {
+        let known = names.len();
+        for (index, token) in tokens.iter().enumerate() {
+            let imported =
+                token.is_ident("Buffer") && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"));
+            let aliased = token.is_ident("type")
+                && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
+                && tokens[index + 3..]
+                    .iter()
+                    .take_while(|t| !t.is_punct(';'))
+                    .filter_map(Token::ident)
+                    .last()
+                    .is_some_and(|last| names.contains(&last));
+            let alias = if imported {
+                tokens.get(index + 2).and_then(Token::ident)
+            } else if aliased {
+                tokens.get(index + 1).and_then(Token::ident)
+            } else {
+                None
+            };
+            if let Some(alias) = alias
+                && !names.contains(&alias)
+            {
+                names.push(alias);
+            }
         }
-        if token.is_ident("type")
-            && let Some(alias) = tokens.get(index + 1).and_then(Token::ident)
-            && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-            && tokens[index + 3..]
-                .iter()
-                .take_while(|t| !t.is_punct(';'))
-                .filter_map(Token::ident)
-                .last()
-                .is_some_and(|last| names.contains(&last))
-        {
-            names.push(alias);
+        if names.len() == known {
+            return names;
         }
     }
-    names
 }
 
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
