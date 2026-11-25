@@ -653,7 +653,7 @@ mod regional_device;
 #[test]
 fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Result<()> {
     use jackin_testkit::FakeClock;
-    use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
+    use jackin_usage::{export, onboarding::OwnedLogin, presentation};
 
     for (key_type, console, expected) in [
         (
@@ -677,7 +677,7 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
         let mut registry = db(&path, &vault)?;
         let login = OwnedLogin::new(
             path,
-            ProviderEndpoints::real(),
+            jackin_testkit::closed_endpoints(),
             Arc::new(FakeClock::new()),
             vault,
         );
@@ -722,7 +722,7 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
 fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<()> {
     use jackin_testkit::FakeClock;
     use jackin_usage::dashboard::{Dashboard, DashboardMemory};
-    use jackin_usage::{ProviderEndpoints, onboarding::OwnedLogin, presentation};
+    use jackin_usage::{onboarding::OwnedLogin, presentation};
 
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("usage/accounts.db");
@@ -730,7 +730,7 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
     let mut registry = db(&path, &vault)?;
     let login = OwnedLogin::new(
         path,
-        ProviderEndpoints::real(),
+        jackin_testkit::closed_endpoints(),
         Arc::new(FakeClock::new()),
         vault,
     );
@@ -805,7 +805,7 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
 fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values() -> Result<()> {
     use jackin_testkit::FakeClock;
     use jackin_usage::dashboard::{Dashboard, DashboardMemory};
-    use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
+    use jackin_usage::{export, onboarding::OwnedLogin, presentation};
 
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("usage/accounts.db");
@@ -813,7 +813,7 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
     let mut registry = db(&path, &vault)?;
     let login = OwnedLogin::new(
         path,
-        ProviderEndpoints::real(),
+        jackin_testkit::closed_endpoints(),
         Arc::new(FakeClock::new()),
         vault,
     );
