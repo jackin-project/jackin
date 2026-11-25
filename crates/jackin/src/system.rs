@@ -53,13 +53,14 @@ pub struct Driven<T> {
     pub writes: WriteFate,
 }
 
-impl Driven<ExitCode> {
+impl Driven<ExitClass> {
     pub fn exit_code(self) -> ExitCode {
-        match self.writes {
-            WriteFate::Settled => self.output,
-            WriteFate::Abandoned => ExitCode::from(ExitClass::Cancelled.code()),
-            WriteFate::GaveUp => ExitCode::from(ExitClass::Failure.code()),
-        }
+        let class = match (self.output, self.writes) {
+            (ExitClass::Ok, WriteFate::Abandoned) => ExitClass::Cancelled,
+            (ExitClass::Ok, WriteFate::GaveUp) => ExitClass::Failure,
+            (class, _) => class,
+        };
+        ExitCode::from(class.code())
     }
 }
 
@@ -490,26 +491,51 @@ mod tests {
         assert_eq!(report, (ABANDONED.to_owned(), WriteFate::Abandoned));
     }
 
+    fn exit_of(output: ExitClass, writes: WriteFate) -> String {
+        format!("{:?}", Driven { output, writes }.exit_code())
+    }
+
+    fn code(class: ExitClass) -> String {
+        format!("{:?}", ExitCode::from(class.code()))
+    }
+
     #[test]
-    fn an_abandoned_or_given_up_write_overrides_a_clean_exit() {
-        let exit = |writes| {
-            format!(
-                "{:?}",
-                Driven {
-                    output: ExitCode::SUCCESS,
-                    writes,
-                }
-                .exit_code()
-            )
-        };
-        assert_eq!(exit(WriteFate::Settled), format!("{:?}", ExitCode::SUCCESS));
+    fn an_abandoned_write_turns_a_clean_exit_into_cancelled() {
         assert_eq!(
-            exit(WriteFate::Abandoned),
-            format!("{:?}", ExitCode::from(ExitClass::Cancelled.code()))
+            exit_of(ExitClass::Ok, WriteFate::Abandoned),
+            code(ExitClass::Cancelled)
         );
+    }
+
+    #[test]
+    fn a_given_up_write_turns_a_clean_exit_into_failure() {
         assert_eq!(
-            exit(WriteFate::GaveUp),
-            format!("{:?}", ExitCode::from(ExitClass::Failure.code()))
+            exit_of(ExitClass::Ok, WriteFate::GaveUp),
+            code(ExitClass::Failure)
+        );
+    }
+
+    #[test]
+    fn a_settled_write_keeps_a_clean_exit() {
+        assert_eq!(
+            exit_of(ExitClass::Ok, WriteFate::Settled),
+            code(ExitClass::Ok)
+        );
+    }
+
+    #[test]
+    fn a_given_up_write_keeps_a_cancelled_exit() {
+        assert_eq!(
+            exit_of(ExitClass::Cancelled, WriteFate::GaveUp),
+            code(ExitClass::Cancelled)
+        );
+    }
+
+    #[test]
+    fn an_abandoned_write_keeps_a_usage_exit() {
+        assert_eq!(
+            exit_of(ExitClass::Usage, WriteFate::Abandoned),
+            code(ExitClass::Usage)
         );
     }
 
