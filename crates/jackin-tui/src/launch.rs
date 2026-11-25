@@ -686,12 +686,24 @@ impl Run {
                 ..
             } => sandbox,
             RestoreFinding::Absent { .. } => return,
-            RestoreFinding::Ambiguous(_)
-            | RestoreFinding::Unconfirmed {
+            RestoreFinding::Ambiguous(names) => {
+                self.left(format!(
+                    "Cancelled · several sandboxes match this launch: {} · check the fleet before launching again",
+                    names
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+                return;
+            }
+            RestoreFinding::Unconfirmed {
                 last_observed: None,
-                ..
+                planned,
             } => {
-                self.backend.refresh();
+                self.left(format!(
+                    "Cancelled · the gateway could not confirm whether sandbox {planned} exists · the fleet shows the current state"
+                ));
                 return;
             }
         };
@@ -705,8 +717,15 @@ impl Run {
             Ok(Ok(instance)) => self.backend.bridge.send(Msg::LaunchCancelled {
                 instance: Box::new(instance),
             }),
-            Ok(Err(_)) | Err(_) => self.backend.refresh(),
+            Ok(Err(_)) | Err(_) => self.left(format!(
+                "Cancelled · sandbox {sandbox} was seen during this launch, but its details could not be read · the fleet shows the current state"
+            )),
         }
+    }
+
+    fn left(&self, text: String) {
+        self.backend.bridge.send(Msg::LaunchLeft { text });
+        self.backend.refresh();
     }
 
     async fn record(

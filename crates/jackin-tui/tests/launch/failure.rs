@@ -227,7 +227,7 @@ async fn cancel_during_upload_with_an_unconfirmed_lookup_still_shows_the_last_ob
 }
 
 #[tokio::test]
-async fn cancel_after_a_lost_create_response_returns_to_the_manager_without_a_fabricated_record()
+async fn cancel_after_a_lost_create_response_says_the_gateway_could_not_confirm_the_sandbox_without_a_fabricated_record()
 -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
@@ -254,6 +254,16 @@ async fn cancel_after_a_lost_create_response_returns_to_the_manager_without_a_fa
         console.settle().await?;
         assert_eq!(console.console().app().route(), Route::Manager);
         assert!(console.console().app().world.instances.is_empty());
+        until_untouched(&mut console, "the unconfirmed-cancel notice", |c| {
+            c.console()
+                .app()
+                .shell
+                .status
+                .text()
+                .unwrap_or_default()
+                .starts_with("Cancelled · the gateway could not confirm whether sandbox")
+        })
+        .await?;
         Ok(())
     })
     .await
