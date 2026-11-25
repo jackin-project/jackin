@@ -507,17 +507,16 @@ impl Session {
             }
         }
         let session = self
-            .open_until(
-                cancel,
-                &TerminalRequest {
-                    sandbox: sandbox.clone(),
-                    kind: TerminalKind::MainProcess {
-                        input: request.input,
-                        repaint: RepaintPolicy::NudgeAfter(REPAINT_NUDGE),
-                    },
-                    size: request.size,
+            .deps
+            .gateway
+            .open_terminal(&TerminalRequest {
+                sandbox: sandbox.clone(),
+                kind: TerminalKind::MainProcess {
+                    input: request.input,
+                    repaint: RepaintPolicy::NudgeAfter(REPAINT_NUDGE),
                 },
-            )
+                size: request.size,
+            })
             .await?;
         let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
         Ok(AttachedTerminal {

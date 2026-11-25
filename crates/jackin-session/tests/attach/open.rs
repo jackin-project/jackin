@@ -175,7 +175,8 @@ async fn a_cancel_interrupts_a_hung_lookup_before_an_attach_and_opens_nothing() 
 }
 
 #[tokio::test]
-async fn a_cancel_while_the_main_terminal_is_being_opened_ends_the_call() -> TestResult {
+async fn a_cancel_while_the_main_terminal_is_being_opened_does_not_abandon_the_open() -> TestResult
+{
     guard_within(Duration::from_secs(20), async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
@@ -189,18 +190,15 @@ async fn a_cancel_while_the_main_terminal_is_being_opened_ends_the_call() -> Tes
         let driver = async {
             assert!(rig.gateway().until_held(&hold).await);
             token.cancel();
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+            rig.gateway().release(&hold);
         };
         let (attached, ()) = tokio::join!(attaching, driver);
-        assert!(
-            matches!(
-                attached,
-                Err(AttachError::Gateway(GatewayError::Cancelled { .. }))
-            ),
-            "{:?}",
-            attached.err()
-        );
-        rig.gateway().release(&hold);
-        assert_eq!(rig.handle(1).await?.attachments(), 0);
+        let terminal = attached.map_err(|error| format!("the open was abandoned: {error:?}"))?;
+        assert_eq!(rig.handle(1).await?.attachments(), 1);
+        drop(terminal);
         Ok(())
     })
     .await

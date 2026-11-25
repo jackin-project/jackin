@@ -1881,7 +1881,7 @@ impl Session {
     pub async fn launch(&self, plan: LaunchPlan, events: LaunchEvents, cancel: CancellationToken) -> Result<LaunchOutcome, LaunchFailure>;
 
     pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError>;
-    pub async fn open_shell(&self, request: ShellRequest, cancel: &CancellationToken) -> Result<TerminalSession, AttachError>;
+    pub async fn open_shell(&self, request: ShellRequest, cancel: &CancellationToken) -> Result<TerminalSession, AttachError>;   // the shell and exec opens race the token; the main-process open does not, because it creates a gateway SSH session whose token a dropped open would lose
     pub async fn sandbox_agent_names(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<Vec<String>, AgentNamesError>;
     pub async fn restart_agent(&self, sandbox: &SandboxName, events: LaunchEvents, cancel: CancellationToken) -> Result<AttachTarget, RestartError>;
 
