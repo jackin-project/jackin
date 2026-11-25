@@ -75,8 +75,22 @@ After the last merge, run G-FULL on `main`. Merge only through the tailrocks `me
 
 ## Local state when the run paused
 
-- Every local branch's commits are on GitHub, as `local-branch-audit.tsv` shows. The `ux/*` and usage follow-up branches are contained in the heads of merged PRs #1310, #1320, and #1323.
-- No task worktree has uncommitted or unpushed changes. There are no stashes.
+Nothing exists only on the machine that ran this program.
+
+- Every commit on every local branch is reachable on GitHub, from a branch or a PR ref (`refs/pull/<n>/head`). `local-branch-audit.tsv` lists each branch. The `ux/*` and usage follow-up branches are contained in the heads of merged PRs #1310, #1320, and #1323. To fetch a PR ref on another machine, run `git fetch origin refs/pull/<n>/head`.
+- Four detached worktrees from other sessions held uncommitted work. That work is committed unreviewed on these branches. Do not merge them as they are.
+
+  | Branch | Content |
+  |---|---|
+  | `preserve/provider-cli-check-20261125` | Edits to the `jackin` connections CLI. |
+  | `preserve/usage-ux-preview-20261125` | A preview of the console connections board. |
+  | `preserve/browser-review-20261125` | A copy of the native usage work used for a browser review. |
+  | `preserve/registry-review-20261125` | A copy of the native usage work used for a registry review. |
+
+- Two local-only branches were pushed: `backup/p03-residuals-wip` and `fix/p11-usage-cache-freshness`.
+- This record holds the porting plan and the goal byte for byte, as `plan.md` and `goal.md`.
+- No worktree has uncommitted changes. No repository has stashes or unpushed commits.
+- This record leaves out the raw gate logs, as plan section 3 requires. It records their results.
 
 ## Process notes
 
