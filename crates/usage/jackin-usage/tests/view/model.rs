@@ -697,6 +697,36 @@ fn the_duplicate_to_remove_is_the_failing_one_else_the_last_connected() -> Resul
     Ok(())
 }
 
+#[test]
+fn the_duplicate_to_remove_follows_the_registry_order_whatever_the_ids() -> Result<()> {
+    let seeded = Seeded::new()?;
+    let first = seeded.id_of("antigravity", "personal@example.com", 0)?;
+    let second = seeded.id_of("antigravity", "personal@example.com", 1)?;
+    let mut registry =
+        AccountRegistry::with_vault(&seeded.dir.path().join(DATABASE_PATH), Arc::new(Vault))?;
+    let body = &seeded.accounts[13].snapshot;
+    registry.put_snapshot(second, registry.version(second)?, NOW.0 - 100, body)?;
+    let mut order = seeded.ids();
+    let low = order
+        .iter()
+        .position(|id| *id == first)
+        .ok_or("the first account is missing")?;
+    let high = order
+        .iter()
+        .position(|id| *id == second)
+        .ok_or("the second account is missing")?;
+    order.swap(low, high);
+    registry.reorder(&order)?;
+    drop(registry);
+    let view = seeded.view(&ViewFilter::default(), NOW)?;
+    let duplicate = view.attention.iter().find_map(|item| match item {
+        Attention::Duplicate { accounts, remove } => Some((accounts.clone(), *remove)),
+        Attention::Failing { .. } | Attention::NearLimit { .. } => None,
+    });
+    assert_eq!(duplicate, Some((vec![second, first], first)));
+    Ok(())
+}
+
 fn crafted_account(
     provider: UsageProvider,
     snapshot: serde_json::Value,
