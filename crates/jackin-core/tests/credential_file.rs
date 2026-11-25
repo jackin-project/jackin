@@ -195,8 +195,8 @@ mod bounded {
     use std::time::Duration;
 
     use jackin_core::{
-        CaptureLimits, CaptureProblem, CredentialFileProblem, FileMode,
-        FileSystem, FsError, HostPath, SQLITE_MAGIC, capture, read_credential_file,
+        CaptureLimits, CaptureProblem, CredentialFileProblem, FileMode, FileSystem, FsError,
+        HostPath, SQLITE_MAGIC, capture, read_credential_file,
     };
     use jackin_testkit::MemFs;
 

@@ -43,9 +43,14 @@ fn message_of(outcome: &UsageOutcome) -> &str {
 async fn a_login_path_that_never_resolves_is_given_up_on() -> TestResult {
     let harness = UsageHarness::new().await?;
     harness.put(EN, LOGIN).await?;
-    let probe = harness.fs.stall_canonicalize_of("en/mcode-public/auth.json");
+    let probe = harness
+        .fs
+        .stall_canonicalize_of("en/mcode-public/auth.json");
     let outcome = report(&harness).await?;
-    assert_eq!(message_of(&outcome), "the credential file could not be read");
+    assert_eq!(
+        message_of(&outcome),
+        "the credential file could not be read"
+    );
     assert_eq!(probe.entered(), 1);
     assert_eq!(probe.abandoned(), 1);
     Ok(())
@@ -57,7 +62,10 @@ async fn a_login_file_that_never_reads_is_given_up_on() -> TestResult {
     harness.put(EN, LOGIN).await?;
     let probe = harness.fs.stall_reads_of("auth.json");
     let outcome = report(&harness).await?;
-    assert_eq!(message_of(&outcome), "the credential file could not be read");
+    assert_eq!(
+        message_of(&outcome),
+        "the credential file could not be read"
+    );
     assert_eq!(probe.entered(), 1);
     assert_eq!(probe.abandoned(), 1);
     Ok(())
@@ -68,9 +76,14 @@ async fn a_second_login_that_stalls_makes_the_first_unusable() -> TestResult {
     let harness = UsageHarness::new().await?;
     harness.put(EN, LOGIN).await?;
     harness.put(CN, LOGIN).await?;
-    let probe = harness.fs.stall_canonicalize_of("cn/mcode-public/auth.json");
+    let probe = harness
+        .fs
+        .stall_canonicalize_of("cn/mcode-public/auth.json");
     let outcome = report(&harness).await?;
-    assert_eq!(message_of(&outcome), "the credential file could not be read");
+    assert_eq!(
+        message_of(&outcome),
+        "the credential file could not be read"
+    );
     assert_eq!(probe.entered(), 1);
     Ok(())
 }

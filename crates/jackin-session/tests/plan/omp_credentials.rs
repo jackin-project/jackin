@@ -208,9 +208,11 @@ async fn key_of_rows(
     }
     drop(connection);
     let host = HostPath::parse(&std::fs::canonicalize(&path)?)?;
-    Ok(read_omp_host_key(&StdFileSystem::default(), &host, "wanted")
-        .await
-        .map(|key| key.expose().to_owned()))
+    Ok(
+        read_omp_host_key(&StdFileSystem::default(), &host, "wanted")
+            .await
+            .map(|key| key.expose().to_owned()),
+    )
 }
 
 fn key_row(key: &str) -> String {

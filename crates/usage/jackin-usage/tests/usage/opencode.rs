@@ -1207,9 +1207,10 @@ async fn a_link_at_the_store_whose_target_never_resolves_is_given_up_on() -> Tes
         .put("/home/work/dotfiles/opencode.db", "SQLite format 3\0")
         .await?;
     let link = crate::support::host_path("/home/work/opencode.db");
-    harness
-        .fs
-        .link(&link, &crate::support::host_path("/home/work/dotfiles/opencode.db"));
+    harness.fs.link(
+        &link,
+        &crate::support::host_path("/home/work/dotfiles/opencode.db"),
+    );
     let probe = harness.fs.stall_canonicalize_of("opencode.db");
     let account = account(
         "opencode",
@@ -1273,13 +1274,20 @@ fn assert_unreadable(outcome: &jackin_usage::UsageOutcome, context: &str) {
 }
 
 #[tokio::test]
-async fn an_oversized_row_the_selection_skips_does_not_hide_the_selected_credential() -> TestResult {
+async fn an_oversized_row_the_selection_skips_does_not_hide_the_selected_credential() -> TestResult
+{
     guard(async {
         for stale in [66_000_usize, 100_000, 200_000, 4_000_000] {
             let outcome = report_of_rows(|connection| {
                 row_at(connection, "cred_1", "opencode", &"x".repeat(stale), 1);
                 row_at(connection, "cred_2", "opencode", &api_credential(stale), 2);
-                row_at(connection, "cred_3", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+                row_at(
+                    connection,
+                    "cred_3",
+                    "opencode",
+                    &credential(TOKEN, EXPIRES, None),
+                    5,
+                );
                 row_at(connection, "cred_4", "opencode", &api_credential(10), 7);
             })
             .await?;
@@ -1314,13 +1322,22 @@ async fn an_oversized_row_that_is_not_the_integrations_or_not_active_is_ignored(
 #[tokio::test]
 async fn an_oversized_row_that_may_be_the_selected_credential_refuses_the_store() -> TestResult {
     guard(async {
-        for (context, oversized) in [
-            ("newer", 7),
-            ("as new", 5),
-        ] {
+        for (context, oversized) in [("newer", 7), ("as new", 5)] {
             let outcome = report_of_rows(|connection| {
-                row_at(connection, "cred_1", "opencode", &credential(TOKEN, EXPIRES, None), 5);
-                row_at(connection, "cred_2", "opencode", &"x".repeat(200_000), oversized);
+                row_at(
+                    connection,
+                    "cred_1",
+                    "opencode",
+                    &credential(TOKEN, EXPIRES, None),
+                    5,
+                );
+                row_at(
+                    connection,
+                    "cred_2",
+                    "opencode",
+                    &"x".repeat(200_000),
+                    oversized,
+                );
             })
             .await?;
             assert_unreadable(&outcome, context);
@@ -1331,8 +1348,20 @@ async fn an_oversized_row_that_may_be_the_selected_credential_refuses_the_store(
         .await?;
         assert_unreadable(&only, "the only row");
         let id = report_of_rows(|connection| {
-            row_at(connection, &"i".repeat(200_000), "opencode", &credential(TOKEN, EXPIRES, None), 9);
-            row_at(connection, "cred_2", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+            row_at(
+                connection,
+                &"i".repeat(200_000),
+                "opencode",
+                &credential(TOKEN, EXPIRES, None),
+                9,
+            );
+            row_at(
+                connection,
+                "cred_2",
+                "opencode",
+                &credential(TOKEN, EXPIRES, None),
+                5,
+            );
         })
         .await?;
         assert_unreadable(&id, "an oversized id on the newest row");
@@ -1349,7 +1378,13 @@ async fn an_oversized_row_in_a_utf16_store_is_skipped_like_any_other() -> TestRe
         connection.execute_batch("PRAGMA encoding = 'UTF-16le';")?;
         connection.execute_batch(SCHEMA)?;
         row_at(&connection, "cred_1", "opencode", &"x".repeat(70_000), 1);
-        row_at(&connection, "cred_2", "opencode", &credential(TOKEN, EXPIRES, None), 5);
+        row_at(
+            &connection,
+            "cred_2",
+            "opencode",
+            &credential(TOKEN, EXPIRES, None),
+            5,
+        );
         drop(connection);
         let outcome = report_of_store(directory.path(), TOKEN).await?;
         assert_windows(&outcome, &[FIVE, WEEK, MONTH]);

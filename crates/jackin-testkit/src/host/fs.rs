@@ -226,10 +226,9 @@ impl MemFs {
     }
 
     pub fn link(&self, link: &HostPath, target: &HostPath) {
-        locked(&self.state).links.insert(
-            link.as_path().to_path_buf(),
-            target.as_path().to_path_buf(),
-        );
+        locked(&self.state)
+            .links
+            .insert(link.as_path().to_path_buf(), target.as_path().to_path_buf());
     }
 
     fn canonical_stalled(&self, path: &HostPath) -> Option<Arc<StallProbe>> {
@@ -346,7 +345,13 @@ impl FileSystem for MemFs {
             return Ok((state.files.contains_key(target) || state.is_dir(target))
                 .then(|| HostPath::parse(target))
                 .transpose()
-                .map_err(|_| io_error(path, ErrorKind::InvalidInput, "the link target is not absolute"))?);
+                .map_err(|_| {
+                    io_error(
+                        path,
+                        ErrorKind::InvalidInput,
+                        "the link target is not absolute",
+                    )
+                })?);
         }
         Ok(
             (state.files.contains_key(path.as_path()) || state.is_dir(path.as_path()))

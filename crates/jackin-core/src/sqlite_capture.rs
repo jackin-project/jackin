@@ -98,7 +98,6 @@ enum Read {
     Absent,
 }
 
-
 fn capture_slots() -> &'static Arc<Semaphore> {
     static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
     SLOTS.get_or_init(|| Arc::new(Semaphore::new(CAPTURE_SLOTS)))

@@ -430,7 +430,10 @@ fn extract_opencode_credential(
         {
             None
         } else {
-            let id = row.get_ref(0).and_then(capped_text).map_err(|_| unreadable())?;
+            let id = row
+                .get_ref(0)
+                .and_then(capped_text)
+                .map_err(|_| unreadable())?;
             let value = row
                 .get_ref(1)
                 .and_then(capped_text)
@@ -749,7 +752,10 @@ mod tests {
         let query = format!("EXPLAIN QUERY PLAN {OPENCODE_CREDENTIAL_QUERY}");
         let mut statement = connection.prepare(&query).expect("the plan");
         let mut rows = statement
-            .query(rusqlite::params!["opencode", jackin_core::STORE_LENGTH_LIMIT])
+            .query(rusqlite::params![
+                "opencode",
+                jackin_core::STORE_LENGTH_LIMIT
+            ])
             .expect("the plan rows");
         let mut plan = String::new();
         while let Some(row) = rows.next().expect("a plan row") {
