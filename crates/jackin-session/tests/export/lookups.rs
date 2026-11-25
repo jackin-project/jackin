@@ -31,6 +31,16 @@ async fn launched() -> Result<(Rig, SandboxName), Box<dyn Error>> {
     Ok((rig, name))
 }
 
+fn elapsed(
+    before: &jackin_openshell::SandboxStamp,
+    after: &jackin_openshell::SandboxStamp,
+) -> Result<Duration, Box<dyn Error>> {
+    let nanos = (i128::from(after.seconds) - i128::from(before.seconds)) * 1_000_000_000
+        + i128::from(after.nanos)
+        - i128::from(before.nanos);
+    Ok(Duration::from_nanos(u64::try_from(nanos)?))
+}
+
 fn is_cancelled(result: &Result<PurgeOutcome, PurgeError>, name: &SandboxName) -> bool {
     matches!(result, Err(PurgeError::Cancelled { sandbox }) if sandbox == name)
 }
@@ -105,18 +115,30 @@ async fn a_cancelled_purge_deletes_nothing_wherever_the_cancel_lands() -> TestRe
 async fn a_delete_that_was_already_requested_is_not_abandoned_by_a_cancel() -> TestResult {
     guard_within(WITHIN, async {
         let (rig, name) = launched().await?;
-        let token = CancellationToken::new();
-        rig.gateway().inject(Fault::CancelAt {
-            trigger: Trigger::Op(GatewayOp::Delete),
-            token: token.clone(),
+        let hold = Trigger::Op(GatewayOp::Delete);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
         });
-        let purged = rig
+        let token = CancellationToken::new();
+        let purging = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Forced, &token)
-            .await?;
+            .purge(&rig.config, &name, PurgeMode::Forced, &token);
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+            assert!(
+                rig.gateway().sandbox(&name).is_some(),
+                "the held delete must not have landed yet"
+            );
+            rig.gateway().release(&hold);
+        };
+        let (purged, ()) = tokio::join!(purging, driver);
         assert!(
-            matches!(&purged, PurgeOutcome::Deleted { sandbox, .. } if *sandbox == name),
+            matches!(&purged, Ok(PurgeOutcome::Deleted { sandbox, .. }) if *sandbox == name),
             "{purged:?}"
         );
         assert!(rig.gateway().sandbox(&name).is_none());
@@ -325,13 +347,7 @@ async fn a_delete_whose_outcome_cannot_be_settled_is_reported_unconfirmed() -> T
                 "{case}: {result:?}"
             );
             if case.contains("never") {
-                assert_eq!(
-                    Duration::new(
-                        u64::try_from(after.seconds - before.seconds)?,
-                        after.nanos.abs_diff(before.nanos)
-                    ),
-                    RECOVERY_LOOKUP_BUDGET
-                );
+                assert_eq!(elapsed(&before, &after)?, RECOVERY_LOOKUP_BUDGET);
             }
         }
         Ok(())
@@ -365,6 +381,82 @@ async fn a_cancelled_work_state_inspection_is_reported_as_cancelled_not_as_a_fai
         };
         let (shown, ()) = tokio::join!(inspecting, driver);
         assert_eq!(shown, WorkState::Unknown(UnknownReason::Cancelled));
+        Ok(())
+    })
+    .await
+}
+
+async fn settled_after(
+    change: impl AsyncFnOnce(&Rig, &SandboxName) -> TestResult,
+) -> Result<Result<PurgeOutcome, PurgeError>, Box<dyn Error>> {
+    let (rig, name) = launched().await?;
+    let hold = Trigger::Op(GatewayOp::Delete);
+    rig.gateway().inject(Fault::HoldAt {
+        trigger: hold.clone(),
+    });
+    let idle = CancellationToken::new();
+    let purging = rig
+        .world
+        .session
+        .purge(&rig.config, &name, PurgeMode::Forced, &idle);
+    let driver = async {
+        assert!(rig.gateway().until_held(&hold).await);
+        change(&rig, &name).await?;
+        rig.gateway().inject(Fault::FailNext {
+            op: GatewayOp::Delete,
+            error: lost(GatewayOp::Delete),
+        });
+        rig.gateway().release(&hold);
+        Ok::<(), Box<dyn Error>>(())
+    };
+    let (result, driven) = tokio::join!(purging, driver);
+    driven?;
+    Ok(result)
+}
+
+#[tokio::test]
+async fn a_delete_with_an_unknown_outcome_is_settled_by_whether_the_same_sandbox_is_still_there()
+-> TestResult {
+    guard_within(WITHIN, async {
+        let unmanaged = settled_after(async |rig, name| {
+            rig.gateway().delete_sandbox(name).await?;
+            rig.gateway()
+                .insert_unmanaged(name, Labels::from_pairs([])?, Phase::Ready)?;
+            Ok(())
+        })
+        .await?;
+        assert!(
+            matches!(unmanaged, Ok(PurgeOutcome::Deleted { .. })),
+            "{unmanaged:?}"
+        );
+
+        let replaced = settled_after(async |rig, name| {
+            rig.gateway().delete_sandbox(name).await?;
+            rig.world.clock.advance(Duration::from_secs(60));
+            rig.launch(1).await?;
+            Ok(())
+        })
+        .await?;
+        assert!(
+            matches!(replaced, Ok(PurgeOutcome::Deleted { .. })),
+            "{replaced:?}"
+        );
+
+        let unknown_age = settled_after(async |rig, _| {
+            rig.handle(1).await?.forget_created_at();
+            Ok(())
+        })
+        .await?;
+        assert!(
+            matches!(unknown_age, Err(PurgeError::DeleteUnconfirmed { .. })),
+            "{unknown_age:?}"
+        );
+
+        let same = settled_after(async |_, _| Ok(())).await?;
+        assert!(
+            matches!(same, Err(PurgeError::DeleteUnconfirmed { .. })),
+            "{same:?}"
+        );
         Ok(())
     })
     .await

@@ -81,6 +81,10 @@ impl App {
             .unwrap_or_else(PoisonError::into_inner) = Some(text);
     }
 
+    pub(crate) fn settled(&self) {
+        drop(self.take_unsettled());
+    }
+
     pub(crate) fn take_unsettled(&self) -> Option<String> {
         self.unsettled
             .lock()

@@ -27,9 +27,9 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, RestoreFinding, RoleError, Session,
-    StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events,
-    lookup_workspace, plan_launch,
+    LineDelivery, PlanError, Prompting, RECOVERY_LOOKUP_BUDGET, RestoreCandidate, RestoreFinding,
+    RoleError, Session, StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain,
+    launch_events, lookup_workspace, plan_launch,
 };
 use termrock::widgets::steps::StepState;
 use thiserror::Error;
@@ -695,14 +695,17 @@ impl Run {
                 return;
             }
         };
-        match self
-            .record(session, config, gateway, &sandbox, &Origins::new())
-            .await
-        {
-            Ok(instance) => self.backend.bridge.send(Msg::LaunchCancelled {
+        let fresh = CancellationToken::new();
+        let recorded = tokio::time::timeout(
+            RECOVERY_LOOKUP_BUDGET,
+            self.record(session, config, gateway, &sandbox, &Origins::new(), &fresh),
+        )
+        .await;
+        match recorded {
+            Ok(Ok(instance)) => self.backend.bridge.send(Msg::LaunchCancelled {
                 instance: Box::new(instance),
             }),
-            Err(_) => self.backend.refresh(),
+            Ok(Err(_)) | Err(_) => self.backend.refresh(),
         }
     }
 
@@ -713,10 +716,10 @@ impl Run {
         gateway: &GatewayName,
         sandbox: &SandboxName,
         origins: &Origins,
+        cancel: &CancellationToken,
     ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
-        let fresh = CancellationToken::new();
-        let inspected = session.inspect(sandbox, &fresh).await?;
-        let work = session.work_state(config, sandbox, &fresh).await;
+        let inspected = session.inspect(sandbox, cancel).await?;
+        let work = session.work_state(config, sandbox, cancel).await;
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
             summary: inspected.summary,
@@ -747,7 +750,7 @@ impl Run {
             .map(|origin| (name.clone(), origin))
             .into_iter()
             .collect();
-        self.record(session, config, gateway, sandbox, &origins)
+        self.record(session, config, gateway, sandbox, &origins, &self.cancel)
             .await
     }
 }

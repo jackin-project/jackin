@@ -109,8 +109,10 @@ fn export_error(error: &ExportError) -> String {
 }
 
 pub(crate) fn abandoned(unsettled: Option<String>) -> String {
-    let detail = unsettled
-        .unwrap_or_else(|| "jackin ls shows the current state of the sandboxes".to_owned());
+    let detail = unsettled.unwrap_or_else(|| {
+        "what it had started may or may not be complete; check the state it changes (jackin ls lists the sandboxes)"
+            .to_owned()
+    });
     format!(
         "interrupted again; stopped without waiting for the command to finish, so its outcome is not confirmed\n{detail}"
     )

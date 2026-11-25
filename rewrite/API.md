@@ -1882,11 +1882,12 @@ impl Session {
 
     pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError>;
     pub async fn open_shell(&self, request: ShellRequest, cancel: &CancellationToken) -> Result<TerminalSession, AttachError>;
+    pub async fn sandbox_agent_names(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<Vec<String>, AgentNamesError>;
     pub async fn restart_agent(&self, sandbox: &SandboxName, events: LaunchEvents, cancel: CancellationToken) -> Result<AttachTarget, RestartError>;
 
     pub async fn list(&self, cancel: &CancellationToken) -> Result<SandboxListing, LifecycleError>;
     pub async fn inspect(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<InspectView, LifecycleError>;
-    pub async fn power(&self, sandbox: &SandboxName, action: PowerAction) -> Result<SandboxSummary, LifecycleError>;
+    pub async fn power(&self, sandbox: &SandboxName, action: PowerAction, cancel: &CancellationToken) -> Result<SandboxSummary, LifecycleError>;
 
     pub async fn work_state(&self, config: &Config, sandbox: &SandboxName, cancel: &CancellationToken) -> WorkState;
     pub async fn export(&self, config: &Config, sandbox: &SandboxName, cancel: CancellationToken) -> Result<ExportReport, ExportError>;
@@ -2268,6 +2269,7 @@ pub struct ExportReport {
     pub detached: Option<ExportedDetached>,
     pub worktrees: Vec<ExportedWorktree>,
 }
+pub enum AgentNamesError { Gateway(GatewayError), NotManaged(SandboxName) }   // `IntegrateError` gains `NotManaged(SandboxName)` and converts from it
 pub enum UnknownReason { NotRunning(Phase), WorkspaceUnknown(WorkspaceName), NoRepository, InspectionFailed, Cancelled }
 pub struct Unexported {
     pub uncommitted: usize,
@@ -2285,6 +2287,7 @@ pub enum ExportError {
     Fs(FsError),
     Labels { sandbox: SandboxName, source: LabelError },
     NotFound(SandboxName),
+    NotManaged(SandboxName),
     NotRunning { sandbox: SandboxName, phase: Phase },
     WorkspaceUnknown(WorkspaceName),
     Project(PathError),
@@ -2408,7 +2411,7 @@ pub enum Unread { TooLarge, NotRegular }        // an untracked file jackin did 
 pub enum ChangeStatus { Added, Modified, Deleted, Renamed { from: TerminalText } }
 pub struct ChangeHunk { pub old_start: usize, pub new_start: usize, pub lines: Vec<ChangeLine> }
 pub enum ChangeLine { Context(TerminalText), Added(TerminalText), Removed(TerminalText) }
-pub enum ChangesError { Gateway(GatewayError), NotFound(SandboxName), NotRunning { sandbox: SandboxName, phase: Phase },
+pub enum ChangesError { Gateway(GatewayError), NotFound(SandboxName), NotManaged(SandboxName), NotRunning { sandbox: SandboxName, phase: Phase },
                         NoRepository { sandbox: SandboxName }, Git { exit_code: i32, output: TerminalText },
                         Output { sandbox: SandboxName, what: &'static str } }
 impl Session { pub async fn changes(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<ChangeSet, ChangesError> }
@@ -4658,7 +4661,7 @@ This section records where task P5.2 differs from `rewrite/API.md` section 4 and
 - U11-8. A sandbox branch that `BranchName` rejects fails the export with `ExportError::UnusableBranch { branch: String }` before any sandbox or host write, and `work_state` lists it in `Unexported.unusable`, so it is never `Exported`. Branch lists are sorted ascending (`BTreeMap`).
 - U11-9. `GatewayError::Cancelled` and `ProcessError::Cancelled` map to `ExportError::Cancelled` through the two `From` impls (the `#[from]` on `Gateway` is gone). A token that is already cancelled gives `Cancelled` before any call.
 - U11-10. `work_state` classification: not `Ready` gives `NotRunning(phase)`; a labels error, an absent or unmanaged sandbox, a host project that cannot be opened, a host git failure and every other sandbox git or gateway failure give `InspectionFailed`; a sandbox with no repository (`git rev-parse --git-dir` exits 128 with "not a git repository", or prints a path other than `.git`) gives `NoRepository`; a workspace missing from the config gives `WorkspaceUnknown`. It never reads `RUN_STATE`.
-- U11-11. `purge` finds the sandbox once, computes the state from that view immediately before the delete, and takes `AlreadyGone` from the find (absent, unmanaged or `Deleting`). It never touches providers.
+- U11-11. `purge` finds the sandbox through `locate`, computes the state from that view immediately before the delete, and takes `AlreadyGone` from the find (absent or `Deleting`). A sandbox that is not jackin's is `NotManaged`, never `AlreadyGone`. It never touches providers.
 - U11-12. `power` refuses `Completed` and every `Error` (including `None`) with `MainProcessEnded` after the find and before `set_power`. The wait polls every 500 ms (`service::POLL`, now shared with the launch) until `limits.ready` and reports `PowerTimeout { after }` where `after` is the time waited. A phase that ends while waiting is `MainProcessEnded`.
 - U11-13. `list` uses `find_sandboxes(Labels(managed()))` and nothing else (O-F: `SandboxListing { sandboxes, unreadable }`).
 - U11-14. Fake `download_file`: the fault strike comes first, then the cancel check (`GatewayError::Cancelled { op: Download }`), then the sandbox lookup and phase check, then the file. A missing file under `/sandbox` gives `Transfer { op: Size, status: Exited(1) }`; a path outside `/sandbox` stays `Transfer { op: Download }`. The local file is removed on any error.
@@ -4676,7 +4679,7 @@ This section records where task P5.2 differs from `rewrite/API.md` section 4 and
 - New `ExportError` variants: `Process`, `Fs`, `Labels { sandbox, source }`, `HostOutput`, `RefCheckedOut { host_ref, worktree }`, `UnusableBranch { branch }`; `TipMismatch` holds `host_ref: String` instead of a `BranchName` (a detached tip has no branch name). `RefConflict` and `RefCheckedOut` are decided before any sandbox bundle exists, from the host ref list and `git worktree list --porcelain -z`.
 - `Session::list` returns `SandboxListing`; `Session::inspect` returns `InspectView` (`schema: 1`); `restart_agent` maps an absent or unmanaged sandbox to `RestartError::Gateway(NotFound)` and a sandbox that is not `Ready` to `Gateway(NotReady)`.
 - `attach` and `open_shell` check the phase themselves (ended gives `MainProcessEnded`, other not `Ready` gives `Gateway(NotReady)`), so the result does not depend on the gateway's own refusal.
-- O-E: a sandbox without `jackin.dev/managed=true` is not found for attach, shell, restart, stop, start, inspect, export and purge (`AlreadyGone`), and `work_state` gives `Unknown(InspectionFailed)`.
+- O-E: a sandbox without `jackin.dev/managed=true` is `NotManaged` (exit class `Refused`) for attach, shell, restart, stop, start, inspect, export, changes and purge; the instance read of `sandbox_agent_names` says `AgentNamesError::NotManaged`. `work_state` gives `Unknown(InspectionFailed)` for it, and `Unknown(Cancelled)` when the token is cancelled.
 - O-L: a `Deleting` sandbox is `AlreadyGone` for purge.
 - O-D waiver: the expected tips come from `git bundle list-heads`; `TipMismatch` stays as a guard without a test, as the plan accepts.
 - `HookFailure` replaces `LaunchError` as the error of `launch::hooks::run`, with `From` into `LaunchError` and `RestartError`; `launch::hooks` and `launch::probe` are `pub(crate)`.

@@ -288,6 +288,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         }
     };
     let (outcome, ()) = tokio::join!(session.launch(plan, events, cancel), show);
+    app.settled();
     match outcome {
         Err(failure) => Err(CommandError::Launch(failure)),
         Ok(LaunchOutcome::Cancelled(candidate)) => Err(cancelled(&candidate)),

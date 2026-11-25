@@ -440,7 +440,7 @@ impl Session {
         )?;
         require_ready::<AttachError>(view.phase, sandbox)?;
         let names = self
-            .sandbox_agent_names(sandbox, cancel)
+            .agent_names_of(sandbox, &view, cancel)
             .await
             .map_err(AttachError::Gateway)?;
         if let Some(agent) = request.agent {

@@ -246,7 +246,8 @@ impl FakeGateway {
     fn write_provider(
         &self,
         spec: &ProviderSpec,
-    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
+        only_if_absent: bool,
+    ) -> Result<Written, ProviderWriteError> {
         let mut registry = self.registry();
         if let Err(error) = registry.strike(GatewayOp::Provider) {
             let held = registry.providers.contains_key(&spec.name);
@@ -259,6 +260,9 @@ impl FakeGateway {
                 },
                 ProviderWriteEffect::NoWrite,
             ));
+        }
+        if only_if_absent && registry.providers.contains_key(&spec.name) {
+            return Ok(Written::Peer);
         }
         let record = match &spec.material {
             ProviderMaterial::OAuth2RefreshToken {
@@ -301,7 +305,7 @@ impl FakeGateway {
         if let Some(error) = registry.put_outcome_unknown.take() {
             return Err(ProviderWriteError::new(error, ProviderWriteEffect::Unknown));
         }
-        Ok(effect)
+        Ok(Written::Effect(effect))
     }
 
     pub fn release(&self, trigger: &Trigger) -> bool {
@@ -744,7 +748,10 @@ impl Gateway for FakeGateway {
             let held = self.registry().providers.contains_key(&spec.name);
             return Err(failed_write(held, error));
         }
-        self.write_provider(spec)
+        match self.write_provider(spec, false)? {
+            Written::Effect(effect) => Ok(effect),
+            Written::Peer => Ok(ProviderWriteEffect::NoWrite),
+        }
     }
 
     async fn create_provider_if_absent(
@@ -756,10 +763,10 @@ impl Gateway for FakeGateway {
             let held = self.registry().providers.contains_key(&spec.name);
             return Err(failed_write(held, error));
         }
-        if self.registry().providers.contains_key(&spec.name) {
-            return Ok(CreateOutcome::PeerExists);
-        }
-        self.write_provider(spec).map(|_| CreateOutcome::Created)
+        Ok(match self.write_provider(spec, true)? {
+            Written::Effect(_) => CreateOutcome::Created,
+            Written::Peer => CreateOutcome::PeerExists,
+        })
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
@@ -1159,6 +1166,11 @@ fn already_running() -> GatewayError {
     GatewayError::FailedPrecondition {
         message: "start sandbox failed: VM sandbox is already running generation".to_owned(),
     }
+}
+
+enum Written {
+    Effect(ProviderWriteEffect),
+    Peer,
 }
 
 fn failed_write(held: bool, error: GatewayError) -> ProviderWriteError {

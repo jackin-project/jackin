@@ -9,12 +9,12 @@ use jackin_core::{
     plain,
 };
 use jackin_openshell::{
-    GatewayError, GatewayOp, Missing, ProgramOutcome, ProgramRun, ProgramStdin,
+    GatewayError, GatewayOp, Missing, ProgramOutcome, ProgramRun, ProgramStdin, SandboxView,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::service::{Located, Session};
+use crate::service::{Session, read_until_cancelled};
 
 const KILL_POLL: Duration = Duration::from_millis(100);
 const KILL_EXIT: Duration = Duration::from_secs(30);
@@ -110,13 +110,32 @@ exit 8
 "#;
 
 #[derive(Debug, Error)]
+pub enum AgentNamesError {
+    #[error(transparent)]
+    Gateway(#[from] GatewayError),
+    #[error("sandbox {0} exists but is not a jackin sandbox")]
+    NotManaged(SandboxName),
+}
+
+#[derive(Debug, Error)]
 pub enum IntegrateError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
+    #[error("sandbox {0} exists but is not a jackin sandbox")]
+    NotManaged(SandboxName),
     #[error("merge of branch {} stopped with a conflict", plain(.branch))]
     Conflict { branch: String },
     #[error("agent {} is not in this sandbox", plain(.agent))]
     UnknownAgent { agent: String },
+}
+
+impl From<AgentNamesError> for IntegrateError {
+    fn from(error: AgentNamesError) -> IntegrateError {
+        match error {
+            AgentNamesError::Gateway(error) => IntegrateError::Gateway(error),
+            AgentNamesError::NotManaged(sandbox) => IntegrateError::NotManaged(sandbox),
+        }
+    }
 }
 
 fn layout_worktree_lead(instances: &AgentInstances) -> Option<Agent> {
@@ -342,28 +361,21 @@ impl Session {
         }
     }
 
-    pub(crate) async fn sandbox_instances(
+    pub(crate) async fn instances_of(
         &self,
         sandbox: &SandboxName,
+        view: &SandboxView,
         cancel: &CancellationToken,
     ) -> Result<AgentInstances, GatewayError> {
-        let view = match self.locate(sandbox, cancel).await? {
-            Located::Found(view) => *view,
-            Located::Absent => {
-                return Err(GatewayError::NotFound {
-                    what: Missing::Sandbox(sandbox.clone()),
-                });
-            }
-            Located::Unmanaged => {
-                return Err(GatewayError::FailedPrecondition {
-                    message: crate::sandbox_unmanaged(sandbox),
-                });
-            }
-        };
         let labels =
             SandboxLabels::from_labels(&view.labels).map_err(|_| invalid_instance_identity())?;
         let path = SandboxPath::from_static("/sandbox/.jackin/agents.json");
-        let found = self.deps.gateway.read_files(sandbox, &[path]).await?;
+        let found = read_until_cancelled(
+            cancel,
+            GatewayOp::ReadFiles,
+            self.deps.gateway.read_files(sandbox, &[path]),
+        )
+        .await?;
         let bytes = found
             .into_iter()
             .next()
@@ -383,18 +395,35 @@ impl Session {
         Ok(instances)
     }
 
-    pub async fn sandbox_agent_names(
+    pub(crate) async fn agent_names_of(
         &self,
         sandbox: &SandboxName,
+        view: &SandboxView,
         cancel: &CancellationToken,
     ) -> Result<Vec<String>, GatewayError> {
         Ok(self
-            .sandbox_instances(sandbox, cancel)
+            .instances_of(sandbox, view, cancel)
             .await?
             .canonical()
             .into_iter()
             .map(|item| item.agent.as_str().to_owned())
             .collect())
+    }
+
+    pub async fn sandbox_agent_names(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<String>, AgentNamesError> {
+        let view = self.locate(sandbox, cancel).await?.require(
+            || {
+                AgentNamesError::Gateway(GatewayError::NotFound {
+                    what: Missing::Sandbox(sandbox.clone()),
+                })
+            },
+            || AgentNamesError::NotManaged(sandbox.clone()),
+        )?;
+        Ok(self.agent_names_of(sandbox, &view, cancel).await?)
     }
 
     pub(crate) async fn kill_instance(

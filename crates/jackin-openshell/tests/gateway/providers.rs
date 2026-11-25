@@ -934,3 +934,65 @@ async fn a_failed_create_if_absent_is_classified_like_a_failed_create() {
         assert_eq!(error.effect(), expected, "{code:?}: {error:?}");
     }
 }
+
+#[tokio::test]
+async fn a_failed_create_if_absent_never_prints_the_secrets_it_was_given() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    env.server.state().faults.insert(
+        "create_provider",
+        Fault::Status(
+            Code::Internal,
+            format!("create failed for {ACCESS} and {REFRESH}"),
+        ),
+    );
+    let error = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_no_secret(&error.to_string());
+    assert_no_secret(&format!("{error:?}"));
+
+    env.server.state().faults.insert(
+        "configure_provider_refresh",
+        Fault::Status(
+            Code::Internal,
+            format!("refresh failed for {ACCESS} and {REFRESH}"),
+        ),
+    );
+    env.server.state().providers.clear();
+    let after_create = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(after_create.effect(), ProviderWriteEffect::Created);
+    assert_no_secret(&after_create.to_string());
+    assert_no_secret(&format!("{after_create:?}"));
+    assert!(
+        env.server
+            .state()
+            .providers
+            .contains_key(&(WORKSPACE.to_owned(), PROVIDER.to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn create_if_absent_without_its_profile_or_with_an_unreadable_state_writes_nothing() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let missing_profile = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(missing_profile.effect(), ProviderWriteEffect::NoWrite);
+    assert!(env.server.state().providers.is_empty());
+
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    env.server.state().faults.insert(
+        "get_provider",
+        Fault::Status(Code::Unavailable, "state lookup failed".to_owned()),
+    );
+    let unreadable = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(unreadable.effect(), ProviderWriteEffect::NoWrite);
+    assert!(env.server.state().providers.is_empty());
+}

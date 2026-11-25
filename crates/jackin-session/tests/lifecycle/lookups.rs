@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use jackin_core::{Labels, Phase, SandboxName};
-use jackin_openshell::{GatewayOp, PowerAction};
-use jackin_session::LifecycleError;
+use jackin_openshell::{GatewayError, GatewayOp, PowerAction};
+use jackin_session::{AgentNamesError, LifecycleError};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard_within};
 use tokio_util::sync::CancellationToken;
 
@@ -92,6 +92,84 @@ async fn a_sandbox_jackin_does_not_manage_is_named_as_such_and_never_acted_on() 
         let absent = session.inspect(&missing, &token).await;
         assert!(
             matches!(&absent, Err(LifecycleError::NotFound(name)) if *name == missing),
+            "{absent:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn inspect_and_the_agent_names_end_with_cancelled_while_the_agent_record_is_read()
+-> TestResult {
+    guard_within(WITHIN, async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.sandbox_name(1)?;
+        let session = &rig.world.session;
+        let hold = Trigger::Op(GatewayOp::ReadFiles);
+
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let inspecting = session.inspect(&name, &token);
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+        };
+        let (inspected, ()) = tokio::join!(inspecting, driver);
+        assert!(
+            matches!(inspected, Err(LifecycleError::Cancelled)),
+            "{inspected:?}"
+        );
+        rig.gateway().release(&hold);
+
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let naming = session.sandbox_agent_names(&name, &token);
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+        };
+        let (named, ()) = tokio::join!(naming, driver);
+        assert!(
+            matches!(
+                named,
+                Err(AgentNamesError::Gateway(GatewayError::Cancelled { .. }))
+            ),
+            "{named:?}"
+        );
+        rig.gateway().release(&hold);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_agent_names_of_a_sandbox_jackin_does_not_manage_say_so() -> TestResult {
+    guard_within(WITHIN, async {
+        let rig = Rig::new().await?;
+        let ghost = SandboxName::parse("jackin-ghost-0000")?;
+        rig.gateway()
+            .insert_unmanaged(&ghost, Labels::from_pairs([])?, Phase::Ready)?;
+        let missing = SandboxName::parse("jackin-missing-0001")?;
+        let session = &rig.world.session;
+        let token = CancellationToken::new();
+
+        let refused = session.sandbox_agent_names(&ghost, &token).await;
+        assert!(
+            matches!(&refused, Err(AgentNamesError::NotManaged(name)) if *name == ghost),
+            "{refused:?}"
+        );
+        let absent = session.sandbox_agent_names(&missing, &token).await;
+        assert!(
+            matches!(
+                &absent,
+                Err(AgentNamesError::Gateway(GatewayError::NotFound { .. }))
+            ),
             "{absent:?}"
         );
         Ok(())

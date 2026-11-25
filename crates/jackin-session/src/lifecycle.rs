@@ -345,7 +345,10 @@ impl Session {
             }
         }
         if detail.view.phase == Phase::Ready {
-            let instances = self.sandbox_instances(sandbox, cancel).await?;
+            let instances = self
+                .instances_of(sandbox, &detail.view, cancel)
+                .await
+                .map_err(lifecycle_gateway)?;
             for instance in instances.canonical() {
                 let key = RuleKey::provider_rule(&ProviderName::for_account(
                     &instance.account,

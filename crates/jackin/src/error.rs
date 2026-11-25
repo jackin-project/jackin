@@ -176,6 +176,7 @@ impl CommandError {
             )
             | CommandError::Attach(AttachError::NotManaged(_))
             | CommandError::Restart(RestartError::NotManaged(_))
+            | CommandError::Integrate(IntegrateError::NotManaged(_))
             | CommandError::Lifecycle(LifecycleError::NotManaged(_))
             | CommandError::Export(ExportError::NotManaged(_)) => ExitClass::Refused,
             CommandError::Config(error) if error.cancelled() => ExitClass::Cancelled,

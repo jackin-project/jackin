@@ -6,12 +6,21 @@ use std::time::Duration;
 use jackin::ExitClass;
 use jackin_core::{AccountName, Agent};
 use jackin_openshell::GatewayOp;
-use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard_within, launch_id};
+use jackin_testkit::{Fault, Rig, RoleFixture, TestResult, Trigger, guard_within, launch_id};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Failure, Harness, ScriptedTerminal};
+use super::support::{Failure, Harness, ScriptedTerminal, Step};
 
 const WITHIN: Duration = Duration::from_secs(40);
+
+async fn with_env() -> Result<(Rig, Harness), Failure> {
+    let role = RoleFixture::new("sentinel").map(|role| role.env("TOKENISH", None, None))?;
+    let rig = Rig::builder().role(role).build().await?;
+    let mut harness = Harness::new(&rig.world);
+    harness.cwd = rig.repo.root().clone();
+    harness.write_config(&rig.config.render())?;
+    Ok((rig, harness))
+}
 
 async fn rigged() -> Result<(Rig, Harness), Failure> {
     let rig = Rig::new().await?;
@@ -64,7 +73,7 @@ async fn a_second_interrupt_reports_that_a_purge_in_flight_is_not_confirmed() ->
 #[tokio::test]
 async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandbox() -> TestResult {
     guard_within(WITHIN, async {
-        let (rig, harness) = rigged().await?;
+        let (rig, harness) = with_env().await?;
         let hold = Trigger::Op(GatewayOp::Create);
         rig.gateway().inject(Fault::HoldAt {
             trigger: hold.clone(),
@@ -72,7 +81,13 @@ async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandb
         let id = launch_id(1).to_string();
         let abandon = CancellationToken::new();
         let command = harness
-            .command(&["load", "--launch-id", &id])
+            .command(&[
+                "load",
+                "--launch-id",
+                &id,
+                "--env",
+                "TOKENISH=SECRET-xyz-never-printed",
+            ])
             .abandon(abandon.clone());
         let (ran, ()) = tokio::try_join!(command.run(), async {
             assert!(rig.gateway().until_held(&hold).await);
@@ -94,6 +109,38 @@ async fn a_second_interrupt_during_a_load_names_the_launch_and_the_planned_sandb
             "{}",
             ran.stderr
         );
+        assert!(!ran.stderr.contains("SECRET-xyz"), "{}", ran.stderr);
+        assert!(!ran.stdout.contains("SECRET-xyz"), "{}", ran.stdout);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_second_interrupt_while_attached_after_a_load_does_not_say_the_sandbox_may_not_exist()
+-> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, harness) = rigged().await?;
+        let id = launch_id(1).to_string();
+        let (terminal, raw) = ScriptedTerminal::new(vec![Step::Line(String::new())])?;
+        let abandon = CancellationToken::new();
+        let command = harness
+            .command(&["load", "--launch-id", &id])
+            .terminal(terminal)
+            .abandon(abandon.clone());
+        let (ran, ()) = tokio::try_join!(command.run(), async {
+            while !raw.raw() {
+                tokio::task::yield_now().await;
+            }
+            abandon.cancel();
+            Ok::<_, Failure>(())
+        })?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(!raw.raw());
+        assert!(ran.stderr.contains("interrupted again"), "{}", ran.stderr);
+        assert!(!ran.stderr.contains("may exist"), "{}", ran.stderr);
+        assert!(!ran.stderr.contains("--launch-id"), "{}", ran.stderr);
+        assert_eq!(rig.world.gateway.sandboxes().len(), 1);
         Ok(())
     })
     .await
