@@ -50,9 +50,12 @@ pub enum AccountError {
     Gateway(#[from] GatewayError),
     #[error(transparent)]
     ProviderWrite(#[from] ProviderWriteError),
-    #[error("the provider write for account {account} may have completed")]
+    #[error(
+        "the provider write for account {account} on gateway {gateway} may have completed; the provider may exist there, so check it before repeating the command"
+    )]
     ProviderWriteUncertain {
         account: AccountName,
+        gateway: GatewayName,
         #[source]
         source: Box<AccountError>,
     },
@@ -101,7 +104,17 @@ impl AccountError {
     pub fn write_effect(&self) -> ProviderWriteEffect {
         match self {
             AccountError::ProviderWrite(write) => write.effect(),
+            AccountError::ProviderWriteUncertain { .. } => ProviderWriteEffect::Unknown,
+            AccountError::RollbackFailed { original, .. } => original.write_effect(),
             _ => ProviderWriteEffect::NoWrite,
+        }
+    }
+
+    fn uncertain(self, account: &Account, gateway: &GatewayName) -> AccountError {
+        AccountError::ProviderWriteUncertain {
+            account: account.name().clone(),
+            gateway: gateway.clone(),
+            source: Box::new(self),
         }
     }
 
@@ -585,6 +598,13 @@ fn on_gateway(gateway: &GatewayName, error: AccountError) -> AccountEditError {
     }
 }
 
+fn wrote(synced: &Result<AccountSync, AccountError>) -> bool {
+    match synced {
+        Ok(_) => true,
+        Err(error) => error.write_effect() != ProviderWriteEffect::NoWrite,
+    }
+}
+
 fn owns_write(synced: &Result<AccountSync, AccountError>) -> bool {
     match synced {
         Ok(AccountSync::ProviderReady { write, .. }) => *write == ProviderWriteEffect::Created,
@@ -593,12 +613,23 @@ fn owns_write(synced: &Result<AccountSync, AccountError>) -> bool {
     }
 }
 
+fn record<'a>(
+    journal: &mut Vec<Undo<'a>>,
+    restore: Option<Undo<'a>>,
+    remove: Undo<'a>,
+    synced: &Result<AccountSync, AccountError>,
+) {
+    if wrote(synced) {
+        journal.extend(restore);
+    }
+    if owns_write(synced) {
+        journal.push(remove);
+    }
+}
+
 fn written(gateway: &GatewayName, account: &Account, error: AccountError) -> AccountEditError {
     if error.write_effect() == ProviderWriteEffect::Unknown {
-        AccountEditError::Account(AccountError::ProviderWriteUncertain {
-            account: account.name().clone(),
-            source: Box::new(error),
-        })
+        AccountEditError::Account(error.uncertain(account, gateway))
     } else {
         on_gateway(gateway, error)
     }
@@ -728,21 +759,14 @@ async fn publish<'a>(
         let agent = acting.unwrap_or_else(|| account_agent(&entry.account));
         let provider = ProviderName::for_account(entry.account.name(), agent);
         let Some(previous) = &entry.previous else {
-            let state = home
-                .deps
-                .gateway
-                .provider_state(&provider)
-                .await
-                .map_err(|error| on_gateway(home.gateway_name(), error.into()))?;
-            let held = state == ProviderState::Present;
             ConfigError::unless_cancelled(cancel)?;
-            if held {
-                journal.push(home.undo(Action::Restore, &entry.account, agent));
-            }
             let synced = home.sync_locked(&entry.account, agent, None, cancel).await;
-            if owns_write(&synced) {
-                journal.push(home.undo(Action::Remove, &entry.account, agent));
-            }
+            record(
+                journal,
+                None,
+                home.undo(Action::Remove, &entry.account, agent),
+                &synced,
+            );
             synced.map_err(|error| written(home.gateway_name(), &entry.account, error))?;
             continue;
         };
@@ -779,15 +803,16 @@ async fn publish<'a>(
             let held = state == ProviderState::Present;
             if held || index == 0 || held_previous {
                 ConfigError::unless_cancelled(cancel)?;
-                if held {
-                    journal.push(session.undo(Action::Restore, previous, previous_agent));
-                }
                 let synced = session
                     .sync_locked(&entry.account, agent, None, cancel)
                     .await;
-                if owns_write(&synced) {
-                    journal.push(session.undo(Action::Remove, &entry.account, agent));
-                }
+                record(
+                    journal,
+                    (held && previous.has_provider_for(agent))
+                        .then(|| session.undo(Action::Restore, previous, agent)),
+                    session.undo(Action::Remove, &entry.account, agent),
+                    &synced,
+                );
                 synced.map_err(|error| written(session.gateway_name(), &entry.account, error))?;
             }
             for candidate in &extra {
@@ -843,17 +868,21 @@ async fn refresh_held<'a>(
     }
     ConfigError::unless_cancelled(cancel)?;
     if account.has_provider_for(candidate) {
-        if previous.has_provider_for(candidate) {
-            journal.push(session.undo(Action::Restore, previous, candidate));
-        }
         let synced = session.sync_locked(account, candidate, None, cancel).await;
-        if owns_write(&synced) {
-            journal.push(session.undo(Action::Remove, account, candidate));
-        }
+        record(
+            journal,
+            previous
+                .has_provider_for(candidate)
+                .then(|| session.undo(Action::Restore, previous, candidate)),
+            session.undo(Action::Remove, account, candidate),
+            &synced,
+        );
         synced.map_err(|error| written(session.gateway_name(), account, error))?;
         return Ok(());
     }
-    journal.push(session.undo(Action::Restore, previous, candidate));
+    if previous.has_provider_for(candidate) {
+        journal.push(session.undo(Action::Restore, previous, candidate));
+    }
     session
         .deps
         .gateway
@@ -884,18 +913,6 @@ impl Session {
         self.sync_locked(account, agent, None, cancel).await
     }
 
-    async fn forget_locked(
-        &self,
-        account: &Account,
-        provider: &ProviderName,
-    ) -> Result<(), AccountError> {
-        if !account.has_provider() {
-            return Ok(());
-        }
-        self.deps.gateway.delete_provider(provider).await?;
-        Ok(())
-    }
-
     pub(crate) async fn sync_provider(
         &self,
         account: &Account,
@@ -924,18 +941,16 @@ impl Session {
         original: AccountError,
     ) -> AccountError {
         match original.write_effect() {
-            ProviderWriteEffect::Created => match self.forget_locked(account, provider).await {
+            ProviderWriteEffect::Created => match self.deps.gateway.delete_provider(provider).await
+            {
                 Ok(()) => original,
                 Err(rollback) => AccountError::RollbackFailed {
                     account: account.name().clone(),
                     original: Box::new(original),
-                    rollback: Box::new(rollback),
+                    rollback: Box::new(rollback.into()),
                 },
             },
-            ProviderWriteEffect::Unknown => AccountError::ProviderWriteUncertain {
-                account: account.name().clone(),
-                source: Box::new(original),
-            },
+            ProviderWriteEffect::Unknown => original.uncertain(account, self.gateway_name()),
             ProviderWriteEffect::NoWrite | ProviderWriteEffect::Existing => original,
         }
     }

@@ -342,11 +342,7 @@ impl Inner {
                     }
                 }
                 Err(error) => {
-                    let effect = if error.outcome_unknown() {
-                        ProviderWriteEffect::Unknown
-                    } else {
-                        ProviderWriteEffect::NoWrite
-                    };
+                    let effect = ProviderWriteEffect::after_failed_write(false, &error);
                     return Err(ProviderWriteError::new(error, effect));
                 }
             },

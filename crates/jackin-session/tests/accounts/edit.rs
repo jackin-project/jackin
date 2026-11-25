@@ -96,8 +96,8 @@ async fn a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config(
 
         world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Provider,
-            error: GatewayError::Protocol {
-                message: "down".to_owned(),
+            error: GatewayError::PermissionDenied {
+                what: "the provider".to_owned(),
             },
         });
         let other = Home::new(&login_json()).await?;

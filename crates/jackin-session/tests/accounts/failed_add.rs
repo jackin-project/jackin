@@ -28,6 +28,12 @@ fn reset() -> GatewayError {
     }
 }
 
+fn refused() -> GatewayError {
+    GatewayError::PermissionDenied {
+        what: "the provider".to_owned(),
+    }
+}
+
 async fn apply(world: &World, edit: ConfigEdit) -> Result<jackin_core::Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&world.desk(), vec![edit], &cancel).await?;
@@ -84,7 +90,7 @@ async fn an_add_whose_provider_write_fails_before_it_landed_leaves_nothing_and_r
         let (_home, account) = login_account().await?;
         world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Provider,
-            error: reset(),
+            error: refused(),
         });
 
         let failed = apply(&world, ConfigEdit::AddAccount(account)).await;
@@ -93,7 +99,7 @@ async fn an_add_whose_provider_write_fails_before_it_landed_leaves_nothing_and_r
             matches!(
                 &failed,
                 Err(AccountEditError::OnGateway {
-                    source: GatewayError::Unreachable { .. },
+                    source: GatewayError::PermissionDenied { .. },
                     ..
                 })
             ),

@@ -457,8 +457,34 @@ async fn put_provider_reports_what_it_wrote_and_the_injected_outcomes() -> TestR
             op: GatewayOp::Provider,
             error: unreachable(),
         });
-        let refused = fake
+        let held = fake
             .put_provider(&login("five")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(held.effect(), ProviderWriteEffect::Existing);
+
+        fake.delete_provider(&jackin_core::ProviderName::parse("jackin-work-codex")?)
+            .await?;
+        fake.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: unreachable(),
+        });
+        let lost = fake
+            .put_provider(&login("six")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(lost.effect(), ProviderWriteEffect::Unknown);
+
+        fake.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::PermissionDenied {
+                what: "the provider".to_owned(),
+            },
+        });
+        let refused = fake
+            .put_provider(&login("seven")?)
             .await
             .err()
             .ok_or("an injected failure reported success")?;

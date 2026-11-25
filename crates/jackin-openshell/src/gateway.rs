@@ -117,6 +117,19 @@ pub enum ProviderWriteEffect {
     Unknown,
 }
 
+impl ProviderWriteEffect {
+    #[must_use]
+    pub fn after_failed_write(provider_held: bool, error: &GatewayError) -> ProviderWriteEffect {
+        if provider_held {
+            ProviderWriteEffect::Existing
+        } else if error.outcome_unknown() {
+            ProviderWriteEffect::Unknown
+        } else {
+            ProviderWriteEffect::NoWrite
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ProviderWriteError {
     source: GatewayError,

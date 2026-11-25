@@ -678,17 +678,23 @@ impl Gateway for FakeGateway {
         &self,
         spec: &ProviderSpec,
     ) -> Result<ProviderWriteEffect, ProviderWriteError> {
-        let untouched = |error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite);
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Provider, None, None)
-            .await
-            .map_err(untouched)?;
+        if let Err(error) = self.pause(GatewayOp::Provider, None, None).await {
+            let held = self.registry().providers.contains_key(&spec.name);
+            return Err(failed_write(held, error));
+        }
         let mut registry = self.registry();
-        registry.strike(GatewayOp::Provider).map_err(untouched)?;
+        if let Err(error) = registry.strike(GatewayOp::Provider) {
+            let held = registry.providers.contains_key(&spec.name);
+            return Err(failed_write(held, error));
+        }
         if !registry.profiles.contains_key(&spec.profile) {
-            return Err(untouched(GatewayError::NotFound {
-                what: Missing::Profile(spec.profile.clone()),
-            }));
+            return Err(ProviderWriteError::new(
+                GatewayError::NotFound {
+                    what: Missing::Profile(spec.profile.clone()),
+                },
+                ProviderWriteEffect::NoWrite,
+            ));
         }
         let record = match &spec.material {
             ProviderMaterial::OAuth2RefreshToken {
@@ -1130,4 +1136,9 @@ fn already_running() -> GatewayError {
     GatewayError::FailedPrecondition {
         message: "start sandbox failed: VM sandbox is already running generation".to_owned(),
     }
+}
+
+fn failed_write(held: bool, error: GatewayError) -> ProviderWriteError {
+    let effect = ProviderWriteEffect::after_failed_write(held, &error);
+    ProviderWriteError::new(error, effect)
 }
