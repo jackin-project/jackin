@@ -1,0 +1,6 @@
+# deferred-sweep handoff
+Branch fix/deferred-review-followups, head 5558d84ed, PR #1322 (ready for review, not queued, not merged). Required CI + Sonar were green on earlier heads; merge state BLOCKED (needs a fresh G-FAST + threads).
+Done (red-then-green, in PR body): #1303 leaf 0o377 + foreign-owner lock + FIFO read + private lock parents, #1304 errors gate (fail-closed ::display) and screen gate (Buffer patterns, alias ban), #1306 Check tests, ledger 5/6 tests, #1300 pager refactor, P08 in-flight race test (World::hold_read/reads_of seam), #1311 review (CHANGES-REQUIRED, docs fixed), P06 exit-status test (Tap::fail_git_in_shell), P21 nit.
+Last full G-FAST EXIT=0 was on d7dfcc13c; head 5558d84ed only changes the two xtask gates (fail-closed redesign, tests pass targeted); two reruns were SIGTERMed by another session's pkill -f nextest (not a failure). Needs one more uninterrupted G-FAST.
+Open: Codex threads on this PR resolved up to the redesign; new ones may appear on 5558d84ed. Not done: append "1322 deferred-sweep" to scratchpad/merge-queue.txt (after G-FAST EXIT=0 and threads resolved).
+Linux-only O_PATH branches (fs.rs tighten_unreadable, open_readable) cannot run on macOS; CI rust job passed them earlier.
