@@ -493,7 +493,7 @@ async fn a_failing_git_in_the_over_limit_patch_count_fails_the_listing() -> Test
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
-        let agent = over_limit_patch(&handle).await?;
+        over_limit_patch(&handle).await?;
         let tap = Tap::new(&rig);
         let session = tap.session(&rig, jackin_testkit::default_limits());
         tap.fail_git_in_shell("diff-index --numstat", "/usr/bin/false");
