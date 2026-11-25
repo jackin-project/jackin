@@ -1448,7 +1448,7 @@ async fn a_removal_plan_cancelled_before_it_starts_connects_to_no_gateway() -> T
     .await
 }
 
-async fn removal_meddled_with_after_the_first_forget(
+async fn removal_meddled_with_during_the_first_forget(
     fleet: &Fleet,
     meddling: Vec<ConfigEdit>,
 ) -> Result<(AccountEditError, Config), Box<dyn std::error::Error>> {
@@ -1485,7 +1485,8 @@ async fn a_gateway_added_while_a_removal_forgets_the_providers_restores_them_and
         let fleet = fleet([true, true, true]).await?;
         let meddling = fleet.added("zulu").await?;
 
-        let (error, config) = removal_meddled_with_after_the_first_forget(&fleet, meddling).await?;
+        let (error, config) =
+            removal_meddled_with_during_the_first_forget(&fleet, meddling).await?;
 
         assert!(
             matches!(
@@ -1508,7 +1509,7 @@ async fn a_login_account_added_while_a_removal_forgets_the_providers_restores_th
         let fleet = fleet([true, true, true]).await?;
         let (_other, added) = other_login_account().await?;
 
-        let (error, config) = removal_meddled_with_after_the_first_forget(
+        let (error, config) = removal_meddled_with_during_the_first_forget(
             &fleet,
             vec![ConfigEdit::AddAccount(added)],
         )

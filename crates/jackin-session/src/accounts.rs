@@ -517,9 +517,13 @@ impl OfflinePlan {
 
 impl OfflineRemoval {
     pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, AccountEditError> {
-        let edit = ConfigEdit::RemoveGateway(self.name.clone());
-        self.locked
-            .commit(vec![edit], cancel, check_no_new_logins)
+        let OfflineRemoval { locked, name } = self;
+        locked
+            .commit(
+                vec![ConfigEdit::RemoveGateway(name)],
+                cancel,
+                check_no_new_logins,
+            )
             .await
     }
 }
