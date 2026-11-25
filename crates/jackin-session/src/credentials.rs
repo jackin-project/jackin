@@ -249,11 +249,48 @@ fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Se
     }
 }
 
-struct InterruptOnDrop(rusqlite::InterruptHandle);
+struct FinishedOnDrop(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for FinishedOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+struct InterruptOnDrop {
+    handle: std::sync::Arc<rusqlite::InterruptHandle>,
+    finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl InterruptOnDrop {
+    fn new(handle: rusqlite::InterruptHandle) -> InterruptOnDrop {
+        InterruptOnDrop {
+            handle: std::sync::Arc::new(handle),
+            finished: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    fn finished(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        std::sync::Arc::clone(&self.finished)
+    }
+}
 
 impl Drop for InterruptOnDrop {
     fn drop(&mut self) {
-        self.0.interrupt();
+        if self.finished.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        let handle = std::sync::Arc::clone(&self.handle);
+        let finished = std::sync::Arc::clone(&self.finished);
+        std::thread::spawn(move || {
+            for _ in 0..200 {
+                if finished.load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
+                handle.interrupt();
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        });
     }
 }
 
@@ -272,16 +309,20 @@ pub async fn read_omp_host_key(
     connection
         .execute_batch("PRAGMA temp_store = MEMORY;")
         .map_err(|_| unreadable())?;
-    let _interrupt = InterruptOnDrop(connection.get_interrupt_handle());
+    let interrupt = InterruptOnDrop::new(connection.get_interrupt_handle());
     let wanted = provider_id.to_owned();
+    let finished = interrupt.finished();
     let task = tokio::task::spawn_blocking(move || {
+        let done = FinishedOnDrop(finished);
         let mut connection = connection;
         let image = captured.image;
         let length = image.as_slice().len();
         connection
             .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
             .ok()?;
-        omp_key_of(&connection, &wanted)
+        let found = omp_key_of(&connection, &wanted);
+        drop(done);
+        found
     });
     match tokio::time::timeout(OMP_SQL_DEADLINE, task).await {
         Ok(Ok(Some(key))) => Ok(key),
