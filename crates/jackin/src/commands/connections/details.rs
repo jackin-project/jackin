@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::overview::context;
 use super::{database, failure, providers, selected};
 use crate::{app::App, cli::UsageFilter, error::CommandError};
 use jackin_usage::accounts::AccountRegistry;
-use jackin_usage::view::{Ctx, Report, ViewFilter, build, render::WIDE, report};
+use jackin_usage::view::{Report, ViewFilter, build, report};
 use serde_json::json;
 
 pub(super) fn show(
@@ -63,12 +64,8 @@ pub(super) fn show(
         if !matched && (provider.is_some() || filter.account.is_some()) {
             return Err(CommandError::Argument("no matching usage account".into()));
         }
-        let width = app
-            .terminal
-            .as_ref()
-            .map_or(WIDE, |terminal| terminal.size().cols.get().min(WIDE));
-        app.io
-            .lines(&report(&view, &Ctx::new(width), Report::Details))?;
+        let lines = report(&view, &context(app), Report::Details);
+        app.io.lines(&lines)?;
     } else if provider.is_some() || filter.account.is_some() {
         return Err(CommandError::Argument("no matching usage account".into()));
     }
