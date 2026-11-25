@@ -219,7 +219,7 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
 }
 
 fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Secret> {
-    let data: String = connection
+    let data: Zeroizing<String> = connection
         .query_row(
             "SELECT data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
             [provider_id],
@@ -228,7 +228,7 @@ fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Se
                 if text.len() > jackin_core::STORE_VALUE_MAX_BYTES {
                     return Err(rusqlite::Error::InvalidQuery);
                 }
-                Ok(text.to_owned())
+                Ok(Zeroizing::new(text.to_owned()))
             },
         )
         .ok()?;
@@ -254,27 +254,27 @@ pub async fn read_omp_host_key(
         .map_err(|_| unreadable())?;
     let connection = rusqlite::Connection::open_in_memory().map_err(|_| unreadable())?;
     connection
-        .execute_batch("PRAGMA temp_store = MEMORY;")
+        .execute_batch("PRAGMA temp_store = MEMORY; PRAGMA trusted_schema = OFF;")
         .map_err(|_| unreadable())?;
-    let handle = connection.get_interrupt_handle();
+    connection
+        .set_limit(
+            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+            jackin_core::STORE_LENGTH_LIMIT,
+        )
+        .map_err(|_| unreadable())?;
     let wanted = provider_id.to_owned();
-    let found = jackin_core::run_interruptible(
-        move || handle.interrupt(),
-        move || {
-            let mut connection = connection;
-            let image = captured.image;
-            let length = image.as_slice().len();
-            connection
-                .deserialize_read_exact(
-                    "main",
-                    std::io::Cursor::new(image.as_slice()),
-                    length,
-                    true,
-                )
-                .ok()?;
-            omp_key_of(&connection, &wanted)
-        },
-    )
+    let found = jackin_core::run_bounded(jackin_core::STORE_QUERY_DEADLINE, move |mut budget| {
+        let mut connection = connection;
+        connection
+            .progress_handler(jackin_core::STORE_QUERY_STEP, Some(move || budget.spent()))
+            .ok()?;
+        let image = captured.image;
+        let length = image.as_slice().len();
+        connection
+            .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
+            .ok()?;
+        omp_key_of(&connection, &wanted)
+    })
     .await;
     found.ok().flatten().ok_or_else(unreadable)
 }

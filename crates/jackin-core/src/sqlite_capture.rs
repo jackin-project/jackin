@@ -1,20 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zeroize::Zeroizing;
 
 use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError, RegularFileProblem};
-use crate::ids::Sha256;
 use crate::paths::{HostPath, RepoPath};
 
 pub const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
 
 const ATTEMPTS: usize = 3;
+const CAPTURE_SLOTS: usize = 2;
 const WAL_HEADER: usize = 32;
 const WAL_FRAME_HEADER: usize = 24;
 const WAL_MAGIC: u32 = 0x377f_0682;
@@ -39,6 +40,10 @@ pub const OMP_CAPTURE_LIMITS: CaptureLimits = CaptureLimits {
 };
 pub const STORE_VALUE_MAX_BYTES: usize = 64 * 1024;
 pub const STORE_QUERY_DEADLINE: Duration = Duration::from_secs(5);
+pub const STORE_QUERY_STEP: i32 = 1000;
+const STORE_QUERY_GRACE: Duration = Duration::from_secs(1);
+pub const STORE_QUERY_MAX_STEPS: usize = 200_000;
+pub const STORE_LENGTH_LIMIT: i32 = 128 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CaptureProblem {
@@ -55,17 +60,20 @@ pub enum CaptureProblem {
     TimedOut,
 }
 
-pub struct StoreImage(Zeroizing<Vec<u8>>);
+pub struct StoreImage {
+    bytes: Zeroizing<Vec<u8>>,
+    _slot: OwnedSemaphorePermit,
+}
 
 impl std::fmt::Debug for StoreImage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "StoreImage({} bytes)", self.0.len())
+        write!(f, "StoreImage({} bytes)", self.bytes.len())
     }
 }
 
 impl StoreImage {
     pub fn as_slice(&self) -> &[u8] {
-        &self.0
+        &self.bytes
     }
 }
 
@@ -78,6 +86,11 @@ pub struct Capture {
 enum Read {
     Bytes(Zeroizing<Vec<u8>>),
     Absent,
+}
+
+fn capture_slots() -> &'static Arc<Semaphore> {
+    static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SLOTS.get_or_init(|| Arc::new(Semaphore::new(CAPTURE_SLOTS)))
 }
 
 async fn read_file(
@@ -117,15 +130,46 @@ pub async fn capture(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
-    tokio::time::timeout(limits.deadline, capture_pinned(fs, database, limits))
+    let within = async {
+        let slot = Arc::clone(capture_slots())
+            .acquire_owned()
+            .await
+            .map_err(|_| CaptureProblem::Unreadable)?;
+        capture_pinned(fs, database, limits, slot).await
+    };
+    tokio::time::timeout(limits.deadline, within)
         .await
         .map_err(|_| CaptureProblem::TimedOut)?
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Fence {
+    dir: FileIdentity,
+    database: FileIdentity,
+    log: Option<FileIdentity>,
+}
+
+async fn fence_of(
+    fs: &dyn FileSystem,
+    dir: &HostPath,
+    database: &HostPath,
+    log: &HostPath,
+) -> Result<Fence, CaptureProblem> {
+    Ok(Fence {
+        dir: identity_of(fs, dir).await?,
+        database: identity_of(fs, database).await?,
+        log: fs
+            .identity(log)
+            .await
+            .map_err(|_| CaptureProblem::Unreadable)?,
+    })
 }
 
 async fn capture_pinned(
     fs: &dyn FileSystem,
     database: &HostPath,
     limits: CaptureLimits,
+    slot: OwnedSemaphorePermit,
 ) -> Result<Capture, CaptureProblem> {
     match fs.stat(database).await {
         Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
@@ -145,6 +189,7 @@ async fn capture_pinned(
         .ok_or(CaptureProblem::Missing)?;
     let target = dir.join_name(name);
     let log_name = format!("{name}-wal");
+    let log_target = dir.join_name(&log_name);
     let journal_name = format!("{name}-journal");
     let probe = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
     match fs.read_regular(&dir, &probe, SQLITE_MAGIC.len()).await {
@@ -155,58 +200,17 @@ async fn capture_pinned(
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
     for _ in 0..ATTEMPTS {
-        let before = identity_of(fs, &target).await?;
-        let Read::Bytes(first) = read_file(
-            fs,
-            &dir,
-            name,
-            limits.database_bytes,
-            CaptureProblem::DatabaseTooLarge,
-            CaptureProblem::NotARegularFile,
-        )
-        .await?
-        else {
-            return Err(CaptureProblem::Missing);
+        let before = fence_of(fs, &dir, &target, &log_target).await?;
+        let Some((first, log)) = read_pair(fs, &dir, name, &log_name, limits).await? else {
+            continue;
         };
-        let (first, digest) = offload(move || {
-            let digest = Sha256::of(&first);
-            (first, digest)
-        })
-        .await?;
         if !first.starts_with(SQLITE_MAGIC) {
             return Err(CaptureProblem::NotSqlite);
         }
-        let log = match read_file(
-            fs,
-            &dir,
-            &log_name,
-            limits.log_bytes,
-            CaptureProblem::LogTooLarge,
-            CaptureProblem::LogUnreadable,
-        )
-        .await?
-        {
-            Read::Bytes(bytes) => Some(bytes),
-            Read::Absent => None,
-        };
-        let Read::Bytes(again) = read_file(
-            fs,
-            &dir,
-            name,
-            limits.database_bytes,
-            CaptureProblem::DatabaseTooLarge,
-            CaptureProblem::NotARegularFile,
-        )
-        .await?
-        else {
-            continue;
-        };
         if journal_is_hot(fs, &dir, &journal_name).await? {
             continue;
         }
-        let after = identity_of(fs, &target).await?;
-        let same = offload(move || Sha256::of(&again) == digest).await?;
-        if before != after || !same {
+        if before != fence_of(fs, &dir, &target, &log_target).await? {
             continue;
         }
         let image_bytes = limits.image_bytes;
@@ -214,11 +218,95 @@ async fn capture_pinned(
             offload(move || store_image(first, log.as_deref().map(Vec::as_slice), image_bytes))
                 .await??;
         return Ok(Capture {
-            image: StoreImage(image),
-            identity: before,
+            image: StoreImage {
+                bytes: image,
+                _slot: slot,
+            },
+            identity: before.database,
         });
     }
     Err(CaptureProblem::Changed)
+}
+
+type Pair = (Zeroizing<Vec<u8>>, Option<Zeroizing<Vec<u8>>>);
+
+async fn read_database(
+    fs: &dyn FileSystem,
+    dir: &HostPath,
+    name: &str,
+    limits: CaptureLimits,
+) -> Result<Read, CaptureProblem> {
+    read_file(
+        fs,
+        dir,
+        name,
+        limits.database_bytes,
+        CaptureProblem::DatabaseTooLarge,
+        CaptureProblem::NotARegularFile,
+    )
+    .await
+}
+
+async fn read_log(
+    fs: &dyn FileSystem,
+    dir: &HostPath,
+    name: &str,
+    limits: CaptureLimits,
+) -> Result<Read, CaptureProblem> {
+    read_file(
+        fs,
+        dir,
+        name,
+        limits.log_bytes,
+        CaptureProblem::LogTooLarge,
+        CaptureProblem::LogUnreadable,
+    )
+    .await
+}
+
+fn same_bytes(one: &Read, two: &Read) -> bool {
+    match (one, two) {
+        (Read::Bytes(one), Read::Bytes(two)) => one.as_slice() == two.as_slice(),
+        (Read::Absent, Read::Absent) => true,
+        _ => false,
+    }
+}
+
+async fn read_pair(
+    fs: &dyn FileSystem,
+    dir: &HostPath,
+    name: &str,
+    log_name: &str,
+    limits: CaptureLimits,
+) -> Result<Option<Pair>, CaptureProblem> {
+    let first = read_database(fs, dir, name, limits).await?;
+    if matches!(first, Read::Absent) {
+        return Err(CaptureProblem::Missing);
+    }
+    let log_first = read_log(fs, dir, log_name, limits).await?;
+    let again = read_database(fs, dir, name, limits).await?;
+    let (first, same) = offload(move || {
+        let same = same_bytes(&first, &again);
+        (first, same)
+    })
+    .await?;
+    if !same {
+        return Ok(None);
+    }
+    let log_again = read_log(fs, dir, log_name, limits).await?;
+    let (log_first, same) = offload(move || {
+        let same = same_bytes(&log_first, &log_again);
+        (log_first, same)
+    })
+    .await?;
+    let (Read::Bytes(first), true) = (first, same) else {
+        return Ok(None);
+    };
+    let log = match log_first {
+        Read::Bytes(bytes) => Some(bytes),
+        Read::Absent => None,
+    };
+    Ok(Some((first, log)))
 }
 
 async fn journal_is_hot(
@@ -422,64 +510,43 @@ fn apply_log(
     Ok(())
 }
 
-struct Finished(Arc<AtomicBool>);
+#[derive(Debug)]
+pub struct QueryBudget {
+    deadline: Instant,
+    stopped: Arc<AtomicBool>,
+    steps: usize,
+}
 
-impl Drop for Finished {
+impl QueryBudget {
+    pub fn spent(&mut self) -> bool {
+        self.steps += 1;
+        self.steps > STORE_QUERY_MAX_STEPS
+            || self.stopped.load(Ordering::SeqCst)
+            || Instant::now() >= self.deadline
+    }
+}
+
+struct StopOnDrop(Arc<AtomicBool>);
+
+impl Drop for StopOnDrop {
     fn drop(&mut self) {
         self.0.store(true, Ordering::SeqCst);
     }
 }
 
-struct InterruptWatch {
-    interrupt: Arc<dyn Fn() + Send + Sync>,
-    finished: Arc<AtomicBool>,
-}
-
-impl InterruptWatch {
-    fn new(interrupt: impl Fn() + Send + Sync + 'static) -> InterruptWatch {
-        InterruptWatch {
-            interrupt: Arc::new(interrupt),
-            finished: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    fn finished(&self) -> Finished {
-        Finished(Arc::clone(&self.finished))
-    }
-}
-
-impl Drop for InterruptWatch {
-    fn drop(&mut self) {
-        if self.finished.load(Ordering::SeqCst) {
-            return;
-        }
-        let interrupt = Arc::clone(&self.interrupt);
-        let finished = Arc::clone(&self.finished);
-        std::thread::spawn(move || {
-            for _ in 0..200 {
-                if finished.load(Ordering::SeqCst) {
-                    return;
-                }
-                interrupt();
-                std::thread::park_timeout(Duration::from_millis(25));
-            }
-        });
-    }
-}
-
-pub async fn run_interruptible<T: Send + 'static>(
-    interrupt: impl Fn() + Send + Sync + 'static,
-    work: impl FnOnce() -> T + Send + 'static,
+pub async fn run_bounded<T: Send + 'static>(
+    deadline: Duration,
+    work: impl FnOnce(QueryBudget) -> T + Send + 'static,
 ) -> Result<T, CaptureProblem> {
-    let watch = InterruptWatch::new(interrupt);
-    let finished = watch.finished();
-    let task = tokio::task::spawn_blocking(move || {
-        let done = finished;
-        let output = work();
-        drop(done);
-        output
-    });
-    match tokio::time::timeout(STORE_QUERY_DEADLINE, task).await {
+    let stopped = Arc::new(AtomicBool::new(false));
+    let _stop = StopOnDrop(Arc::clone(&stopped));
+    let budget = QueryBudget {
+        deadline: Instant::now() + deadline,
+        stopped,
+        steps: 0,
+    };
+    let task = tokio::task::spawn_blocking(move || work(budget));
+    match tokio::time::timeout(deadline + STORE_QUERY_GRACE, task).await {
         Ok(Ok(output)) => Ok(output),
         Ok(Err(_)) => Err(CaptureProblem::Unreadable),
         Err(_) => Err(CaptureProblem::TimedOut),

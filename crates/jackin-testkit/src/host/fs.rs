@@ -50,6 +50,21 @@ struct FsState {
     calls: HashMap<FsOp, u32>,
     faults: Vec<FsFault>,
     stall: Option<(String, Arc<StallProbe>)>,
+    reads: HashMap<String, usize>,
+    hooks: Vec<ReadHook>,
+}
+
+type ReadAction = Arc<dyn Fn(&MemFs, usize) + Send + Sync>;
+
+struct ReadHook {
+    name: String,
+    action: ReadAction,
+}
+
+impl std::fmt::Debug for ReadHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ReadHook({})", self.name)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -165,6 +180,40 @@ impl MemFs {
         let probe = Arc::new(StallProbe::default());
         locked(&self.state).stall = Some((name.to_owned(), Arc::clone(&probe)));
         probe
+    }
+
+    pub fn after_read_of(
+        &self,
+        name: &str,
+        action: impl Fn(&MemFs, usize) + Send + Sync + 'static,
+    ) {
+        locked(&self.state).hooks.push(ReadHook {
+            name: name.to_owned(),
+            action: Arc::new(action),
+        });
+    }
+
+    pub fn overwrite(&self, path: &HostPath, bytes: Vec<u8>) {
+        if let Some(file) = locked(&self.state).files.get_mut(path.as_path()) {
+            file.bytes = bytes;
+        }
+    }
+
+    pub fn create(&self, path: &HostPath, bytes: Vec<u8>) {
+        locked(&self.state).files.insert(
+            path.as_path().to_path_buf(),
+            MemFile {
+                bytes,
+                mode: FileMode(0o600),
+            },
+        );
+    }
+
+    pub fn reissue_inode(&self, path: &HostPath) {
+        let mut state = locked(&self.state);
+        state.next_inode += 1;
+        let fresh = state.next_inode;
+        state.inodes.insert(path.as_path().to_path_buf(), fresh);
     }
 
     pub fn read_string(&self, path: &HostPath) -> Option<String> {
@@ -502,6 +551,34 @@ impl FileSystem for MemFs {
             let _abandoned = Abandoned(&probe);
             std::future::pending::<()>().await;
         }
+        let found = self.read_regular_now(root, file, max_bytes)?;
+        let (count, actions) = {
+            let mut state = locked(&self.state);
+            let count = state.reads.entry(file.as_str().to_owned()).or_insert(0);
+            *count += 1;
+            let count = *count;
+            let actions: Vec<ReadAction> = state
+                .hooks
+                .iter()
+                .filter(|hook| hook.name == file.as_str())
+                .map(|hook| Arc::clone(&hook.action))
+                .collect();
+            (count, actions)
+        };
+        for action in actions {
+            action(self, count);
+        }
+        Ok(found)
+    }
+}
+
+impl MemFs {
+    fn read_regular_now(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let state = self.enter(FsOp::Read)?;
         let mut current = root.as_path().to_path_buf();
         let mut names = file.as_str().split('/').peekable();

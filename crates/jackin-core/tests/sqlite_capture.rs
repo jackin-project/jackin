@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use jackin_core::{
-    CaptureLimits, CaptureProblem, FileMode, FileSystem, HostPath, SQLITE_MAGIC, StdFileSystem,
-    capture,
+    CaptureLimits, CaptureProblem, FileMode, FileSystem, HostPath, SQLITE_MAGIC,
+    STORE_QUERY_MAX_STEPS, StdFileSystem, capture, run_bounded,
 };
 use jackin_testkit::MemFs;
 
@@ -175,39 +177,78 @@ fn page_database(pages: usize) -> Vec<u8> {
     bytes
 }
 
-fn checksum(data: &[u8], mut one: u32, mut two: u32) -> (u32, u32) {
-    for pair in data.chunks_exact(8) {
-        let first = u32::from_be_bytes([pair[0], pair[1], pair[2], pair[3]]);
-        let second = u32::from_be_bytes([pair[4], pair[5], pair[6], pair[7]]);
-        one = one.wrapping_add(first).wrapping_add(two);
-        two = two.wrapping_add(second).wrapping_add(one);
+fn word(bytes: &[u8], big_endian: bool) -> u32 {
+    let array = [bytes[0], bytes[1], bytes[2], bytes[3]];
+    if big_endian {
+        u32::from_be_bytes(array)
+    } else {
+        u32::from_le_bytes(array)
+    }
+}
+
+fn checksum(data: &[u8], mut one: u32, mut two: u32, big_endian: bool) -> (u32, u32) {
+    let (pairs, _) = data.as_chunks::<8>();
+    for pair in pairs {
+        one = one
+            .wrapping_add(word(&pair[0..4], big_endian))
+            .wrapping_add(two);
+        two = two
+            .wrapping_add(word(&pair[4..8], big_endian))
+            .wrapping_add(one);
     }
     (one, two)
 }
 
-fn log(frames: &[(u32, u32, Vec<u8>)]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(&0x377f_0683_u32.to_be_bytes());
-    out.extend_from_slice(&3_007_000_u32.to_be_bytes());
-    out.extend_from_slice(&512_u32.to_be_bytes());
-    out.extend_from_slice(&0_u32.to_be_bytes());
-    out.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
-    let (mut one, mut two) = checksum(&out, 0, 0);
-    out.extend_from_slice(&one.to_be_bytes());
-    out.extend_from_slice(&two.to_be_bytes());
-    for (page, commit, data) in frames {
-        let mut header = Vec::new();
-        header.extend_from_slice(&page.to_be_bytes());
-        header.extend_from_slice(&commit.to_be_bytes());
-        header.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        (one, two) = checksum(&header[0..8], one, two);
-        (one, two) = checksum(data, one, two);
-        header.extend_from_slice(&one.to_be_bytes());
-        header.extend_from_slice(&two.to_be_bytes());
-        out.extend_from_slice(&header);
-        out.extend_from_slice(data);
+struct Wal {
+    big_endian: bool,
+    page_size: u32,
+    salt: [u8; 8],
+    frame_salt: [u8; 8],
+}
+
+impl Wal {
+    fn standard() -> Wal {
+        Wal {
+            big_endian: true,
+            page_size: 512,
+            salt: [1, 2, 3, 4, 5, 6, 7, 8],
+            frame_salt: [1, 2, 3, 4, 5, 6, 7, 8],
+        }
     }
-    out
+
+    fn build(&self, frames: &[(u32, u32, Vec<u8>)]) -> Vec<u8> {
+        let magic: u32 = if self.big_endian {
+            0x377f_0683
+        } else {
+            0x377f_0682
+        };
+        let mut out = Vec::new();
+        out.extend_from_slice(&magic.to_be_bytes());
+        out.extend_from_slice(&3_007_000_u32.to_be_bytes());
+        out.extend_from_slice(&self.page_size.to_be_bytes());
+        out.extend_from_slice(&0_u32.to_be_bytes());
+        out.extend_from_slice(&self.salt);
+        let (mut one, mut two) = checksum(&out, 0, 0, self.big_endian);
+        out.extend_from_slice(&one.to_be_bytes());
+        out.extend_from_slice(&two.to_be_bytes());
+        for (page, commit, data) in frames {
+            let mut header = Vec::new();
+            header.extend_from_slice(&page.to_be_bytes());
+            header.extend_from_slice(&commit.to_be_bytes());
+            header.extend_from_slice(&self.frame_salt);
+            (one, two) = checksum(&header[0..8], one, two, self.big_endian);
+            (one, two) = checksum(data, one, two, self.big_endian);
+            header.extend_from_slice(&one.to_be_bytes());
+            header.extend_from_slice(&two.to_be_bytes());
+            out.extend_from_slice(&header);
+            out.extend_from_slice(data);
+        }
+        out
+    }
+}
+
+fn log(frames: &[(u32, u32, Vec<u8>)]) -> Vec<u8> {
+    Wal::standard().build(frames)
 }
 
 fn marked_page(marker: u8) -> Vec<u8> {
@@ -412,5 +453,293 @@ async fn a_capture_that_the_caller_drops_leaves_no_read_behind() -> TestResult {
     assert!(waited.is_err(), "the stalled capture finished");
     assert_eq!(probe.entered(), 1);
     assert_eq!(probe.abandoned(), 1);
+    Ok(())
+}
+
+async fn image_of(files: &[(&str, Vec<u8>)]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let fs = fixture(files).await?;
+    let captured = capture(&fs, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    Ok(captured.image.as_slice().to_vec())
+}
+
+#[tokio::test]
+async fn a_little_endian_log_is_applied_like_a_big_endian_one() -> TestResult {
+    let wal = Wal {
+        big_endian: false,
+        ..Wal::standard()
+    }
+    .build(&[(1, 1, marked_page(9))]);
+    let image = image_of(&[("agent.db", page_database(1)), ("agent.db-wal", wal)]).await?;
+    assert_eq!(image[100], 9);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_log_that_cannot_belong_to_the_database_is_unreadable() -> TestResult {
+    let mut bad_header = log(&[(1, 1, marked_page(9))]);
+    bad_header[28] ^= 0xff;
+    let other_pages = Wal {
+        page_size: 1024,
+        ..Wal::standard()
+    }
+    .build(&[(1, 1, vec![0; 1024])]);
+    let mut odd_database = page_database(1);
+    odd_database.extend_from_slice(&[0; 188]);
+    for (name, database, wal) in [
+        ("header checksum", page_database(1), bad_header),
+        ("page size", page_database(1), other_pages),
+        (
+            "database length",
+            odd_database,
+            log(&[(1, 1, marked_page(9))]),
+        ),
+    ] {
+        assert_eq!(
+            problem(&[("agent.db", database), ("agent.db-wal", wal)]).await?,
+            CaptureProblem::LogUnreadable,
+            "{name}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn frames_that_do_not_validate_are_not_applied() -> TestResult {
+    let mut bad_frame = log(&[(1, 1, marked_page(9))]);
+    let last = bad_frame.len() - 1;
+    bad_frame[last] ^= 0xff;
+    let other_salt = Wal {
+        frame_salt: [9; 8],
+        ..Wal::standard()
+    }
+    .build(&[(1, 1, marked_page(9))]);
+    let mut truncated = log(&[(1, 1, marked_page(9)), (2, 2, vec![7; 512])]);
+    truncated.truncate(truncated.len() - 100);
+    for (name, wal, marker) in [
+        ("frame checksum", bad_frame, 0),
+        ("frame salt", other_salt, 0),
+        ("truncated frame", truncated, 9),
+    ] {
+        let image = image_of(&[("agent.db", page_database(1)), ("agent.db-wal", wal)]).await?;
+        assert_eq!(image[100], marker, "{name}");
+        assert_eq!(image.len(), 512, "{name}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_device_in_place_of_the_database_is_refused() -> TestResult {
+    let fs = StdFileSystem::default();
+    let refused = capture(&fs, &HostPath::parse(Path::new("/dev/null"))?, REAL)
+        .await
+        .err();
+    assert_eq!(refused, Some(CaptureProblem::NotARegularFile));
+    Ok(())
+}
+
+async fn swapped_during(
+    name: &'static str,
+    swap: impl Fn(&MemFs, usize) + Send + Sync + 'static,
+    wal: Vec<u8>,
+) -> Result<Result<Vec<u8>, CaptureProblem>, Box<dyn std::error::Error>> {
+    let fs = fixture(&[("agent.db", page_database(1)), ("agent.db-wal", wal)]).await?;
+    fs.after_read_of(name, swap);
+    Ok(capture(&fs, &at("agent.db")?, LIMITS)
+        .await
+        .map(|captured| captured.image.as_slice().to_vec()))
+}
+
+#[tokio::test]
+async fn a_log_rewritten_between_its_two_reads_is_read_again_until_it_is_stable() -> TestResult {
+    let newer = log(&[(1, 1, marked_page(7))]);
+    let swapped = {
+        let newer = newer.clone();
+        move |fs: &MemFs, count: usize| {
+            if count == 1 {
+                fs.overwrite(&at("agent.db-wal").expect("a path"), newer.clone());
+            }
+        }
+    };
+    let image = swapped_during("agent.db-wal", swapped, log(&[(1, 1, marked_page(9))]))
+        .await?
+        .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(image[100], 7);
+    let always = move |fs: &MemFs, count: usize| {
+        let marker = u8::try_from(count).unwrap_or(0);
+        fs.overwrite(
+            &at("agent.db-wal").expect("a path"),
+            log(&[(1, 1, marked_page(marker))]),
+        );
+    };
+    let refused = swapped_during("agent.db-wal", always, log(&[(1, 1, marked_page(9))])).await?;
+    assert_eq!(refused, Err(CaptureProblem::Changed));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_log_that_appears_between_the_reads_is_read_again() -> TestResult {
+    let fs = fixture(&[("agent.db", page_database(1))]).await?;
+    let wal = log(&[(1, 1, marked_page(7))]);
+    fs.after_read_of("agent.db", move |fs: &MemFs, count: usize| {
+        if count == 3 {
+            fs.create(&at("agent.db-wal").expect("a path"), wal.clone());
+        }
+    });
+    let captured = capture(&fs, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(captured.image.as_slice()[100], 7);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_database_or_directory_replaced_during_the_capture_is_noticed() -> TestResult {
+    for (name, target) in [("agent.db", "agent.db"), ("agent.db", "")] {
+        let reissue = move |fs: &MemFs, count: usize| {
+            if count == 2 {
+                fs.reissue_inode(&at(target).expect("a path"));
+            }
+        };
+        let image = swapped_during(name, reissue, log(&[(1, 1, marked_page(9))]))
+            .await?
+            .map_err(|problem| format!("{problem:?}"))?;
+        assert_eq!(image[100], 9, "{target:?}");
+        let always = move |fs: &MemFs, _: usize| fs.reissue_inode(&at(target).expect("a path"));
+        let refused = swapped_during(name, always, log(&[(1, 1, marked_page(9))])).await?;
+        assert_eq!(refused, Err(CaptureProblem::Changed), "{target:?}");
+    }
+    Ok(())
+}
+
+async fn settled(flag: &AtomicBool) -> bool {
+    for _ in 0..500 {
+        if flag.load(Ordering::SeqCst) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    false
+}
+
+fn spinning(
+    started: &Arc<AtomicBool>,
+    exited: &Arc<AtomicBool>,
+) -> impl FnOnce(jackin_core::QueryBudget) + Send + 'static {
+    let (started, exited) = (Arc::clone(started), Arc::clone(exited));
+    move |mut budget| {
+        started.store(true, Ordering::SeqCst);
+        while !budget.spent() {
+            std::thread::park_timeout(Duration::from_millis(1));
+        }
+        exited.store(true, Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn a_bounded_query_that_the_caller_drops_stops_its_worker() -> TestResult {
+    let (started, exited) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let running = tokio::spawn(run_bounded(
+        Duration::from_secs(60),
+        spinning(&started, &exited),
+    ));
+    assert!(settled(&started).await, "the worker never started");
+    assert!(!exited.load(Ordering::SeqCst));
+    running.abort();
+    drop(running.await);
+    assert!(settled(&exited).await, "the worker outlived its caller");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_bounded_query_stops_itself_at_its_deadline() -> TestResult {
+    let (started, exited) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let outcome = run_bounded(Duration::from_millis(100), spinning(&started, &exited)).await;
+    assert_eq!(outcome, Ok(()));
+    assert!(exited.load(Ordering::SeqCst));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_worker_that_ignores_its_budget_is_given_up_on() -> TestResult {
+    let release = Arc::new(AtomicBool::new(false));
+    let exited = Arc::new(AtomicBool::new(false));
+    let worker = {
+        let (release, exited) = (Arc::clone(&release), Arc::clone(&exited));
+        move |_budget: jackin_core::QueryBudget| {
+            while !release.load(Ordering::SeqCst) {
+                std::thread::park_timeout(Duration::from_millis(1));
+            }
+            exited.store(true, Ordering::SeqCst);
+        }
+    };
+    let outcome = run_bounded(Duration::from_millis(100), worker).await;
+    assert_eq!(outcome, Err(CaptureProblem::TimedOut));
+    assert!(!exited.load(Ordering::SeqCst));
+    release.store(true, Ordering::SeqCst);
+    assert!(settled(&exited).await);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_bounded_query_has_a_fixed_budget_of_steps() -> TestResult {
+    let calls = run_bounded(Duration::from_secs(60), |mut budget| {
+        let mut calls = 0_usize;
+        while !budget.spent() {
+            calls += 1;
+        }
+        calls
+    })
+    .await
+    .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(calls, STORE_QUERY_MAX_STEPS);
+    Ok(())
+}
+
+#[tokio::test]
+async fn only_two_captures_run_at_once_and_a_dropped_one_frees_its_place() -> TestResult {
+    let stalled = Arc::new(fixture(&[("agent.db", database(512))]).await?);
+    let probe = stalled.stall_reads_of("agent.db");
+    let mut holders = Vec::new();
+    for _ in 0..2 {
+        let fs = Arc::clone(&stalled);
+        holders.push(tokio::spawn(async move {
+            capture(&*fs, &at("agent.db").expect("a path"), LIMITS)
+                .await
+                .map(|_| ())
+        }));
+    }
+    for _ in 0..500 {
+        if probe.entered() == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(probe.entered(), 2);
+    let waiting = CaptureLimits {
+        deadline: Duration::from_millis(200),
+        ..LIMITS
+    };
+    let free = fixture(&[("agent.db", database(512))]).await?;
+    assert_eq!(
+        capture(&free, &at("agent.db")?, waiting).await.err(),
+        Some(CaptureProblem::TimedOut)
+    );
+    for holder in &holders {
+        holder.abort();
+    }
+    for holder in holders {
+        drop(holder.await);
+    }
+    capture(&free, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
     Ok(())
 }

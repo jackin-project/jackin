@@ -6,9 +6,10 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, CaptureLimits, CaptureProblem, CredentialFileProblem, CredentialSource, FileIdentity,
-    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program, SQLITE_MAGIC,
+    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath,
+    SQLITE_MAGIC, STORE_LENGTH_LIMIT, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
     STORE_VALUE_MAX_BYTES, Secret, StoreImage, capture, lookup_tuple, read_credential_file,
-    run_interruptible,
+    run_bounded,
 };
 use jackin_usage_provider_core::Credential;
 use serde_json::Value;
@@ -382,20 +383,36 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
     .await?;
     let revision = opencode_revision(path.as_path(), identity, &found);
     Ok(Some(
-        Material::login(found.value).with_revision(Some(revision)),
+        Material::login(found.value.expose().to_owned()).with_revision(Some(revision)),
     ))
 }
 
 async fn links_to_sqlite(deps: &UsageDeps, path: &HostPath) -> bool {
-    match deps.fs.read_at(path, 0, SQLITE_MAGIC.len()).await {
-        Ok(head) => head == SQLITE_MAGIC,
-        Err(_) => false,
-    }
+    let Ok(Some(target)) = deps.fs.canonicalize(path).await else {
+        return false;
+    };
+    let (Some(dir), Some(name)) = (
+        target
+            .as_path()
+            .parent()
+            .and_then(|dir| HostPath::parse(dir).ok()),
+        target
+            .as_path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| RepoPath::parse(name).ok()),
+    ) else {
+        return false;
+    };
+    matches!(
+        deps.fs.read_regular(&dir, &name, SQLITE_MAGIC.len()).await,
+        Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC)
+    )
 }
 
 struct OpenCodeRecord {
     id: String,
-    value: String,
+    value: Secret,
     digest: String,
 }
 
@@ -420,7 +437,7 @@ fn extract_opencode_credential(
             .map_err(|_| unreadable())?;
         let value = row
             .get_ref(1)
-            .and_then(bounded_text)
+            .and_then(bounded_secret)
             .map_err(|_| unreadable())?;
         let updated: i64 = row
             .get(2)
@@ -428,7 +445,7 @@ fn extract_opencode_credential(
         let created: i64 = row
             .get(3)
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        let kind = serde_json::from_str::<Value>(&value)
+        let kind = serde_json::from_str::<Value>(value.expose())
             .map_err(|_| Unresolved::Unreadable("the OpenCode credential is not valid JSON"))?;
         if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
             continue;
@@ -448,14 +465,14 @@ fn extract_opencode_credential(
     };
     Ok(OpenCodeRecord {
         id: found.id,
-        digest: revision_of(found.value.as_bytes()),
+        digest: revision_of(found.value.expose().as_bytes()),
         value: found.value,
     })
 }
 
 struct OpenCodeCandidate {
     id: String,
-    value: String,
+    value: Secret,
     updated: i64,
     created: i64,
 }
@@ -523,17 +540,17 @@ fn read_omp_api_key(
     connection: &rusqlite::Connection,
     provider_id: &str,
 ) -> Result<Extracted, Unresolved> {
-    let (id, data): (i64, String) = connection
+    let (id, data): (i64, Secret) = connection
         .query_row(
             "SELECT id, data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
             [provider_id],
-            |row| Ok((row.get(0)?, bounded_text(row.get_ref(1)?)?)),
+            |row| Ok((row.get(0)?, bounded_secret(row.get_ref(1)?)?)),
         )
         .map_err(|error| match error {
             rusqlite::Error::QueryReturnedNoRows => Unresolved::Missing,
             _ => Unresolved::Unreadable("the OMP store could not be read"),
         })?;
-    let document: Value = serde_json::from_str(&data)
+    let document: Value = serde_json::from_str(data.expose())
         .map_err(|_| Unresolved::Unreadable("the OMP credential is not valid JSON"))?;
     let value = document
         .get("key")
@@ -543,7 +560,7 @@ fn read_omp_api_key(
     Ok(Extracted {
         id,
         key: Secret::new(value.to_owned()),
-        digest: revision_of(data.as_bytes()),
+        digest: revision_of(data.expose().as_bytes()),
     })
 }
 
@@ -553,6 +570,10 @@ fn bounded_text(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<String
         return Err(rusqlite::Error::InvalidQuery);
     }
     Ok(text.to_owned())
+}
+
+fn bounded_secret(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<Secret> {
+    bounded_text(value).map(Secret::new)
 }
 
 struct StoreWords {
@@ -579,24 +600,18 @@ where
     Work: FnOnce(&rusqlite::Connection) -> Result<T, Unresolved> + Send + 'static,
 {
     let connection = store_connection(words.opened)?;
-    let handle = connection.get_interrupt_handle();
     let (opened, read) = (words.opened, words.read);
-    let done = run_interruptible(
-        move || handle.interrupt(),
-        move || {
-            let mut connection = connection;
-            let length = image.as_slice().len();
-            connection
-                .deserialize_read_exact(
-                    "main",
-                    std::io::Cursor::new(image.as_slice()),
-                    length,
-                    true,
-                )
-                .map_err(|_| Unresolved::Unreadable(opened))?;
-            work(&connection)
-        },
-    )
+    let done = run_bounded(STORE_QUERY_DEADLINE, move |mut budget| {
+        let mut connection = connection;
+        connection
+            .progress_handler(STORE_QUERY_STEP, Some(move || budget.spent()))
+            .map_err(|_| Unresolved::Unreadable(opened))?;
+        let length = image.as_slice().len();
+        connection
+            .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
+            .map_err(|_| Unresolved::Unreadable(opened))?;
+        work(&connection)
+    })
     .await;
     done.unwrap_or(Err(Unresolved::Unreadable(read)))
 }
@@ -605,7 +620,13 @@ fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unreso
     let connection =
         rusqlite::Connection::open_in_memory().map_err(|_| Unresolved::Unreadable(opened))?;
     connection
-        .execute_batch("PRAGMA temp_store = MEMORY;")
+        .execute_batch("PRAGMA temp_store = MEMORY; PRAGMA trusted_schema = OFF;")
+        .map_err(|_| Unresolved::Unreadable(opened))?;
+    connection
+        .set_limit(
+            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+            STORE_LENGTH_LIMIT,
+        )
         .map_err(|_| Unresolved::Unreadable(opened))?;
     Ok(connection)
 }
@@ -803,7 +824,7 @@ mod tests {
             panic!("the credential");
         };
         assert_eq!(found.id, "cred_newer");
-        assert!(found.value.contains("newer"));
+        assert!(found.value.expose().contains("newer"));
         let Ok(connection) = super::store_connection("opened") else {
             panic!("a connection");
         };

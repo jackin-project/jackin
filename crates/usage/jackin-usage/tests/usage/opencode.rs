@@ -4,12 +4,12 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use jackin_core::{
     CredentialSource, DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
-    HostPath, LinkProblem, Provider, RegularFile, RegularFileProblem, RepoPath,
+    HostPath, LinkProblem, Provider, RegularFile, RegularFileProblem, RepoPath, SQLITE_MAGIC,
 };
 use jackin_testkit::{MemFs, Method, Route};
 use jackin_usage::{Refresh, UnavailableReason, WindowKind};
@@ -125,6 +125,7 @@ struct StoreFs {
     before: Vec<u8>,
     after: Vec<u8>,
     behaviour: StoreBehaviour,
+    full_reads: AtomicUsize,
 }
 
 impl StoreFs {
@@ -142,6 +143,7 @@ impl StoreFs {
             behaviour: StoreBehaviour::Replaced {
                 phase: AtomicU32::new(0),
             },
+            full_reads: AtomicUsize::new(0),
         }
     }
 
@@ -161,6 +163,7 @@ impl StoreFs {
                 checkpointed: AtomicBool::new(false),
                 log,
             },
+            full_reads: AtomicUsize::new(0),
         }
     }
 
@@ -296,11 +299,21 @@ impl FileSystem for StoreFs {
             || (matches!(self.behaviour, StoreBehaviour::Checkpointed { .. })
                 && Self::is_log(&path));
         if scripted {
-            return Ok(match self.read(&path).await? {
-                Some(bytes) => Ok(RegularFile {
-                    bytes,
-                    mode: FileMode(0o600),
-                }),
+            let probe = max_bytes <= SQLITE_MAGIC.len();
+            let bytes = if probe && self.is_store(&path) {
+                Some(self.image())
+            } else {
+                self.full_reads.fetch_add(1, Ordering::SeqCst);
+                self.read(&path).await?
+            };
+            return Ok(match bytes {
+                Some(mut bytes) => {
+                    bytes.truncate(max_bytes.saturating_add(1));
+                    Ok(RegularFile {
+                        bytes,
+                        mode: FileMode(0o600),
+                    })
+                }
                 None => Err(RegularFileProblem::Missing),
             });
         }
@@ -546,14 +559,19 @@ async fn a_store_that_is_checkpointed_while_it_is_read_is_read_again() -> TestRe
             .fs
             .write_new(&store_path, &before, FileMode(0o600))
             .await?;
-        let fs: Arc<dyn FileSystem> = Arc::new(StoreFs::replaced(
+        let replaced = Arc::new(StoreFs::replaced(
             Arc::<MemFs>::clone(&harness.fs),
             store_path.clone(),
             before,
             after,
         ));
+        let fs: Arc<dyn FileSystem> = Arc::<StoreFs>::clone(&replaced);
         let outcome = store_report(&harness, fs, &store_path).await?;
         assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        assert!(
+            replaced.full_reads.load(Ordering::SeqCst) >= 4,
+            "the replaced store was not read a second time"
+        );
         let mismatches = harness.server.mismatches();
         assert!(mismatches.is_empty(), "{mismatches:?}");
         Ok(())
@@ -928,6 +946,10 @@ async fn a_log_that_names_a_page_far_beyond_the_store_is_ignored_where_it_cannot
     .await
 }
 
+fn commit_at(index: usize, last: usize, commit: u32, was: u32) -> u32 {
+    if index == last { commit } else { was }
+}
+
 #[tokio::test]
 async fn a_log_that_commits_more_pages_than_the_image_cap_is_unreadable() -> TestResult {
     use crate::support::rewrite_pages;
@@ -940,7 +962,7 @@ async fn a_log_that_commits_more_pages_than_the_image_cap_is_unreadable() -> Tes
             std::fs::write(
                 &log,
                 rewrite_pages(&wal, 65_536, &|index, page, was| {
-                    (page, if index == last { commit } else { was })
+                    (page, commit_at(index, last, commit, was))
                 }),
             )?;
             let outcome = report_of_store(directory.path(), "SECRET_TOKEN_FROM_THE_LOG").await?;
@@ -1010,6 +1032,109 @@ async fn a_symlinked_store_is_refused() -> TestResult {
             },
         );
         let outcome = harness.report_cached(&account, directory.path()).await?;
+        assert!(
+            matches!(
+                unavailable(&outcome),
+                UnavailableReason::Provider(message)
+                    if message == "the OpenCode store could not be read"
+            ),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symlink_to_a_pipe_is_refused_without_blocking_the_console() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let fifo = directory.path().join("pipe");
+        let made = tokio::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .await?;
+        assert!(made.success(), "mkfifo failed");
+        let link = directory.path().join("opencode.db");
+        std::os::unix::fs::symlink(&fifo, &link)?;
+        let harness = UsageHarness::new().await?;
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: host_path_of(&link),
+            },
+        );
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            harness.report_cached(&account, directory.path()),
+        )
+        .await
+        .map_err(|_| "the pipe behind the link blocked the console")??;
+        assert!(
+            matches!(
+                unavailable(&outcome),
+                UnavailableReason::Provider(message)
+                    if message == "the credential file is not a regular file"
+            ),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+fn padded_credential(total: usize) -> String {
+    let base = credential("", EXPIRES, None).len();
+    credential(&"k".repeat(total - base), EXPIRES, None)
+}
+
+#[tokio::test]
+async fn a_credential_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unreadable()
+-> TestResult {
+    guard(async {
+        let cap = 64 * 1024;
+        let exact = tempfile::tempdir()?;
+        store(
+            exact.path(),
+            &[("cred_1", "opencode", 1, &padded_credential(cap))],
+        );
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header(
+                "authorization",
+                &format!(
+                    "Bearer {}",
+                    "k".repeat(cap - credential("", EXPIRES, None).len())
+                ),
+            ),
+        );
+        let exact_account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: host_path_of(&exact.path().join("opencode.db")),
+            },
+        );
+        let outcome = harness.report_cached(&exact_account, exact.path()).await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+
+        let over = tempfile::tempdir()?;
+        store(
+            over.path(),
+            &[("cred_1", "opencode", 1, &padded_credential(cap + 1))],
+        );
+        let over_account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: host_path_of(&over.path().join("opencode.db")),
+            },
+        );
+        let outcome = harness.report_cached(&over_account, over.path()).await?;
         assert!(
             matches!(
                 unavailable(&outcome),
