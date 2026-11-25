@@ -7,6 +7,7 @@ use jackin_console::backend::Effect;
 use jackin_console::world::World;
 use jackin_core::{Config, ConfigEdit, RoleName, RoleSource};
 use jackin_testkit::{ConsoleRig, Rig, RoleFixture, TestResult};
+use tokio_util::sync::CancellationToken;
 
 pub(crate) struct Lab {
     pub(crate) rig: Rig,
@@ -56,7 +57,11 @@ impl Lab {
     }
 
     pub(crate) async fn edit(&self, edits: Vec<ConfigEdit>) -> TestResult {
-        self.rig.world.config.edit(edits).await?;
+        self.rig
+            .world
+            .config
+            .edit(edits, &CancellationToken::new())
+            .await?;
         Ok(())
     }
 

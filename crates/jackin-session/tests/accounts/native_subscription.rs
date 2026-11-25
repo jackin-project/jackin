@@ -245,10 +245,13 @@ async fn invalid_native_source_change_preserves_present_provider_and_config() ->
         let changed = account("work", Provider::Kimi, credential)?;
         world
             .config
-            .edit(vec![ConfigEdit::SetAccountCredential {
-                account: native.name().clone(),
-                credential: changed.credential().clone(),
-            }])
+            .edit(
+                vec![ConfigEdit::SetAccountCredential {
+                    account: native.name().clone(),
+                    credential: changed.credential().clone(),
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let result = sync(&world, &changed, Agent::KimiCode).await;
         assert!(

@@ -11,6 +11,7 @@ use jackin_core::{
 use jackin_testkit::{MemFs, World};
 use serde_json::{Value, json};
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
@@ -56,7 +57,10 @@ pub(crate) async fn register(world: &World, account: &Account) -> TestResult {
     world.seed_all(&Config::parse(GATEWAY)?).await?;
     world
         .config
-        .edit(vec![ConfigEdit::AddAccount(account.clone())])
+        .edit(
+            vec![ConfigEdit::AddAccount(account.clone())],
+            &CancellationToken::new(),
+        )
         .await?;
     Ok(())
 }

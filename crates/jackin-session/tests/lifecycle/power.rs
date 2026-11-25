@@ -232,7 +232,8 @@ async fn cancelling_the_token_ends_the_wait_for_the_sandbox_to_become_ready() ->
         };
         let (result, ()) = tokio::join!(waiting, driver);
         assert!(
-            matches!(result, Err(LifecycleError::Cancelled)),
+            matches!(&result, Err(LifecycleError::PowerCancelled { sandbox, wanted })
+                if *sandbox == name && *wanted == Phase::Ready),
             "{result:?}"
         );
         let slept: Duration = rig.world.clock.slept().iter().skip(before).sum();

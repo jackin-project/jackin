@@ -8,6 +8,7 @@ use jackin_core::{
 use jackin_testkit::{
     ACCESS, ACCOUNT_ID, ConsoleRig, ProcessReply, REFRESH, Rig, ScriptedProgram, TestResult, guard,
 };
+use tokio_util::sync::CancellationToken;
 
 const ENV_VALUE: &str = "ENV-SECRET-5b1d02";
 const OP_VALUE: &str = "OP-SECRET-91ac3e";
@@ -38,7 +39,10 @@ async fn an_omp_host_account_names_no_variable_and_cannot_be_edited() -> TestRes
         )?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(account)])
+            .edit(
+                vec![ConfigEdit::AddAccount(account)],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world).build().await?;
         console.skip_intro();
@@ -106,7 +110,10 @@ async fn no_account_kind_puts_a_credential_value_into_a_projected_field_or_a_scr
             let account = Account::new(AccountName::parse(name)?, Provider::Codex, source)?;
             rig.world
                 .config
-                .edit(vec![ConfigEdit::AddAccount(account)])
+                .edit(
+                    vec![ConfigEdit::AddAccount(account)],
+                    &CancellationToken::new(),
+                )
                 .await?;
         }
         let mut console = ConsoleRig::builder(&rig.world)

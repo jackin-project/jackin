@@ -977,12 +977,16 @@ pub enum MissingBinding {
 pub struct ConfigStore { }
 
 impl ConfigStore {
-    pub fn new(fs: Arc<dyn FileSystem>, path: HostPath) -> ConfigStore;
+    pub fn new(fs: Arc<dyn FileSystem>, clock: Arc<dyn Clock>, path: HostPath) -> ConfigStore;
     pub fn default_path(home: &HostPath) -> HostPath;
     pub async fn load(&self) -> Result<Config, ConfigError>;
-    pub async fn edit(&self, edits: Vec<ConfigEdit>) -> Result<Config, ConfigError>;
+    pub async fn edit(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<Config, ConfigError>;
+    pub async fn edit_checked<E: From<ConfigError>>(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken, check: impl FnOnce(&Config) -> Result<(), E>) -> Result<Config, E>;   // `check` sees the edited config under the lock; the commit point is after it
 }
+impl ConfigError { pub const fn committed(&self) -> bool; pub const fn cancelled(&self) -> bool; pub fn unless_cancelled(cancel: &CancellationToken) -> Result<(), ConfigError> }
 ```
+
+`edit_checked` checks the token before it creates the directory, while it waits for the lock, after the lock, and after `check`; each of those returns `ConfigError::Cancelled` and writes nothing. The atomic write is never raced against the token, so once it starts the caller gets its real outcome: `Ok`, a write error, or `FsError::Unsynced`, which `committed()` reports as written.
 
 Gateway keys are the registered OpenShell gateway names (D03). `jackin gateway add` writes `builder` (default `default`) and `platform` (default `Platform::host_default()` evaluated at add time), so a stored entry is always explicit and no later code guesses a default. The `docker_engine` entry exists because OpenShell has no place for an engine endpoint (D24).
 
@@ -996,7 +1000,7 @@ Invariants that `Config::parse` and `apply` hold, so no later code re-checks the
 - `resolve_gateway(None)` returns `default_gateway`, else the only configured gateway, else `NoGateway` or `AmbiguousGateway`.
 - `select_account` is pure and follows D26: flag, workspace binding for `agent.provider()`, role binding for `agent`, default of the provider, the only account of the provider. If no rule selects, the error carries `MissingBinding` so the message names what to bind.
 
-`ConfigStore::edit` takes an exclusive lock on `config.toml.lock` through `FileSystem::lock`, re-reads and parses, applies all edits in order, validates, and writes with `write_atomic` (temporary file in the same directory, `write_new`, `sync`, `rename`, `sync_dir`). If any edit fails, nothing is written. Two jackin processes (CLI and console) serialize on the lock, so there is no lost update. `render` is deterministic (sorted tables), so equal configs give equal bytes. The file holds no secret; a `CredentialSource` is a pointer.
+`ConfigStore::edit` takes an exclusive lock on `config.toml.lock` through `FileSystem::lock` (a held lock is retried until the token is cancelled or the wait ends), re-reads and parses, applies all edits in order, validates, and writes with `write_atomic` (temporary file in the same directory, `write_new`, `sync`, `rename`, `sync_dir`). If any edit fails, nothing is written. Two jackin processes (CLI and console) serialize on the lock, so there is no lost update. `render` is deterministic (sorted tables), so equal configs give equal bytes. The file holds no secret; a `CredentialSource` is a pointer.
 
 ### Boundary traits
 
@@ -1177,6 +1181,7 @@ pub enum ManifestError {
     ReservedEnvName(EnvName),
 }
 pub enum ConfigError {
+    Cancelled,   // returned only before the commit point: nothing was written
     Syntax { line: usize, column: usize, message: String },
     UnknownField { key: String },
     DuplicateName { kind: &'static str, name: String },
@@ -1454,7 +1459,7 @@ pub trait Gateway: Send + Sync + Debug {
     async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError>;
     async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError>;
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError>;
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError>;
+    async fn put_provider(&self, spec: &ProviderSpec) -> Result<ProviderWriteEffect, ProviderWriteError>;
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
@@ -1483,6 +1488,11 @@ The gateway name and the OpenShell workspace are fixed at construction, so every
 pub struct GatewayHealth { pub version: String, pub serving: bool }
 pub enum ProfileSync { Imported, Unchanged, Updated }
 pub enum ProviderState { Absent, Present }
+pub enum ProviderWriteEffect { NoWrite, Created, Existing, Unknown }
+pub struct ProviderWriteError { /* source: GatewayError, effect: ProviderWriteEffect */ }
+impl ProviderWriteError { pub fn new(source: GatewayError, effect: ProviderWriteEffect) -> ProviderWriteError; pub fn effect(&self) -> ProviderWriteEffect; pub fn gateway_error(&self) -> &GatewayError; pub fn into_parts(self) -> (GatewayError, ProviderWriteEffect) }
+impl ProviderWriteEffect { pub fn after_failed_write(provider_held: bool, error: &GatewayError) -> ProviderWriteEffect }   // Existing when the provider is held, else Unknown when the error may have reached the gateway, else NoWrite; the adapter and the fake share it
+impl GatewayError { pub fn outcome_unknown(&self) -> bool }   // exhaustive: true when the request may have reached the gateway and its outcome is not known
 pub struct ProviderSpec { pub name: ProviderName, pub profile: ProfileId, pub keys: CredentialKeys, pub material: ProviderMaterial }
 pub enum ProviderMaterial {
     ChatgptLogin {
@@ -1542,7 +1552,7 @@ impl SandboxCreate {
 Contract of each method. The fake and the real adapter obey the same text, and `contract::run` checks it.
 
 - `ensure_profile`: imports the profile when its ID is absent and returns `Imported`. A present profile with identical content gives `Unchanged`. A present profile with different content is replaced through `UpdateProviderProfiles` (`openshell.proto:366`), with the resource version that `GetProviderProfile` returned in the same call, and gives `Updated`. That RPC rejects a zero version, so an update is optimistic: a change between the read and the update gives `FailedPrecondition` and writes nothing, and the next launch converges. Idempotent.
-- `put_provider`: creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
+- `put_provider`: returns the `ProviderWriteEffect` of the write, and the same effect inside `ProviderWriteError` when it fails after or around a write: `NoWrite` when nothing was written (a missing profile, a failed state lookup, or a create that failed with an outcome the gateway proves was not applied), `Created` when this call's `CreateProvider` succeeded, `Existing` when the provider was already there (an update, or a create that lost a race to `AlreadyExists` and then updated), and `Unknown` when a create failed with an outcome `GatewayError::outcome_unknown` cannot rule out. A refresh-configuration failure after the write keeps `Created` or `Existing`. A caller removes a provider only after `Created`. It creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
 - `create_sandbox`: creates with the image tag, labels, the `JACKIN_LAUNCH_ID` environment, providers, policy, and the main process with a kept PTY and restart policy never. It returns when the call returns, not when `Ready` (P0.2). A second create with the same name returns `AlreadyExists`. Names and label values are validated by types, so the gateway never sees an invalid one, and the fake rejects an invalid one the same way the gateway does.
 - `find_sandboxes`: `Labels` lists every matching sandbox across all pages, and `managed()` returns only sandboxes that carry the jackin label set. `Name` returns zero or one result. A missing sandbox is an empty list, not an error. A view carries `Provisioning::Failed` when the gateway reports a failed provisioning.
 - `sandbox_detail`: the view, the attached OpenShell providers, and the effective policy as a `PolicyDocument`.
@@ -1800,7 +1810,7 @@ Location: `crates/jackin-openshell/tests/*.rs`. Boundaries faked: the gateway ne
 | Status mapping (P4.1) | each gRPC code in the table yields its `GatewayError` variant through the public methods, with the right `Missing` | an unmapped code yields `Protocol`; `is_retryable` is false for `NotFound` and `AlreadyExists` |
 | Create, find, labels (J03) | create with labels then `find_sandboxes(launch id)` returns exactly that sandbox with labels that parse to `SandboxLabels`; pages are followed; a 19-character name is accepted; a server that reports `ProvisioningFailed` yields `Provisioning::Failed` in the view | a second create with the same name gives `AlreadyExists`; a non-jackin sandbox on the server is absent from `managed()` results |
 | Ended main process (fix 4) | `Stop` on an `Error` sandbox maps to `MainProcessFailed`; `Start` returns a `Starting` view; `Phase::Error` and `Phase::Completed` carry the exit code the server reports | none |
-| Provider flows (D10) | `ensure_profile` imports once, then `Unchanged`; a changed profile gives `Updated` and the server holds the new content; `put_provider` with `ChatgptLogin` configures refresh; the refresh token never appears in any returned value or error `Display` | an update with a stale resource version gives `FailedPrecondition` and the server keeps its content; `put_provider` with an unknown profile gives `NotFound` |
+| Provider flows (D10) | `ensure_profile` imports once, then `Unchanged`; a changed profile gives `Updated` and the server holds the new content; `put_provider` with `ChatgptLogin` configures refresh; the refresh token never appears in any returned value or error `Display` | an update with a stale resource version gives `FailedPrecondition` and the server keeps its content; `put_provider` with an unknown profile gives `ProviderWriteError { effect: NoWrite, source: NotFound }` and writes nothing |
 | Program runs | exit code, stdout, stderr, and stdin bytes round trip; `touch_on_success` creates the file on exit 0 only; `Closed` stdin does not hang | timeout gives `Timeout`; a cancel returns `Cancelled` and the server saw the stream drop; a sandbox in `Completed` gives `NotReady` |
 | Files | `write_file` result has the requested mode and exact bytes; `read_files` returns `None` for a missing file | a failing write leaves the old file intact (server drops the stream mid-write) |
 | Upload and download argv | the tree upload runs with the project root as `cwd`; the file upload uses `--no-git-ignore` and an exact destination; both name the gateway, workspace, and sandbox, have stdin null and a timeout; download reads the remote size first and compares digests | a non-zero exit gives `Transfer { UploadFiltered }` or `Transfer { UploadFile }` with a sanitized tail; a missing remote file gives `Transfer { Size }`; a digest mismatch gives `Transfer { Digest }` |
@@ -1939,7 +1949,7 @@ pub struct ChatgptLogin {
 
 pub async fn read_chatgpt_login(fs: &dyn FileSystem, home: &HostPath) -> Result<ChatgptLogin, CredentialError>;
 
-pub enum AccountSync { HostOnly, ProviderReady { provider: ProviderName, profile: ProfileSync } }
+pub enum AccountSync { HostOnly, ProviderReady { provider: ProviderName, profile: ProfileSync, write: ProviderWriteEffect } }
 ```
 
 `read_chatgpt_login` parses `<home>/auth.json` once into typed fields; `jackin account add codex --chatgpt-from <home>` calls it to learn the account ID for `CredentialSource::CodexLogin`. The secrets appear only inside `ChatgptLogin` and `ProviderMaterial`. `sync_account` runs on `account add` and on launch when the OpenShell provider is absent on the selected gateway. For a Codex account with a `CodexLogin` source it reads the login, calls `ensure_profile`, and calls `put_provider`. For a Codex account with any other source (credential mode A) it returns `AccountError::Unsupported { account, mode }`, because `profile_for(ApiKey)` is `None` until a profile is proven (P10.1 or later). For an account of any other provider it returns `HostOnly` and touches no gateway (D26). When mode A gets a profile, this file gains the `Env`, `OnePassword`, and `File` readers (D28 1Password flow); the usage crates read their own credentials. `sync_account(account, cancel)` and `forget_account(account, cancel)` hold the host lock file `account-<account>.lock` under `cache_dir`. `lock::hold` creates `cache_dir` with mode 0700, polls every 100 ms on the `Clock`, and returns `LockError::Cancelled` when the token fires. `sync_account` takes the lock through `hold_current`, so it fails with `Removed`, `Changed` or `GatewayRemoved` as the launch does, and then always puts. The launch calls the internal `sync_if_absent` instead: it takes the lock, re-checks `provider_state`, and puts only when the provider is still absent, so two launches of one account cannot overwrite a rotated login, and it never calls the public `sync_account`, which would wait on the lock it holds. `forget_account` ignores an account that is not a Codex login and deletes the OpenShell provider of a Codex login account (`account rm`). The gateway refuses to delete a provider that a sandbox lists, so the account stays in that case.
@@ -2073,7 +2083,9 @@ impl LaunchFeed {
 }
 
 pub struct AttachTarget { pub sandbox: SandboxName, pub state: SupervisorState }
-pub struct RestoreCandidate { pub launch_id: LaunchId, pub sandbox: Option<SandboxName> }
+pub struct RestoreCandidate { pub launch_id: LaunchId, pub finding: RestoreFinding }
+pub enum RestoreFinding { Observed(SandboxName), Absent { requested: bool }, Ambiguous(Vec<SandboxName>), Unconfirmed { last_observed: Option<SandboxName>, planned: SandboxName } }
+pub const RECOVERY_LOOKUP_BUDGET: Duration = Duration::from_secs(3);
 pub enum LaunchOutcome { Ready(AttachTarget), Cancelled(RestoreCandidate) }
 pub struct LaunchFailure { pub launch_id: LaunchId, pub step: LaunchStep, pub sandbox: Option<SandboxName>, pub error: Box<LaunchError> }
 pub enum LaunchError {
@@ -2153,7 +2165,7 @@ pub(crate) fn decide(plan: &LaunchPlan, observed: &Observed, done: &Done, limits
 | Observed and done | Next | Act (idempotent how) | Skip event |
 |---|---|---|---|
 | image not done | `Image` | `ensure_image`; the tag is the key, so a hit builds nothing | `ImageCached` when `BuiltImage.source` is `Cache` |
-| provider not done | `Provider` | `sync_if_absent`: take the account lock, re-check `provider_state`, and when the provider is still absent run the `sync_account` steps (read login, `ensure_profile`, `put_provider`). A differing profile is updated by `ensure_profile`. Equal material changes nothing | `ProviderPresent` |
+| provider not done | `Provider` | `sync_if_absent`: take the account lock, re-check `provider_state`, and when the provider is still absent run the `sync_account` steps (read login, `ensure_profile`, `put_provider`). A differing profile is updated by `ensure_profile`. Equal material changes nothing. When a sync fails, the launch deletes the provider only after the write effect was `Created`; an `Existing` provider, a `NoWrite` failure (for instance an unreadable replacement key) and an `Unknown` outcome leave the provider in place, and `Unknown` is reported as `AccountError::ProviderWriteUncertain` | `ProviderPresent` |
 | no sandbox with the launch label | `Sandbox` | `create_sandbox(draft.complete(image))`, `created += 1`. On `AlreadyExists`, `find_sandboxes(Name)`: the same launch label means join, another launch label means `NameCollision` | `SandboxExists` |
 | more than one sandbox with the launch label | fail | none | `AmbiguousLaunch` |
 | phase `Provisioning`, `Starting`, `Stopping`, `Suspending`, `Unknown` | `Ready` | poll `find_sandboxes(Name)` with the clock (500 ms, `limits.ready`) | none |
@@ -2318,6 +2330,8 @@ pub enum LifecycleError {
     PowerTimeout { sandbox: SandboxName, wanted: Phase, after: Duration },
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     Profile(PolicyError),
+    Cancelled,
+    PowerCancelled { sandbox: SandboxName, wanted: Phase },   // the power request was already sent
 }
 ```
 
@@ -2405,15 +2419,16 @@ pub struct GatewayPlan { }
 pub async fn plan_account_edits(desk: &AccountDesk, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<AccountPlan, AccountEditError>;
 impl AccountPlan {
     pub fn needs_gateway(&self) -> bool;
-    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError>;
+    pub async fn apply(self, gateways: &Gateways, cancel: &CancellationToken) -> Result<Config, AccountEditError>;
 }
-impl OfflinePlan { pub async fn apply(self) -> Result<Config, ConfigError> }
-impl GatewayPlan { pub fn config(&self) -> &Config; pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> }   // build `gateways` from config()
+impl OfflinePlan { pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, ConfigError> }
+impl GatewayPlan { pub fn config(&self) -> &Config; pub async fn apply(self, gateways: &Gateways, cancel: &CancellationToken) -> Result<Config, AccountEditError> }   // build `gateways` from config()
 pub async fn plan_gateway_removal(desk: &AccountDesk, name: &GatewayName, cancel: &CancellationToken) -> Result<GatewayRemoval, AccountEditError>;
 pub enum GatewayRemoval { Offline(OfflinePlan), Online(RemovalPlan) }
 impl RemovalPlan { pub fn gateway(&self) -> &GatewayName; pub async fn apply(self, connector: &dyn GatewayConnector, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
 pub enum AccountEditError { Config(ConfigError), Account(AccountError), OnGateway { gateway: GatewayName, source: GatewayError },
                             Unreachable(Vec<UnreachableGateway>), Connect(ConnectError), RollbackFailed { .. } }
+// a write whose outcome is unknown surfaces as Account(AccountError::ProviderWriteUncertain { account, gateway, .. }); nothing is deleted for it
 
 // build.rs: the `jackin build` path, shared with the console
 pub struct BuildRequest<'a> { pub gateway: Option<&'a GatewayName>, pub role: Option<&'a RoleName>, pub path: &'a HostPath, pub rebuild: Rebuild }
@@ -2486,7 +2501,7 @@ pub enum RoleError {
     Fs(FsError),
     Process(ProcessError),
 }
-pub enum CredentialError { LoginUnreadable { path: HostPath }, LoginNotRegular { path: HostPath }, LoginTooLarge { path: HostPath }, AuthJsonInvalid { key: String }, NotAChatgptLogin, Fs(FsError) }
+pub enum CredentialError { LoginUnreadable { path: HostPath }, LoginNotRegular { path: HostPath }, LoginTooLarge { path: HostPath }, AuthJsonInvalid { key: String }, NotAChatgptLogin, KeychainUnavailable, KeychainLoginMissing, Cancelled { group: Option<GroupFault> }, Fs(FsError) }
 pub enum AccountError {
     Credential(CredentialError),
     Gateway(GatewayError),
@@ -2494,7 +2509,10 @@ pub enum AccountError {
     Lock(LockError),
     Unsupported { account: AccountName, mode: CodexAuthMode },
     AccountIdMismatch { account: AccountName },
+    ProviderWrite(ProviderWriteError),                               // a provider write failed; `write_effect()` says whether it created, updated or wrote nothing
+    ProviderWriteUncertain { account: AccountName, gateway: GatewayName, source: Box<AccountError> },   // the write may have completed; nothing was deleted
 }
+impl AccountError { pub fn write_effect(&self) -> ProviderWriteEffect; pub fn is_cancelled(&self) -> bool }   // a cancel before the commit, a cancelled lock, or a cancelled credential read
 ```
 
 All error enums derive `Debug` and `thiserror::Error`, and none holds a secret. Their messages follow the error text rule of section 1. `RoleError::Manifest` prints only `invalid role manifest at <path>`, and the report of the binary adds the cause once. `ExportError::BundleHeads` reads `extra a, b; missing none`. `EnvFileProblem`, `LaunchStep`, `ProjectStep`, `EnvQuestion`, `UnknownReason`, `WorkState`, `ObjectFormat`, and `EntryKind` implement `Display` and print words.
@@ -3751,7 +3769,7 @@ This file records where U5 differs from `rewrite/API.md` section 3, and how each
 
 - R1. `jackin-core` gets `Labels::from_pairs(impl IntoIterator<Item = (String, String)>) -> Result<Labels, LabelError>`. It uses the Kubernetes grammar that the gateway enforces (`validation.rs:772`, `:882`): key name of 63 characters at most, optional DNS prefix, value of 63 characters at most, empty value allowed. `LabelError` gains `InvalidKey` and `InvalidValue`. `LabelKey` and `LabelValue` already had `Display` (U2 R7).
 - R2. `Code::Aborted` and `Code::FailedPrecondition` both map to `GatewayError::FailedPrecondition { message }`.
-- R3. `put_provider` calls `GetProviderProfile` first and returns `NotFound { Missing::Profile(id) }` when it is absent. Nothing is created. Live evidence confirms that `CreateProvider` with an unknown profile is a plain `InvalidArgument` and that the provider needs `profile_workspace` set to find a workspace-scoped profile. The adapter imports the profile in the configured workspace and sets `profile_workspace` to that workspace.
+- R3. `put_provider` calls `GetProviderProfile` first and returns a `ProviderWriteError` with effect `NoWrite` and source `NotFound { Missing::Profile(id) }` when it is absent. Nothing is created. Live evidence confirms that `CreateProvider` with an unknown profile is a plain `InvalidArgument` and that the provider needs `profile_workspace` set to find a workspace-scoped profile. The adapter imports the profile in the configured workspace and sets `profile_workspace` to that workspace.
 - R4. Captured live (`P4.1-live.md`). `StopSandbox` on an `Error` or `Completed` sandbox returns OK with the sandbox unchanged. The adapter returns `MainProcessFailed { sandbox }` when `Stop` returns a view whose phase has an ended main process (`Phase::main_process_ended`). `StartSandbox` on either phase returns `FailedPrecondition` ("VM sandbox is already running generation ...") and leaves the sandbox in `STARTING`. The adapter maps it to plain `FailedPrecondition { message }` and never returns a `Starting` view. It adds no new error variant. A second `Stop` on the `STARTING` sandbox is also `FailedPrecondition`. API.md "Ended main process (fix 4)" and the `set_power` contract are wrong on `Start`.
 - R5. `Provisioning::Failed` is derived from a status condition with `type == "Ready"` and `reason == "ProvisioningFailed"`, in any list position and whatever the phase. The live phase is `Error` with no exit code. The adapter reads the conditions from the raw `GetSandbox` reply, because the SDK `SandboxRef` has none. The message goes through `TerminalText::sanitize`.
 - R6. The detail comes from these calls: `GetSandbox` (the view and the conditions), `GetSandboxConfig` (the effective policy including the generated `_provider_` rule, its `version`, and its `policy_hash`), `GetSandboxPolicyStatus` (the stored revision), and `ListSandboxProviders` (the attached providers, all pages). `PolicyReport.version` and `PolicyReport.hash` are the effective values from `GetSandboxConfig`. The stored revision hash is a different value and is not reported. `PolicyReport.loaded` is `revision.status == POLICY_STATUS_LOADED && active_version == revision.version`. A `NotFound` from `GetSandboxPolicyStatus` gives `loaded == false`.
@@ -3847,7 +3865,7 @@ This file records where U6 (`jackin-testkit`) differs from `rewrite/API.md` sect
 
 - `Gateway::delete_profile` is `Ok` when the profile is absent and `FailedPrecondition` when a provider uses it.
 - `NotFound { Missing::Sandbox }` on `run_program`, `read_files`, `write_file`, `open_terminal(Shell)` and `open_terminal(MainProcess)` for an absent sandbox. `set_power` on an absent sandbox is the same; `delete_sandbox` of an absent sandbox is `Ok`.
-- `put_provider` returns `NotFound { Missing::Profile }` when the profile was not ensured, and drops the secret material: the fake keeps only the provider name and the profile ID. `create_sandbox` with a provider that does not exist is `FailedPrecondition` ("provider '<name>' not found", `OS@v0.1.6:crates/openshell-server/src/grpc/sandbox.rs:557`).
+- `put_provider` returns a `ProviderWriteError` with effect `NoWrite` and source `NotFound { Missing::Profile }` when the profile was not ensured, reports `Created` or `Existing` for a write, and classifies an injected failure with `ProviderWriteEffect::after_failed_write`, and drops the secret material: the fake keeps only the provider name and the profile ID. `create_sandbox` with a provider that does not exist is `FailedPrecondition` ("provider '<name>' not found", `OS@v0.1.6:crates/openshell-server/src/grpc/sandbox.rs:557`).
 - The generated rule key is `RuleKey::provider_rule(provider)`, so `_provider_jackin_work_codex`. `sandbox_detail` adds that rule to the effective policy for each attached provider whose profile is known; the endpoints and binaries come from the profile.
 - `SandboxCreate::environment()` is the environment of the sandbox (`JACKIN_LAUNCH_ID` only).
 - `GatewayError::SandboxUnreachable` exists; no fault is needed, because `FailNext` takes any error.
@@ -3941,7 +3959,7 @@ This file records where U8 (`jackin-session` planner, role catalog, account sync
 - U8-A4. Credentials step. It runs `/usr/bin/printenv` with `args == [keys.access_token]`. A non-zero exit or empty stdout fails at `Credentials` with the new variant `LaunchError::PlaceholderMissing { sandbox, key }`. A value that does not start with `openshell:resolve:`, or that spans more than one line, fails at `Credentials` with `LaunchError::PlaceholderInvalid { sandbox, key }`, which never holds the value (D10). No `auth.json` is written in either case. `auth.json` has mode `0o600` from `spec.auth_file`. Its top-level keys are exactly `auth_mode` (`chatgptAuthTokens`), `OPENAI_API_KEY` (null), `tokens`, `last_refresh`. `last_refresh` is the `Clock` time as RFC 3339 UTC in whole seconds (`2026-11-02T10:11:12Z`, 20 characters, as P0.3 shows). `tokens` holds exactly `id_token` (the P0.3 non-secret placeholder JWT: header `{"alg":"none","typ":"JWT"}`, payload `{"iss":"https://auth.openai.com","aud":"codex","sub":"openshell-app-server"}`, signature part `placeholder`), `access_token` (the printenv output without its trailing newline), `refresh_token` (`""`) and `account_id` (the real ID of the account's `CredentialSource::CodexLogin`). The step writes `auth.json`, `files().codex_config` and `files().env`; the env file is written even when the role has no `[env]`. `read_chatgpt_login` reads `auth_mode`, `tokens.access_token`, `tokens.refresh_token`, `tokens.oauth_provenance.client_id` and `tokens.account_id` (U8-B3).
 - U8-A5. `HookPresence`. A hook counts as present only when `read_files(hook_path)` returns non-empty bytes. An undeclared hook is an empty file in the image and is not run.
 - U8-A6. Hook output. `HookFailed.output == TerminalText::sanitize(stdout ++ stderr)`. Setup and preflight run with `workdir == sandbox_layout::PROJECT`, the env file values as env, and `ProgramStdin::Closed`. A non-zero exit stops the launch. `touch_on_success` is set only for setup.
-- U8-A7. Cancel path. On cancel the executor does one final `find_sandboxes(launch label)` and returns `Cancelled(RestoreCandidate { launch_id, sandbox })`. `sandbox` is `Some(name)` exactly when the gateway holds one sandbox with that label, even when the token was cancelled before the call. A cancel never calls `delete_sandbox` and never returns `Err`. A token that is cancelled while an act runs turns any error of that act into the cancel outcome.
+- U8-A7. Cancel path. On cancel the executor runs one bounded recovery: a `find_sandboxes(launch label)` and, only when that is empty or fails, a `find_sandboxes(planned name)`, under one `RECOVERY_LOOKUP_BUDGET` deadline that the caller token does not cancel, and returns `Cancelled(RestoreCandidate { launch_id, finding })`. `finding` is `Observed(name)` when exactly one live sandbox carries the launch label (or the planned name carries the launch label), `Ambiguous(names)` when several carry it, `Absent { requested }` only when both lookups succeeded empty, the gateway never acknowledged a sandbox in this run and no create ended with an unknown outcome (`requested` is true once a create was attempted or a sandbox was seen), and `Unconfirmed { last_observed, planned }` in every other case (`planned` is the name this launch would create, so the report can name the one sandbox that might exist): a lookup error or timeout, empty lookups after the gateway acknowledged a sandbox, empty lookups after a create whose response was lost, or a sandbox that is being deleted. A cancel never calls `delete_sandbox` and never returns `Err`. Read-only lookups are raced against the token; create, delete, power and write calls are never abandoned, so their outcome is known or classified unknown. A token that is cancelled while an act runs turns any error of that act into the cancel outcome.
 - U8-A8. Concurrency. Two concurrent `launch` calls with one ID both return `Ok(Ready)`. The loser of the create race gets `AlreadyExists`, reads by name and joins. Setup and preflight may run twice. The attempt write is fenced by the attempt ID.
 - U8-A9. Test limits and harness rules. `LaunchLimits { ready: 30 s, supervisor: 20 s, attempt: 20 s, hook: 600 s, upload: 600 s, create_attempts: 3 }`. Timeout assertions use `>=` on `FakeClock::slept()` sums and on the error's `after`; they do not pin the 500 ms poll interval. The integration targets are `tests/plan/main.rs`, `tests/launch/main.rs` and `tests/accounts/main.rs` (U8-B7), each with modules. No comments. `type TestResult = Result<(), Box<dyn std::error::Error>>`. Every async test sits under a 10 s `tokio::time::timeout` hang guard. The default `#[tokio::test]` runtime. Each test is under 150 lines. Dev-dependencies: `jackin-testkit`, `tempfile`, `serde_json`, `toml`, `tokio` (`macros rt time`).
 
@@ -3998,7 +4016,7 @@ This file records where U8 (`jackin-session` planner, role catalog, account sync
 
 Decisions.
 
-- The cancel check at the head of the executor loop is deleted. An observation is read-only and the check after it covers every cancel. A token that is cancelled before `launch` now costs one `find_sandboxes` and still returns `Cancelled` with the restore candidate.
+- The cancel check at the head of the executor loop is deleted. An observation is read-only and the check after it covers every cancel. A token that is cancelled before `launch` now costs one recovery (a label lookup, then a name lookup only when the label lookup is empty or failed) and still returns `Cancelled` with the restore candidate.
 - `Tracker.known_sent` is deleted. The tracker moves forward only, so `StepFinished(Sandbox)` is emitted once and `SandboxKnown` follows it once.
 - The `quote` escape arms of `files.rs` are deleted. `ModelName` allows only alphanumerics and `. _ : / -` and the work directory is the constant `/sandbox/project`, so no input needs an escape. The renderer wraps the two values in plain quotes.
 - `PlanError::RoleMismatch` stays. `LaunchRequest::role` is part of API.md, so the planner keeps checking it against the `LoadedRole` and a row in P8 pins the check.
@@ -4006,6 +4024,7 @@ Decisions.
 - `LaunchError::AttemptsExhausted` reads "the attempt IDs of {sandbox:?} are exhausted".
 - Testkit TK-11. Every async call of `FakeGateway` yields once to the scheduler before it acts, so a loop that never waits is cut by the 10 s hang guard instead of freezing the runtime. Two runs of one launch ID in `join!` now interleave.
 - Testkit TK-12. `Fault::HideUntilCreateConflict` hides every sandbox from label queries until a `create_sandbox` meets an existing name and returns `AlreadyExists`; the by-name query is not hidden. It models the create race of U8-A8 without scheduling.
+- Testkit TK-14. `Fault::LoseResponse { op, error }` runs the call and then returns `error` instead of its reply, so a mutation took effect and the caller sees a lost response. `Fault::HideEverywhereUntilCreateConflict` hides every sandbox from every query until a `create_sandbox` meets an existing name; `Fault::HideUntilCreateConflict` hides only from label queries. `Rig::foreign_sandbox(name, launch)` creates a sandbox with the labels of another launch and settles it to `Ready`. `World::cancel_fs` and `WorkingFs::cancel_next` cancel a token when the next filesystem call of the named kind arrives, to place a cancel at an exact commit step.
 - Testkit TK-13. `Fault::StartIgnored` makes `set_power(Start)` on a stopped sandbox succeed and leave the phase `Stopped`, for every later start.
 - TK-3 amendment. The cancelled-token row scripts `/bin/sh` through `script_program`, so only the entry check of `run_program` can produce `Cancelled`; an unscripted `/bin/sh` honours the token in `run_command` and hid a removed check.
 - `delivery.rs` loses the vacuous `assert_ne!(Skipped(ImageCached), Done)`.

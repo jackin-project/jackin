@@ -5,6 +5,7 @@ use jackin_console::domain::account::CredentialSource as Source;
 use jackin_console::domain::workspace::AllowedRoles;
 use jackin_core::{Account, AccountName, ConfigEdit, CredentialSource, EnvName, Provider};
 use jackin_testkit::{ConsoleRig, Rig, TestResult, guard};
+use tokio_util::sync::CancellationToken;
 
 async fn console() -> Result<(Rig, ConsoleRig), Box<dyn std::error::Error>> {
     let rig = Rig::new().await?;
@@ -18,7 +19,10 @@ async fn console() -> Result<(Rig, ConsoleRig), Box<dyn std::error::Error>> {
     )?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddAccount(second)])
+        .edit(
+            vec![ConfigEdit::AddAccount(second)],
+            &CancellationToken::new(),
+        )
         .await?;
     let mut console = ConsoleRig::new(&rig.world).await?;
     console.skip_intro();
@@ -61,13 +65,16 @@ async fn allow_list_shows_k_of_m() -> TestResult {
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceRoles {
-                workspace: jackin_core::WorkspaceName::parse("platform-backend")?,
-                roles: jackin_core::AllowedRoles::Only(
-                    jackin_core::RoleSet::new([jackin_core::RoleName::parse("sentinel")?])
-                        .ok_or("empty role set")?,
-                ),
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceRoles {
+                    workspace: jackin_core::WorkspaceName::parse("platform-backend")?,
+                    roles: jackin_core::AllowedRoles::Only(
+                        jackin_core::RoleSet::new([jackin_core::RoleName::parse("sentinel")?])
+                            .ok_or("empty role set")?,
+                    ),
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::new(&rig.world).await?;
         console.skip_intro();

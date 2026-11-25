@@ -5,7 +5,9 @@ use jackin_core::{
     Account, AccountName, CodexAuthMode, Config, CredentialSource, EnvName, HostPath, OpReference,
     ProfileId, Provider, ProviderName, lookup_tuple, tuple_profile_asset,
 };
-use jackin_openshell::{GatewayError, GatewayOp, Missing, ProfileSync, ProviderProfile};
+use jackin_openshell::{
+    GatewayError, GatewayOp, Missing, ProfileSync, ProviderProfile, ProviderWriteEffect,
+};
 use jackin_session::{AccountError, AccountSync};
 use jackin_testkit::{Fault, World};
 use serde_json::json;
@@ -48,7 +50,8 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
             first,
             AccountSync::ProviderReady {
                 provider: name.clone(),
-                profile: ProfileSync::Imported
+                profile: ProfileSync::Imported,
+                write: ProviderWriteEffect::Created,
             }
         );
         assert_eq!(world.gateway.profiles(), [ProfileId::parse("codex")?]);
@@ -81,7 +84,8 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
             second,
             AccountSync::ProviderReady {
                 provider: name.clone(),
-                profile: ProfileSync::Unchanged
+                profile: ProfileSync::Unchanged,
+                write: ProviderWriteEffect::Existing,
             }
         );
         assert_eq!(world.gateway.profiles().len(), 1);
@@ -149,6 +153,7 @@ async fn a_failed_sync_stops_at_the_failing_call_and_a_retry_converges() -> Test
                     message: "stale".to_owned(),
                 },
                 0_usize,
+                None,
             ),
             (
                 GatewayOp::Provider,
@@ -156,9 +161,18 @@ async fn a_failed_sync_stops_at_the_failing_call_and_a_retry_converges() -> Test
                     message: "broken".to_owned(),
                 },
                 1_usize,
+                Some(ProviderWriteEffect::Unknown),
+            ),
+            (
+                GatewayOp::Provider,
+                GatewayError::PermissionDenied {
+                    what: "the provider".to_owned(),
+                },
+                1_usize,
+                Some(ProviderWriteEffect::NoWrite),
             ),
         ];
-        for (op, error, profiles) in rows {
+        for (op, error, profiles, effect) in rows {
             let world = World::builder().build()?;
             let home = Home::new(&login_json()).await?;
             let account = codex_account(&home.path, ACCOUNT_ID)?;
@@ -172,10 +186,13 @@ async fn a_failed_sync_stops_at_the_failing_call_and_a_retry_converges() -> Test
                     &CancellationToken::new(),
                 )
                 .await;
-            assert!(
-                matches!(&result, Err(AccountError::Gateway(_))),
-                "{result:?}"
-            );
+            match (&result, effect) {
+                (Err(AccountError::Gateway(_)), None) => {}
+                (Err(AccountError::ProviderWrite(write)), Some(expected)) => {
+                    assert_eq!(write.effect(), expected, "{result:?}");
+                }
+                _ => return Err(format!("{result:?}").into()),
+            }
             assert_clean(&format!("{result:?}"));
             if let Err(error) = &result {
                 assert_clean(&error.to_string());
