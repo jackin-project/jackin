@@ -280,7 +280,7 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
             } else {
                 "Remove one"
             };
-            let command = format!("jackin account usage rm {}", remove.hyphenated());
+            let command = text::remove_command(*remove, text::IdForm::Hyphenated);
             lines.extend(indented(
                 &format!("{which}: {command}"),
                 &[command],

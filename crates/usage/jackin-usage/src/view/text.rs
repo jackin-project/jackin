@@ -332,12 +332,19 @@ pub enum IdForm {
     Simple,
 }
 
-pub fn reconnect_command(id: uuid::Uuid, form: IdForm) -> String {
-    let id = match form {
+fn id_text(id: uuid::Uuid, form: IdForm) -> String {
+    match form {
         IdForm::Hyphenated => id.hyphenated().to_string(),
         IdForm::Simple => id.simple().to_string(),
-    };
-    format!("jackin account usage reconnect {id}")
+    }
+}
+
+pub fn reconnect_command(id: uuid::Uuid, form: IdForm) -> String {
+    format!("jackin account usage reconnect {}", id_text(id, form))
+}
+
+pub fn remove_command(id: uuid::Uuid, form: IdForm) -> String {
+    format!("jackin account usage rm {}", id_text(id, form))
 }
 
 pub const STATUS_LINE_FEED: &str = "updated by the Antigravity status-line hook";
