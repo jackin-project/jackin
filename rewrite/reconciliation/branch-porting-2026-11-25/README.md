@@ -11,7 +11,7 @@ Baseline: `main` at `8d9b05927e266844b63c2a20893257061ab5a086`, with 148 branche
 | `plan.md` | The audit and porting plan: tasks P01 to P21, the exact-SHA branch manifest, and the model policy. |
 | `goal.md` | The goal statement that started the run. |
 | `ledger.md` | The orchestrator's task ledger. |
-| `manifest-current.tsv` | The refreshed manifest of every remote branch. |
+| `manifest-2026-11-24-snapshot.tsv` | The branch inventory from 2026-11-24 (157 refs). It is an earlier snapshot and does not include the refs created after it. For current deletion decisions, use the final refresh section at the end of `deletion-manifest.md`. |
 | `deletion-manifest.md` | The guarded deletion batches, which have not been run. |
 | `verify/` | The verification reports behind every deletion verdict. |
 | `pr-1287.md` | The analysis of the stale PR #1287. |
@@ -59,14 +59,14 @@ Every branch below is pushed. The handoff for each is in `handoffs/`.
 |---|---|---|
 | #1326 | The P03/P16 residuals: typed cancellable lookups, the second-signal report, rollback of owned providers, and a console notice | Run G-FAST on head `1d0ef275b`. Answer the 3 Codex threads. Land the PR. |
 | #1322 | Deferred review comments from #1299 to #1321, the P08 in-flight race test, the #1311 review, and the P06 git exit-status test | Run G-FAST on `5558d84ed` without interruption. Answer any new Codex threads. Land the PR. |
-| #1330 (draft) | `RemovalPlan` live-config guards | Confirm the clippy fix in CI. Mark the PR ready. Land it. |
-| #1331 (draft) | P01 residuals: bounded probes and the selected-row size cap | Get a green G-FAST and a final review. Land the PR. Bound the `canonicalize` calls in session `source.rs` and `credentials.rs`. |
+| #1330 (draft) | `RemovalPlan` live-config guards | Run G-FAST on the final head: the last run was stopped after the clippy fixes. Confirm CI is green and answer every thread. Mark the PR ready. Land it. |
+| #1331 (draft) | P01 residuals: bounded probes and the selected-row size cap | In this PR, first bound the `canonicalize` calls in session `source.rs` and `credentials.rs`. That is review item 3, which was deferred, and it must not stay deferred. Then get a green G-FAST and a final review that covers the whole diff. Land the PR. |
 
 After the last merge, run G-FULL on `main`. Merge only through the tailrocks `merge.ts` script with `--accept-risk`, as `landing-rule.md` describes.
 
 ## Decisions waiting on the operator
 
-1. Branch deletions: `deletion-manifest.md` lists 130 verified retire refs and 8 newly deletable refs, each with an expected-SHA lease. None has run. Also add the two branches that were pushed only to preserve local commits: `backup/p03-residuals-wip` (b27f50f4f), which holds the pre-squash history of #1326, and `fix/p11-usage-cache-freshness` (ce987bd0b), the original P11 commit, which #1328 landed in adapted form.
+1. Branch deletions: `deletion-manifest.md` lists 130 verified retire refs. It also lists the refs that are deletable now or will be: the 8 from the first refresh, and the final refresh section at the end of the file. That section covers every branch of this run whose PR has landed, the two branches pushed only to preserve local commits, and the donor refs together with the follow-up PRs they wait on. Each ref has an expected SHA. None has run.
 2. PR #1287: the recommendation is to close it without merging. `pr-1287.md` gives the reasons.
 3. The OMP cache revision from P01 no longer includes the store's change time, so an identical recreated store keeps its cached windows. This reverses a tested behavior and needs acknowledgement.
 4. D09: OpenShell 0.1.7 accepts Stop and then Start on a sandbox whose main process has ended. Decide whether `Session::power`, the contract check, and the fake gateway accept that.

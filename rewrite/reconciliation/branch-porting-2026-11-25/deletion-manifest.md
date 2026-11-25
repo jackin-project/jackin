@@ -426,3 +426,24 @@ Operator note: `wt/p03`, `wt/p07`, `wt/mv1` track their own branch and are clean
 Worktrees that check out a DELETE-NOW ref: none. Worktrees on a NEWLY-DELETABLE ref: `wt/p03`, `wt/p07`, `wt/p08`, `wt/p12`, `wt/p17`, `wt/mv1`. All are clean.
 
 Counts are vs the configured upstream. For worktrees whose upstream is `origin/main`, the count reflects this run's branch commits, not unpushed work. Read these numbers as a guide, not as a push verdict.
+
+## Final refresh, 2026-11-25 (supersedes the KEEP rows above for these refs)
+
+Since the snapshot above, P01, P02/P11, P03/P16, P07, P08, P12, P15, P17 and MV-1 have all landed. The following refs from this run are now eligible. Each entry gives the branch, the expected SHA, and the reason.
+
+- branch `fix/p02-exact-openrouter-money` expected `56e4d2586b40db9c3684382906f903740e0dc0b0` (PR #1325 landed in #1328, 55f2b36)
+- branch `fix/p03-cancellation-recovery` expected `b6f14fa99dd7db20f1179fc52a13390345dd9f72` (PR #1314 landed in #1324, f151478)
+- branch `fix/p07-fleet-observation` expected `8ef2570e830efd27ccf868e121824c63703329b2` (PR #1319 landed in #1324, f151478)
+- branch `fix/p08-role-manifest-refresh` expected `dd68ebbb8df9a60c742e57602eceb747bacb3712` (PR #1309 landed in #1321, 51f2d80)
+- branch `fix/p12-role-locks` expected `dc46590fa053587dd66282c445ca4e440fd510ab` (PR #1305 landed in #1321, 51f2d80)
+- branch `fix/p17-sandbox-write` expected `ec9df1407ef10d7aa3df9d896f4b28ce68792fce` (PR #1308 landed in #1321, 51f2d80)
+- branch `test/mv1-codex-placeholder-auth` expected `bc5498d9a1ad89e2da89515360db066a7eea6325` (PR #1313 landed in #1321, 51f2d80)
+- branch `test/p08-manifest-gaps` expected `132e7bc911faba9caf5a96f807f2cc307bd710c2` (PR #1327 landed in #1328, 55f2b36)
+- branch `fix/p11-usage-cache-freshness` expected `ce987bd0bbae3ff4c2e6cc05d7d53847a35b3118` (the original P11 commit, which #1328 landed in adapted form)
+- branch `docs/branch-porting-record` expected `7bcb0ad322dbad681e27028688702fd47406ba81` (PR #1333 closed, superseded by #1335)
+
+These become eligible only after their follow-up PR lands:
+
+- branch `backup/p03-residuals-wip` expected `b27f50f4fed25da9ec6a50cc208d4824f3afab8d`, after #1326 lands.
+- The donor refs in the table above: `recovery/strip-tests-restore-20261030` after #1331 (P01 residuals) lands. `preserve/session-boundaries-20261109`, `preserve/w1-fixes-20261109`, `codex/openshell-verified-checkpoint-20261108` and `codex/openshell-integration-checkpoint-20261108-122311` after #1326 (P03/P16 residuals) lands. `recovery/openrouter-exact-money-20261027` now, since P02 has landed and has no open follow-up. Before deleting any donor, confirm that the donor table's tasks and follow-ups have all landed.
+- `fix/p01-store-capture`, `fix/p15-final-image-paths`, `fix/p04…`, `fix/p05…`, `fix/p06…`, `fix/p09…`, `fix/p10…`, `fix/p13…`, `fix/p14…`, `fix/p16…`, `fix/p18…`, `fix/p19…`, `fix/p20…`, `fix/p21…` and `integrate/batch-*` were already removed from origin when their PRs merged.
