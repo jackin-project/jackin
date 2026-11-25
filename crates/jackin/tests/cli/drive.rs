@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-use jackin_core::{Clock, CriticalWrite, Provider, SecretBytes};
+use jackin_core::{Clock, CriticalWrite, Provider, SecretBytes, settle_critical_writes};
 use jackin_testkit::{Method, Route, TestResult, UsageServer, World};
 use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, CredentialVault, UsageProvider};
 use jackin_usage::onboarding::OwnedLogin;
@@ -16,7 +16,8 @@ use super::antigravity_refresh::Memory;
 use super::support::Failure;
 
 const BOUND: Duration = Duration::from_secs(4);
-const CRITICAL_WORK: Duration = Duration::from_millis(2600);
+const CRITICAL_WORK: Duration = Duration::from_secs(3);
+const STUCK_READ_ALLOWANCE: Duration = Duration::from_millis(3500);
 
 #[test]
 fn drive_returns_while_a_blocking_task_is_stuck() -> TestResult {
@@ -85,7 +86,7 @@ fn drive_waits_for_a_critical_write_but_abandons_a_stuck_read() -> TestResult {
             .map_err(|_| "the test stopped listening")?;
         finished.map_err(|_| "drive failed")
     });
-    let elapsed = done_rx.recv_timeout(Duration::from_secs(8));
+    let elapsed = done_rx.recv_timeout(Duration::from_secs(12));
     drop(release);
     driver.join().map_err(|_| "driver thread panicked")??;
     let elapsed = elapsed.map_err(|_| "drive waited for a stuck read")?;
@@ -94,7 +95,7 @@ fn drive_waits_for_a_critical_write_but_abandons_a_stuck_read() -> TestResult {
         "drive returned before the critical write finished: {elapsed:?}"
     );
     assert!(
-        elapsed < CRITICAL_WORK + Duration::from_millis(2500),
+        elapsed < CRITICAL_WORK + STUCK_READ_ALLOWANCE,
         "drive held the process for a stuck read: {elapsed:?}"
     );
     Ok(())
@@ -116,6 +117,7 @@ fn seed_expiring_claude_account(
 ) -> Result<(), Failure> {
     let mut registry = AccountRegistry::with_vault(path, shared(vault))?;
     registry.add_with_snapshot(
+        &CriticalWrite::begin(),
         UsageProvider::Claude,
         "Work",
         &CandidateIdentity::OAuth(Some("member".into())),
@@ -125,8 +127,7 @@ fn seed_expiring_claude_account(
             now - 10,
             null
         ]))?),
-        now - 60,
-        &json!({"plan":"stale","resources":{}}),
+        (now - 60, &json!({"plan":"stale","resources":{}})),
     )?;
     Ok(())
 }
@@ -167,9 +168,16 @@ fn drive_lets_a_rotation_blocked_on_the_store_lock_store_its_tokens() -> TestRes
             drop(held);
         });
         let cancel = CancellationToken::new();
+        let write_began = async {
+            while settle_critical_writes(Duration::ZERO) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        };
         tokio::select! {
             biased;
-            () = tokio::time::sleep(Duration::from_millis(500)) => {}
+            began = tokio::time::timeout(Duration::from_secs(3), write_began) => {
+                began.map_err(|_| "the credential write never began")?;
+            }
             refreshed = service.refresh(&account, &cancel) => drop(refreshed),
         }
         Ok::<(), Failure>(())

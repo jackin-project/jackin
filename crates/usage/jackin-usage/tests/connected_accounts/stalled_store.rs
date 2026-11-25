@@ -9,7 +9,7 @@ use jackin_core::{Provider, Secret};
 use jackin_testkit::{FakeClock, Method, Route, UsageServer};
 use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, ConnectionError, UsageProvider};
 use jackin_usage::connected::KeyConnection;
-use jackin_usage::onboarding::{LoginError, OwnedLogin};
+use jackin_usage::onboarding::{LoginError, LoginPrompt, OwnedLogin};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -73,12 +73,14 @@ fn two_accounts(
 ) -> Result<(AccountRegistry, Uuid, Uuid)> {
     let mut registry = db(path, vault)?;
     let first = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "first",
         &scoped("user/first"),
         &bytes("first-secret"),
     )?;
     let second = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "second",
         &scoped("user/second"),
@@ -141,7 +143,12 @@ fn a_read_that_races_a_rotation_returns_the_new_credential() -> Result<()> {
         let _sent = tx.send(read);
     });
     wait_for_stalled_read(&vault)?;
-    let rotated = registry.rotate(first, old, &bytes("rotated"))?;
+    let rotated = registry.rotate(
+        &jackin_core::CriticalWrite::begin(),
+        first,
+        old,
+        &bytes("rotated"),
+    )?;
     vault.release_stalled_reads();
     let (version, secret) = rx.recv_timeout(PATIENCE)??;
     assert_eq!(version, rotated);
@@ -160,6 +167,7 @@ fn a_writer_waiting_on_a_busy_store_fails_with_a_message_naming_the_keychain() -
     let started = Instant::now();
     let error = registry
         .add(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             "third",
             &scoped("user/third"),
@@ -173,6 +181,7 @@ fn a_writer_waiting_on_a_busy_store_fails_with_a_message_naming_the_keychain() -
     drop(held);
     assert_eq!(registry.list()?.len(), 2);
     registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "third",
         &scoped("user/third"),
@@ -196,7 +205,14 @@ fn a_rotation_carrying_new_material_waits_for_the_store_lock_instead_of_dropping
     std::thread::spawn(move || {
         let rotated = AccountRegistry::with_vault(&writer_path, writer_vault)
             .map(|registry| registry.with_lock_wait(Duration::from_millis(100)))
-            .and_then(|mut registry| registry.rotate(first, old, &bytes("rotated")))
+            .and_then(|mut registry| {
+                registry.rotate(
+                    &jackin_core::CriticalWrite::begin(),
+                    first,
+                    old,
+                    &bytes("rotated"),
+                )
+            })
             .map_err(|e| e.to_string());
         let _sent = tx.send(rotated);
     });
@@ -222,12 +238,14 @@ async fn refresh_names_the_keychain_when_one_credential_read_stalls_and_the_rest
     let key = |name: &str| Secret::new(name.into());
     let (stuck_key, fine_key) = (key("stuck"), key("fine"));
     let stuck = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Zai,
         "stuck",
         &CandidateIdentity::api_key(&stuck_key),
         &KeyConnection::Zai.encode(&stuck_key)?,
     )?;
     let fine = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Zai,
         "fine",
         &CandidateIdentity::api_key(&fine_key),
@@ -283,5 +301,72 @@ async fn refresh_names_the_keychain_when_one_credential_read_stalls_and_the_rest
     let recorded = registry.failure(stuck)?.ok_or("failure not recorded")?;
     assert!(recorded.message.contains("Keychain"));
     assert!(registry.failure(fine)?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_waiting_for_the_store()
+-> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let mut registry = db(&path, &vault)?;
+    registry.clean_retired()?;
+    let server = UsageServer::start().await?;
+    let quota = "/api/monitor/usage/quota/limit";
+    server.serve(
+        Provider::Zai,
+        Method::Get,
+        quota,
+        Route::json(200,&json!({"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":10}]}}).to_string())
+            .requires_header("authorization", "Bearer issued"),
+    );
+    for (path, body) in [
+        ("/api/biz/subscription/list", r#"{"data":[]}"#),
+        (
+            "/api/biz/customer-package-reset/list?targetType=PERSONAL",
+            r#"{"data":{}}"#,
+        ),
+    ] {
+        server.serve(Provider::Zai, Method::Get, path, Route::json(200, body));
+    }
+    let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()))
+        .with_vault(Arc::<Vault>::clone(&vault));
+    let held = lock_file(&temp.path().join("usage"))?;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let cancel = CancellationToken::new();
+    let login = service.connect(UsageProvider::Zai, None, None, tx, &cancel);
+    tokio::pin!(login);
+    let prompt = tokio::select! {
+        prompt = rx.recv() => prompt.ok_or("missing key prompt")?,
+        result = &mut login => return Err(format!("login ended before the key: {result:?}").into()),
+    };
+    let LoginPrompt::Key { reply, .. } = prompt else {
+        return Err("unexpected prompt".into());
+    };
+    reply
+        .send(Secret::new("issued".into()))
+        .map_err(|_| "key prompt closed")?;
+    let started = Instant::now();
+    while jackin_core::settle_critical_writes(Duration::ZERO) {
+        tokio::select! {
+            result = &mut login => return Err(format!("login ended before the write: {result:?}").into()),
+            () = tokio::time::sleep(Duration::from_millis(10)) => {}
+        }
+        if started.elapsed() > PATIENCE {
+            return Err("the credential write never began".into());
+        }
+    }
+    cancel.cancel();
+    drop(held);
+    let id = login.await?;
+    assert_eq!(registry.list()?.len(), 1);
+    assert_eq!(registry.list()?[0].id, id);
+    assert_eq!(
+        registry.credential(id)?.1.expose(),
+        KeyConnection::Zai
+            .encode(&Secret::new("issued".into()))?
+            .expose()
+    );
     Ok(())
 }

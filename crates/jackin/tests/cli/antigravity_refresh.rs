@@ -103,7 +103,7 @@ impl Lab {
         let stored = Arc::clone(&vault);
         let stored: Arc<dyn CredentialVault> = stored;
         let mut db = AccountRegistry::with_vault(&path, stored)?;
-        let id = db.add_with_snapshot(
+        let id = db.add_with_snapshot(&jackin_core::CriticalWrite::begin(),
             UsageProvider::Antigravity,
             "Personal",
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
@@ -114,9 +114,7 @@ impl Lab {
                 "access": "old-access",
                 "refresh": "refresh-1",
                 "expires_at": now + 10_000
-            }))?),
-            now - 60,
-            &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}}),
+            }))?), (now - 60, &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}})),
         )?;
         drop(db);
         server.serve(
@@ -533,12 +531,12 @@ async fn a_real_failure_beside_a_skipped_status_line_account_still_fails_the_ref
         let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
         let mut db = AccountRegistry::with_vault(&path, stored)?;
         db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Antigravity,
             "Personal",
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
             &SecretBytes::new(vec![1]),
-            world.clock.now().0,
-            &json!({"plan":"Ultra","resources":{}}),
+            (world.clock.now().0, &json!({"plan":"Ultra","resources":{}})),
         )?;
         drop(db);
         let human = cli.run(&["usage", "refresh"]).await?;
@@ -617,12 +615,12 @@ async fn a_missing_credential_failure_names_the_sign_in_command_and_no_retry() -
         let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
         let mut db = AccountRegistry::with_vault(&path, stored)?;
         let id = db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Antigravity,
             "Personal",
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
             &SecretBytes::new(vec![1]),
-            world.clock.now().0,
-            &json!({"plan":"Ultra","resources":{}}),
+            (world.clock.now().0, &json!({"plan":"Ultra","resources":{}})),
         )?;
         drop(db);
         let refreshed = cli
@@ -673,12 +671,12 @@ async fn mixed_refresh_lab(world: &World) -> Result<(Harness, Uuid), Failure> {
     let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
     let mut db = AccountRegistry::with_vault(&path, stored)?;
     let id = db.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Personal",
         &CandidateIdentity::OAuth(Some("ultra.quota.owner@example.com".into())),
         &SecretBytes::new(vec![1]),
-        world.clock.now().0,
-        &json!({"plan":"Ultra","resources":{}}),
+        (world.clock.now().0, &json!({"plan":"Ultra","resources":{}})),
     )?;
     drop(db);
     Ok((cli, id))

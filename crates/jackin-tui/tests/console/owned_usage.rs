@@ -102,12 +102,12 @@ pub(super) async fn journey(
         CandidateIdentity::OAuth(Some("synthetic".into()))
     };
     db.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         provider,
         &label,
         &identity,
         &SecretBytes::new(vec![1]),
-        lab.rig.world.clock.now().0,
-        &snapshot,
+        (lab.rig.world.clock.now().0, &snapshot),
     )?;
     lab.console
         .console()

@@ -348,18 +348,21 @@ fn accounts_with_one_identity_are_duplicates_whatever_their_labels_or_case() -> 
     let mut registry = AccountRegistry::with_vault(&path, Arc::new(Vault))?;
     let secret = SecretBytes::new(vec![1]);
     let first = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Work",
         &CandidateIdentity::OAuth(Some("Me@Example.com".to_owned())),
         &secret,
     )?;
     let second = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Home",
         &CandidateIdentity::OAuth(Some("me@example.com".to_owned())),
         &secret,
     )?;
     let other = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Work",
         &CandidateIdentity::OAuth(Some("other@example.com".to_owned())),

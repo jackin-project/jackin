@@ -129,8 +129,8 @@ async fn daily_details_report_exact_amounts_optional_failures_and_no_private_fie
             "resources":{"CNY/cash":{"kind":"balance","unit":"minor_currency","currency":"CNY","exponent":2,"available":0},
                 "daily/consumption":{"kind":"history","unit":"records","label":"Daily consumption","amount":1,"details":["2026-11-01 to 2026-11-22 UTC","2026-11-22 · MiMo fixture 0.000001 CNY · 2 requests · 11 tokens"]}}
         });
-        db.add_with_snapshot(UsageProvider::Mimo,"Daily",&CandidateIdentity::api_key(&jackin_core::Secret::new("test-only".into())),&SecretBytes::new(vec![1]),world.clock.now().0-900,&data)?;
-        let id=db.add(UsageProvider::Claude,"Awaiting usage",&CandidateIdentity::OAuth(None),&SecretBytes::new(vec![1]))?;
+        db.add_with_snapshot(&jackin_core::CriticalWrite::begin(), UsageProvider::Mimo,"Daily",&CandidateIdentity::api_key(&jackin_core::Secret::new("test-only".into())),&SecretBytes::new(vec![1]), (world.clock.now().0-900, &data))?;
+        let id=db.add(&jackin_core::CriticalWrite::begin(), UsageProvider::Claude,"Awaiting usage",&CandidateIdentity::OAuth(None),&SecretBytes::new(vec![1]))?;
         let pending=cli.run(&["usage","details","--account",&id.to_string(),"--json"]).await?;
         assert_eq!(pending.exit,ExitClass::NoUsageSnapshot);
         let record:Value=serde_json::from_str(&pending.stdout)?;

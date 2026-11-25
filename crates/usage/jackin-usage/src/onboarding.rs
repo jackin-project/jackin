@@ -304,9 +304,8 @@ impl OwnedLogin {
         let guard = lease.try_clone().map_err(ConnectionError::from)?;
         let write = CriticalWrite::begin();
         self.with_registry(move |mut db| {
-            let _write = write;
             let _lease = guard;
-            db.rotate(id, expected, &material)
+            db.rotate(&write, id, expected, &material)
         })
         .await
     }
@@ -360,7 +359,8 @@ impl OwnedLogin {
             Http::new(self.endpoints.timeout()).with_proxy(url.expose())?;
         }
         let encoded = proxy.map(|p| SecretBytes::new(p.expose().as_bytes().to_vec()));
-        self.with_registry(move |mut db| db.set_proxy(encoded.as_ref()))
+        let write = CriticalWrite::begin();
+        self.with_registry(move |mut db| db.set_proxy(&write, encoded.as_ref()))
             .await
     }
 
@@ -409,16 +409,11 @@ impl OwnedLogin {
             ()=cancel.cancelled()=>return Err(LoginError::Cancelled),
             validated=self.candidate(provider,auth,region,replace,prompts,cancel)=>validated?,
         };
-        if cancel.is_cancelled() {
-            return Err(LoginError::Cancelled);
-        }
         let fetched = self.clock.now().0;
-        let cancel = cancel.clone();
         let write = CriticalWrite::begin();
         tokio::task::spawn_blocking(move || {
-            let _write = write;
             let _lease = lease;
-            persist_candidate(&mut db, provider, candidate, existing, fetched, &cancel)
+            persist_candidate(&write, &mut db, provider, candidate, existing, fetched)
         })
         .await
         .map_err(|_| LoginError::Worker)?
@@ -927,12 +922,12 @@ impl RefreshTrigger {
 }
 
 fn persist_candidate(
+    write: &CriticalWrite,
     db: &mut AccountRegistry,
     provider: UsageProvider,
     candidate: Candidate,
     existing: Option<(Uuid, CredentialVersion)>,
     fetched: i64,
-    cancel: &CancellationToken,
 ) -> Result<Uuid, LoginError> {
     use crate::accounts::{InitialRead, KeptGrant};
     let read = candidate.snapshot;
@@ -940,12 +935,12 @@ fn persist_candidate(
         return match read {
             Ok(payload) => {
                 db.replace_candidate(
+                    write,
                     id,
                     version,
                     &candidate.identity,
                     &candidate.material,
                     Some((fetched, &payload)),
-                    cancel,
                 )?;
                 Ok(id)
             }
@@ -955,6 +950,7 @@ fn persist_candidate(
                     .unwrap_or((FailureKind::Service, None));
                 let message = error.to_string();
                 db.replace_grant_keeping_reading(
+                    write,
                     id,
                     version,
                     KeptGrant {
@@ -965,7 +961,6 @@ fn persist_candidate(
                         retry_after,
                         message: &message,
                     },
-                    cancel,
                 )?;
                 Err(error)
             }
@@ -987,12 +982,12 @@ fn persist_candidate(
         }
     };
     let id = db.add_candidate(
+        write,
         provider,
         &candidate.label,
         &candidate.identity,
         &candidate.material,
         initial,
-        cancel,
     )?;
     if provider == UsageProvider::Antigravity {
         read.map(|_| id)

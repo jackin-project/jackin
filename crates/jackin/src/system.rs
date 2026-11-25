@@ -30,6 +30,7 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 const CRITICAL_WRITE_LIMIT: Duration = Duration::from_secs(120);
+const CRITICAL_WRITE_NOTICE: Duration = Duration::from_secs(1);
 const READ_CHUNK: usize = 4096;
 const FALLBACK_SIZE: (u16, u16) = (80, 24);
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
@@ -41,9 +42,23 @@ pub fn drive<F: Future>(future: F) -> io::Result<F::Output> {
         .enable_all()
         .build()?;
     let output = runtime.block_on(future);
-    settle_critical_writes(CRITICAL_WRITE_LIMIT);
+    finish_critical_writes(
+        &mut io::stderr(),
+        CRITICAL_WRITE_NOTICE,
+        CRITICAL_WRITE_LIMIT,
+    );
     runtime.shutdown_timeout(SHUTDOWN_GRACE);
     Ok(output)
+}
+
+fn finish_critical_writes(out: &mut impl Write, notice_after: Duration, limit: Duration) {
+    if settle_critical_writes(notice_after) {
+        return;
+    }
+    drop(out.write_all(b"jackin: finishing a credential write...\n"));
+    if !settle_critical_writes(limit.saturating_sub(notice_after)) {
+        drop(out.write_all(b"jackin: gave up waiting for a credential write\n"));
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -291,5 +306,55 @@ impl Terminal for SystemTerminal {
             },
             _ = self.resizes.recv() => TerminalInput::Resized(self.size()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use jackin_core::CriticalWrite;
+
+    use super::*;
+
+    fn pause(length: Duration) {
+        let (_hold, wait) = mpsc::channel::<()>();
+        let _timed_out = wait.recv_timeout(length).is_err();
+    }
+
+    fn report(notice_after: Duration, limit: Duration) -> String {
+        let mut out = Vec::new();
+        finish_critical_writes(&mut out, notice_after, limit);
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    #[test]
+    fn nothing_is_printed_when_no_write_is_in_flight() {
+        assert_eq!(
+            report(Duration::from_millis(50), Duration::from_secs(5)),
+            ""
+        );
+    }
+
+    #[test]
+    fn a_slow_write_prints_one_notice_and_no_give_up_line() {
+        let write = CriticalWrite::begin();
+        let releaser = std::thread::spawn(move || {
+            pause(Duration::from_millis(300));
+            drop(write);
+        });
+        let text = report(Duration::from_millis(50), Duration::from_secs(10));
+        assert_eq!(text, "jackin: finishing a credential write...\n");
+        assert_eq!(releaser.join().ok(), Some(()));
+    }
+
+    #[test]
+    fn a_write_that_never_ends_is_reported_as_given_up() {
+        let _stuck = CriticalWrite::begin();
+        let text = report(Duration::from_millis(20), Duration::from_millis(200));
+        assert_eq!(
+            text,
+            "jackin: finishing a credential write...\njackin: gave up waiting for a credential write\n"
+        );
     }
 }

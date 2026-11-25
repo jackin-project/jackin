@@ -23,7 +23,6 @@ struct Vault {
     values: Mutex<HashMap<Uuid, Vec<u8>>>,
     lock_write: AtomicBool,
     lock_delete: AtomicBool,
-    cancel_store: Mutex<Option<tokio_util::sync::CancellationToken>>,
     stall: Mutex<Option<Uuid>>,
     stalled_reads: AtomicUsize,
     released: (Mutex<bool>, Condvar),
@@ -68,14 +67,6 @@ impl CredentialVault for Vault {
             .lock()
             .map_err(|_| ConnectionError::Vault)?
             .insert(slot, value.expose().to_vec());
-        if let Some(token) = self
-            .cancel_store
-            .lock()
-            .map_err(|_| ConnectionError::Vault)?
-            .take()
-        {
-            token.cancel();
-        }
         Ok(())
     }
     fn load(&self, slot: Uuid) -> std::result::Result<SecretBytes, ConnectionError> {
@@ -120,16 +111,28 @@ fn reconnect_preserves_unique_scoped_accounts_and_settings() -> Result<()> {
     let b = scoped("user/org-b");
     let secret = bytes("fixture");
     let id = registry.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "same",
         &a,
         &secret,
-        5,
-        &json!({"left":0}),
+        (5, &json!({"left":0})),
     )?;
-    let other = registry.add(UsageProvider::Claude, "same", &b, &secret)?;
+    let other = registry.add(
+        &jackin_core::CriticalWrite::begin(),
+        UsageProvider::Claude,
+        "same",
+        &b,
+        &secret,
+    )?;
     assert!(matches!(
-        registry.add(UsageProvider::Claude, "other", &a, &secret),
+        registry.add(
+            &jackin_core::CriticalWrite::begin(),
+            UsageProvider::Claude,
+            "other",
+            &a,
+            &secret
+        ),
         Err(ConnectionError::Duplicate)
     ));
     registry.rename(id, "my account")?;
@@ -141,16 +144,28 @@ fn reconnect_preserves_unique_scoped_accounts_and_settings() -> Result<()> {
     registry.reorder(&[other, id])?;
     let old = registry.version(id)?;
     assert!(matches!(
-        registry.replace(id, old, &b, &secret),
+        registry.replace(&jackin_core::CriticalWrite::begin(), id, old, &b, &secret),
         Err(ConnectionError::DifferentIdentity)
     ));
     vault.lock_write.store(true, Ordering::Release);
     assert!(matches!(
-        registry.replace(id, old, &a, &bytes("second")),
+        registry.replace(
+            &jackin_core::CriticalWrite::begin(),
+            id,
+            old,
+            &a,
+            &bytes("second")
+        ),
         Err(ConnectionError::Vault)
     ));
     assert!(matches!(
-        registry.add(UsageProvider::Claude, "third", &scoped("x"), &secret),
+        registry.add(
+            &jackin_core::CriticalWrite::begin(),
+            UsageProvider::Claude,
+            "third",
+            &scoped("x"),
+            &secret
+        ),
         Err(ConnectionError::Vault)
     ));
     assert_eq!(registry.credential(id)?.1.expose(), secret.expose());
@@ -162,12 +177,12 @@ fn reconnect_preserves_unique_scoped_accounts_and_settings() -> Result<()> {
         Err(ConnectionError::MissingCredential)
     ));
     registry.replace_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         id,
         registry.version(id)?,
         &a,
         &bytes("new"),
-        6,
-        &json!({"left":10}),
+        (6, &json!({"left":10})),
     )?;
     let read = AccountRegistry::open_read_only(&path)?.ok_or("missing database")?;
     let rows = read.snapshots()?;
@@ -199,19 +214,49 @@ fn key_replacement_rejects_duplicates_and_retires_old_slots() -> Result<()> {
     let a = CandidateIdentity::api_key(&Secret::new("fixture-a".into()));
     let b = CandidateIdentity::api_key(&Secret::new("fixture-b".into()));
     let c = CandidateIdentity::api_key(&Secret::new("fixture-c".into()));
-    let id = registry.add(UsageProvider::OpenRouter, "A", &a, &bytes("first"))?;
-    registry.add(UsageProvider::OpenRouter, "B", &b, &bytes("other"))?;
+    let id = registry.add(
+        &jackin_core::CriticalWrite::begin(),
+        UsageProvider::OpenRouter,
+        "A",
+        &a,
+        &bytes("first"),
+    )?;
+    registry.add(
+        &jackin_core::CriticalWrite::begin(),
+        UsageProvider::OpenRouter,
+        "B",
+        &b,
+        &bytes("other"),
+    )?;
     let generation = registry.version(id)?;
     assert!(matches!(
-        registry.replace(id, generation, &b, &bytes("second")),
+        registry.replace(
+            &jackin_core::CriticalWrite::begin(),
+            id,
+            generation,
+            &b,
+            &bytes("second")
+        ),
         Err(ConnectionError::Duplicate)
     ));
     assert!(matches!(
-        registry.replace(id, generation, &scoped("x"), &bytes("second")),
+        registry.replace(
+            &jackin_core::CriticalWrite::begin(),
+            id,
+            generation,
+            &scoped("x"),
+            &bytes("second")
+        ),
         Err(ConnectionError::CredentialKind)
     ));
     vault.lock_delete.store(true, Ordering::Release);
-    registry.replace(id, generation, &c, &bytes("second"))?;
+    registry.replace(
+        &jackin_core::CriticalWrite::begin(),
+        id,
+        generation,
+        &c,
+        &bytes("second"),
+    )?;
     assert_eq!(registry.credential(id)?.1.expose(), b"second");
     drop(registry);
     vault.lock_delete.store(false, Ordering::Release);
@@ -219,7 +264,12 @@ fn key_replacement_rejects_duplicates_and_retires_old_slots() -> Result<()> {
     again.clean_retired()?;
     assert_eq!(vault.values.lock().map_err(|_| "vault poisoned")?.len(), 2);
     assert!(matches!(
-        again.rotate(id, generation, &bytes("late")),
+        again.rotate(
+            &jackin_core::CriticalWrite::begin(),
+            id,
+            generation,
+            &bytes("late")
+        ),
         Err(ConnectionError::Changed)
     ));
     let live = again.version(id)?;
@@ -229,7 +279,12 @@ fn key_replacement_rejects_duplicates_and_retires_old_slots() -> Result<()> {
         Err(ConnectionError::Changed)
     ));
     assert!(matches!(
-        again.rotate(id, live, &bytes("late")),
+        again.rotate(
+            &jackin_core::CriticalWrite::begin(),
+            id,
+            live,
+            &bytes("late")
+        ),
         Err(ConnectionError::Changed)
     ));
     assert_eq!(again.snapshots()?.len(), 1);
@@ -255,47 +310,6 @@ fn offline_reader_leaves_missing_state_absent_and_rejects_symlinks() -> Result<(
     Ok(())
 }
 
-#[test]
-fn cancellation_during_vault_prompt_rolls_back_candidate() -> Result<()> {
-    let temp = tempfile::tempdir()?;
-    let path = temp.path().join("usage/accounts.db");
-    let vault = Arc::new(Vault::default());
-    let mut registry = db(&path, &vault)?;
-    let identity = scoped("member/org");
-    let old = bytes("original");
-    let cancel = tokio_util::sync::CancellationToken::new();
-    *vault.cancel_store.lock().map_err(|_| "vault poisoned")? = Some(cancel.clone());
-    assert!(matches!(
-        registry.add_candidate(
-            UsageProvider::Claude,
-            "label",
-            &identity,
-            &old,
-            jackin_usage::accounts::InitialRead::Pending,
-            &cancel
-        ),
-        Err(ConnectionError::Cancelled)
-    ));
-    assert!(registry.list()?.is_empty());
-    let id = registry.add(UsageProvider::Claude, "label", &identity, &old)?;
-    let cancel = tokio_util::sync::CancellationToken::new();
-    *vault.cancel_store.lock().map_err(|_| "vault poisoned")? = Some(cancel.clone());
-    assert!(matches!(
-        registry.replace_candidate(
-            id,
-            registry.version(id)?,
-            &identity,
-            &bytes("candidate"),
-            None,
-            &cancel
-        ),
-        Err(ConnectionError::Cancelled)
-    ));
-    assert_eq!(registry.credential(id)?.1.expose(), old.expose());
-    assert_eq!(vault.values.lock().map_err(|_| "vault poisoned")?.len(), 1);
-    Ok(())
-}
-
 #[path = "dashboard/tests.rs"]
 mod dashboard_tests;
 
@@ -314,6 +328,7 @@ async fn hub_reconciliation_preserves_local_preferences_and_filters_upstream_log
     let vault = Arc::new(Vault::default());
     let mut registry = db(&path, &vault)?;
     let direct = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "same",
         &scoped("direct"),
@@ -440,12 +455,12 @@ fn retry_after_holds_manual_refresh_and_stale_failures_cannot_restore_a_connecti
     let mut registry = db(&path, &vault)?;
     let identity = scoped("subject/org");
     let id = registry.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "fixture",
         &identity,
         &bytes("first"),
-        50,
-        &serde_json::json!({"available":0}),
+        (50, &serde_json::json!({"available":0})),
     )?;
     let v = registry.version(id)?;
     registry.record_failure(
@@ -463,7 +478,13 @@ fn retry_after_holds_manual_refresh_and_stale_failures_cannot_restore_a_connecti
     assert_eq!(reopened.snapshots()?[0].1, Some(50));
     registry.put_snapshot(id, v, 242, &serde_json::json!({"available":3}))?;
     assert!(registry.failure(id)?.is_none());
-    registry.replace(id, v, &identity, &bytes("replacement"))?;
+    registry.replace(
+        &jackin_core::CriticalWrite::begin(),
+        id,
+        v,
+        &identity,
+        &bytes("replacement"),
+    )?;
     assert!(
         registry
             .record_failure(id, v, 250, FailureKind::Authentication, None, "old")
@@ -583,12 +604,12 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
             snapshot["key_type"] = json!(kind);
         }
         registry.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::OpenRouter,
             "Work",
             &CandidateIdentity::api_key(&Secret::new("fixture".into())),
             &bytes("fixture"),
-            login.now().0,
-            &snapshot,
+            (login.now().0, &snapshot),
         )?;
         let entry = presentation::entries(&login)?
             .pop()
@@ -629,20 +650,18 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
         .with_vault(vault);
     let now = login.now().0;
     for (label, remaining, reset) in [("Work", 12, 3600), ("Personal", 100, 7200)] {
-        registry.add_with_snapshot(
+        registry.add_with_snapshot(&jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             label,
             &CandidateIdentity::OAuth(Some(label.to_owned())),
-            &bytes(label),
-            now,
-            &json!({
+            &bytes(label), (now, &json!({
                 "resources": {
                     "session": {"kind":"quota", "remaining_percent":remaining, "resetsAt":now + reset},
                     "webSearches": {"kind":"quota", "unit":"searches", "used":0, "limit":50},
                     "credits": {"kind":"balance", "unit":"credits"},
                 },
                 "history": {"ranges": {"today": {"totals": {"tokens": 100, "inputTokens": 50}}}},
-            }),
+            })),
         )?;
     }
 
@@ -707,13 +726,11 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
     let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
         .with_vault(vault);
     let now = login.now();
-    registry.add_with_snapshot(
+    registry.add_with_snapshot(&jackin_core::CriticalWrite::begin(),
         UsageProvider::Mimo,
         "Work",
         &CandidateIdentity::api_key(&Secret::new("fixture".into())),
-        &bytes("fixture"),
-        now.0,
-        &json!({"resources": {
+        &bytes("fixture"), (now.0, &json!({"resources": {
             "tokenPlan": {"kind":"quota", "unit":"credits", "used":1, "limit":50_474_251_079_i64, "available":50_474_251_078_i64},
             "booster": {"kind":"balance", "unit":"cny", "exponent":6, "available":125},
             "monthlyChargeUsed": {"kind":"amount", "unit":"usd", "amount":999_994_000},
@@ -721,7 +738,7 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
             "webSearches": {"kind":"amount", "unit":"provider units", "amount":999_996_000},
             "session": {"kind":"window", "remaining_percent":99.5},
             "weekly": {"kind":"window", "remaining_percent":0.5},
-        }}),
+        }})),
     )?;
     let board = Dashboard::load(&registry, &mut DashboardMemory::default(), now.0)?;
     for (id, compact, exact) in [
