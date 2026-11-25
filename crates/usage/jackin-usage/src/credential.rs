@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, CaptureLimits, CaptureProblem, CredentialFileProblem, CredentialSource, FileIdentity,
-    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath,
-    SQLITE_MAGIC, STORE_LENGTH_LIMIT, STORE_PRAGMAS, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
+    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    STORE_LENGTH_LIMIT, STORE_PRAGMAS, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
     STORE_VALUE_MAX_BYTES, Secret, StoreImage, capture, lookup_tuple, read_credential_file,
     run_bounded,
 };
@@ -341,14 +341,8 @@ async fn minimax_host_login(
             root,
         )
         .map_err(|_| Unresolved::Unreadable("the MiniMax credential path is not usable"))?;
-        if deps
-            .fs
-            .canonicalize(&path)
-            .await
-            .map_err(|_| Unresolved::Missing)?
-            .is_some()
-        {
-            found.push(read_credential(deps, &path).await?);
+        if let Some(login) = present_credential(deps, &path).await? {
+            found.push(login);
         }
     }
     match found.len() {
@@ -364,7 +358,6 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
     let captured = match capture(deps.fs.as_ref(), path, OPENCODE_LIMITS).await {
         Ok(captured) => captured,
         Err(CaptureProblem::NotSqlite | CaptureProblem::NotARegularFile) => return Ok(None),
-        Err(CaptureProblem::Symlink) if !links_to_sqlite(deps, path).await => return Ok(None),
         Err(CaptureProblem::Missing) => return Err(Unresolved::Missing),
         Err(CaptureProblem::LogUnreadable | CaptureProblem::LogTooLarge) => {
             return Err(Unresolved::Unreadable(
@@ -386,29 +379,6 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
     Ok(Some(
         Material::login(found.value.expose().to_owned()).with_revision(Some(revision)),
     ))
-}
-
-async fn links_to_sqlite(deps: &UsageDeps, path: &HostPath) -> bool {
-    let Ok(Some(target)) = deps.fs.canonicalize(path).await else {
-        return false;
-    };
-    let (Some(dir), Some(name)) = (
-        target
-            .as_path()
-            .parent()
-            .and_then(|dir| HostPath::parse(dir).ok()),
-        target
-            .as_path()
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| RepoPath::parse(name).ok()),
-    ) else {
-        return false;
-    };
-    matches!(
-        deps.fs.read_regular(&dir, &name, SQLITE_MAGIC.len()).await,
-        Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC)
-    )
 }
 
 struct OpenCodeRecord {
@@ -677,13 +647,22 @@ async fn read_credential(
     deps: &UsageDeps,
     path: &HostPath,
 ) -> Result<(String, String), Unresolved> {
+    present_credential(deps, path)
+        .await?
+        .ok_or(Unresolved::Missing)
+}
+
+async fn present_credential(
+    deps: &UsageDeps,
+    path: &HostPath,
+) -> Result<Option<(String, String)>, Unresolved> {
     let bytes = match read_credential_file(deps.fs.as_ref(), path).await {
         Err(_) => {
             return Err(Unresolved::Unreadable(
                 "the credential file could not be read",
             ));
         }
-        Ok(Err(CredentialFileProblem::Missing)) => return Err(Unresolved::Missing),
+        Ok(Err(CredentialFileProblem::Missing)) => return Ok(None),
         Ok(Err(CredentialFileProblem::NotARegularFile)) => {
             return Err(Unresolved::Unreadable(
                 "the credential file is not a regular file",
@@ -700,7 +679,7 @@ async fn read_credential(
     let text = non_empty(&text)
         .map(str::to_owned)
         .ok_or(Unresolved::Missing)?;
-    Ok((text, revision))
+    Ok(Some((text, revision)))
 }
 
 fn revision_of(bytes: &[u8]) -> String {

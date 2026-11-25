@@ -1199,3 +1199,40 @@ async fn a_credential_view_or_virtual_table_is_refused_instead_of_run() -> TestR
     })
     .await
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_link_at_the_store_whose_target_never_resolves_is_given_up_on() -> TestResult {
+    let harness = UsageHarness::new().await?;
+    harness
+        .put("/home/work/dotfiles/opencode.db", "SQLite format 3\0")
+        .await?;
+    let link = crate::support::host_path("/home/work/opencode.db");
+    harness
+        .fs
+        .link(&link, &crate::support::host_path("/home/work/dotfiles/opencode.db"));
+    let probe = harness.fs.stall_canonicalize_of("opencode.db");
+    let account = account(
+        "opencode",
+        Provider::Opencode,
+        CredentialSource::File { path: link },
+    );
+    let host = harness.host();
+    let finished = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        harness.report_on(&host, std::slice::from_ref(&account), Refresh::Force),
+    )
+    .await
+    .map_err(|_| "the report never finished")?;
+    let outcome = finished?.accounts.remove(0).outcome;
+    assert!(
+        matches!(
+            unavailable(&outcome),
+            UnavailableReason::Provider(message)
+                if message == "the OpenCode store could not be read"
+        ),
+        "{outcome:?}"
+    );
+    assert_eq!(probe.entered(), 1);
+    assert_eq!(probe.abandoned(), 1);
+    Ok(())
+}

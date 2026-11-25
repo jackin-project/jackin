@@ -149,6 +149,82 @@ async fn a_database_that_is_a_symbolic_link_is_refused() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_link_to_anything_but_a_database_falls_through_without_blocking() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let base = dir.path();
+    std::fs::write(base.join("login.json"), b"{\"type\":\"oauth\"}")?;
+    std::fs::create_dir(base.join("folder"))?;
+    let made = tokio::process::Command::new("mkfifo")
+        .arg(base.join("pipe"))
+        .status()
+        .await?;
+    assert!(made.success(), "mkfifo failed");
+    std::fs::write(base.join("real.db"), database(512))?;
+    for (target, expected) in [
+        ("login.json", CaptureProblem::NotSqlite),
+        ("folder", CaptureProblem::NotSqlite),
+        ("pipe", CaptureProblem::NotSqlite),
+        ("gone", CaptureProblem::NotSqlite),
+        ("real.db", CaptureProblem::Symlink),
+    ] {
+        let link = base.join(format!("{target}.link"));
+        std::os::unix::fs::symlink(base.join(target), &link)?;
+        let finished = tokio::time::timeout(
+            Duration::from_secs(10),
+            capture(&StdFileSystem::default(), &HostPath::parse(&link)?, LIMITS),
+        )
+        .await
+        .map_err(|_| format!("the link to {target} blocked the capture"))?;
+        assert_eq!(finished.err(), Some(expected), "{target}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_link_whose_target_never_resolves_is_given_up_at_the_deadline() -> TestResult {
+    let fs = fixture(&[("real.db", database(512))]).await?;
+    fs.link(&at("agent.db")?, &at("real.db")?);
+    let probe = fs.stall_canonicalize_of("agent.db");
+    let limits = CaptureLimits {
+        deadline: Duration::from_millis(100),
+        ..LIMITS
+    };
+    let refused = tokio::time::timeout(
+        Duration::from_secs(10),
+        capture(&fs, &at("agent.db")?, limits),
+    )
+    .await
+    .map_err(|_| "the capture outlived its deadline")?
+    .err();
+    assert_eq!(refused, Some(CaptureProblem::TimedOut));
+    assert_eq!(probe.entered(), 1);
+    assert_eq!(probe.abandoned(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_link_whose_target_never_reads_is_given_up_at_the_deadline() -> TestResult {
+    let fs = fixture(&[("real.db", database(512))]).await?;
+    fs.link(&at("agent.db")?, &at("real.db")?);
+    let probe = fs.stall_reads_of("real.db");
+    let limits = CaptureLimits {
+        deadline: Duration::from_millis(100),
+        ..LIMITS
+    };
+    let refused = tokio::time::timeout(
+        Duration::from_secs(10),
+        capture(&fs, &at("agent.db")?, limits),
+    )
+    .await
+    .map_err(|_| "the capture outlived its deadline")?
+    .err();
+    assert_eq!(refused, Some(CaptureProblem::TimedOut));
+    assert_eq!(probe.entered(), 1);
+    assert_eq!(probe.abandoned(), 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_hot_rollback_journal_makes_the_capture_retry_and_then_give_up() -> TestResult {
     let mut hot = vec![0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
     hot.resize(64, 0);

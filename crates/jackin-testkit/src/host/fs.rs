@@ -52,6 +52,8 @@ struct FsState {
     stall: Option<Stall>,
     reads: HashMap<String, usize>,
     hooks: Vec<ReadHook>,
+    links: BTreeMap<PathBuf, PathBuf>,
+    canonical_stall: Option<(String, Arc<StallProbe>)>,
 }
 
 #[derive(Debug)]
@@ -217,6 +219,27 @@ impl MemFs {
             .map(|stall| (Arc::clone(&stall.probe), stall.strand))
     }
 
+    pub fn stall_canonicalize_of(&self, name: &str) -> Arc<StallProbe> {
+        let probe = Arc::new(StallProbe::default());
+        locked(&self.state).canonical_stall = Some((name.to_owned(), Arc::clone(&probe)));
+        probe
+    }
+
+    pub fn link(&self, link: &HostPath, target: &HostPath) {
+        locked(&self.state).links.insert(
+            link.as_path().to_path_buf(),
+            target.as_path().to_path_buf(),
+        );
+    }
+
+    fn canonical_stalled(&self, path: &HostPath) -> Option<Arc<StallProbe>> {
+        locked(&self.state)
+            .canonical_stall
+            .as_ref()
+            .filter(|(stalled, _)| path.as_path().ends_with(stalled))
+            .map(|(_, probe)| Arc::clone(probe))
+    }
+
     pub fn after_read_of(
         &self,
         name: &str,
@@ -290,7 +313,9 @@ impl FileSystem for MemFs {
 
     async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
         let state = self.enter(FsOp::Stat)?;
-        if state.files.contains_key(path.as_path()) {
+        if state.links.contains_key(path.as_path()) {
+            Ok(Some(FileKind::Symlink))
+        } else if state.files.contains_key(path.as_path()) {
             Ok(Some(FileKind::File))
         } else if state.is_dir(path.as_path()) {
             Ok(Some(FileKind::Dir))
@@ -311,7 +336,18 @@ impl FileSystem for MemFs {
     }
 
     async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        if let Some(probe) = self.canonical_stalled(path) {
+            probe.entered.fetch_add(1, Ordering::SeqCst);
+            let _abandoned = Abandoned(&probe);
+            std::future::pending::<()>().await;
+        }
         let state = locked(&self.state);
+        if let Some(target) = state.links.get(path.as_path()) {
+            return Ok((state.files.contains_key(target) || state.is_dir(target))
+                .then(|| HostPath::parse(target))
+                .transpose()
+                .map_err(|_| io_error(path, ErrorKind::InvalidInput, "the link target is not absolute"))?);
+        }
         Ok(
             (state.files.contains_key(path.as_path()) || state.is_dir(path.as_path()))
                 .then(|| path.clone()),
@@ -634,6 +670,9 @@ impl MemFs {
         while let Some(name) = names.next() {
             current.push(name);
             let last = names.peek().is_none();
+            if state.links.contains_key(&current) {
+                return Ok(Err(RegularFileProblem::Symlink));
+            }
             if let Some(found) = state.files.get(&current) {
                 return Ok(if last {
                     Ok(RegularFile {

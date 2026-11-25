@@ -10,6 +10,7 @@ use std::os::unix::fs::{
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use rustix::fs::{
@@ -23,6 +24,7 @@ use crate::boundary::{
     LinkProblem, RegularFile, RegularFileProblem,
 };
 use crate::paths::{HostPath, RepoPath};
+use crate::sqlite_capture::within_preflight;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StdFileSystem {}
@@ -554,6 +556,7 @@ impl FileSystem for StdFileSystem {
 }
 
 pub const CREDENTIAL_FILE_MAX_BYTES: usize = 1 << 20;
+pub const CREDENTIAL_FILE_DEADLINE: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CredentialFileProblem {
@@ -566,7 +569,26 @@ pub async fn read_credential_file(
     fs: &dyn FileSystem,
     path: &HostPath,
 ) -> Result<Result<Vec<u8>, CredentialFileProblem>, FsError> {
-    let Some(target) = fs.canonicalize(path).await? else {
+    match within_preflight(CREDENTIAL_FILE_DEADLINE, |hold| {
+        read_credential_held(fs, path, hold)
+    })
+    .await
+    {
+        Ok(read) => read,
+        Err(_) => Err(FsError::Io {
+            path: path.clone(),
+            kind: ErrorKind::TimedOut,
+            message: "the credential file read did not finish in time".to_owned(),
+        }),
+    }
+}
+
+async fn read_credential_held(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+    hold: Hold,
+) -> Result<Result<Vec<u8>, CredentialFileProblem>, FsError> {
+    let Some(target) = fs.canonicalize_holding(path, Hold::clone(&hold)).await? else {
         return Ok(Err(CredentialFileProblem::Missing));
     };
     let Some(dir) = target.parent() else {
@@ -582,7 +604,7 @@ pub async fn read_credential_file(
             message: "credential file name is not usable".to_owned(),
         })?;
     match fs
-        .read_regular(&dir, &name, CREDENTIAL_FILE_MAX_BYTES)
+        .read_regular_holding(&dir, &name, CREDENTIAL_FILE_MAX_BYTES, hold)
         .await
     {
         Err(FsError::Io {

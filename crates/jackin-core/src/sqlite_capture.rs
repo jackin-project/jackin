@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -108,6 +109,31 @@ fn preflight_slots() -> &'static Arc<Semaphore> {
     SLOTS.get_or_init(|| Arc::new(Semaphore::new(PREFLIGHT_SLOTS)))
 }
 
+async fn preflight_slot() -> Result<Slot, CaptureProblem> {
+    Arc::clone(preflight_slots())
+        .acquire_owned()
+        .await
+        .map(Arc::new)
+        .map_err(|_| CaptureProblem::Unreadable)
+}
+
+pub(crate) async fn within_preflight<T, Work, Running>(
+    deadline: Duration,
+    work: Work,
+) -> Result<T, CaptureProblem>
+where
+    Work: FnOnce(Hold) -> Running,
+    Running: Future<Output = T>,
+{
+    tokio::time::timeout(deadline, async {
+        let slot = preflight_slot().await?;
+        let hold: Hold = slot;
+        Ok(work(hold).await)
+    })
+    .await
+    .map_err(|_| CaptureProblem::TimedOut)?
+}
+
 fn is_wal_mode(header: &[u8]) -> bool {
     header.get(19) == Some(&WAL_FORMAT_VERSION)
 }
@@ -185,17 +211,12 @@ async fn capture_pinned(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
-    let preflight: Slot = Arc::new(
-        Arc::clone(preflight_slots())
-            .acquire_owned()
-            .await
-            .map_err(|_| CaptureProblem::Unreadable)?,
-    );
+    let preflight = preflight_slot().await?;
     match fs
         .stat_holding(database, Arc::<OwnedSemaphorePermit>::clone(&preflight))
         .await
     {
-        Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
+        Ok(Some(FileKind::Symlink)) => return Err(classify_link(fs, database, &preflight).await),
         Ok(_) => {}
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
@@ -286,6 +307,32 @@ async fn capture_pinned(
         });
     }
     Err(CaptureProblem::Changed)
+}
+
+async fn classify_link(fs: &dyn FileSystem, link: &HostPath, slot: &Slot) -> CaptureProblem {
+    let Ok(Some(target)) = fs
+        .canonicalize_holding(link, Arc::<OwnedSemaphorePermit>::clone(slot))
+        .await
+    else {
+        return CaptureProblem::NotSqlite;
+    };
+    let (Some(dir), Some(name)) = (
+        target.parent(),
+        target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| RepoPath::parse(name).ok()),
+    ) else {
+        return CaptureProblem::NotSqlite;
+    };
+    let hold: Hold = Arc::<OwnedSemaphorePermit>::clone(slot);
+    match fs
+        .read_regular_holding(&dir, &name, SQLITE_MAGIC.len(), hold)
+        .await
+    {
+        Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC) => CaptureProblem::Symlink,
+        _ => CaptureProblem::NotSqlite,
+    }
 }
 
 type Pair = (Zeroizing<Vec<u8>>, Option<Zeroizing<Vec<u8>>>);
