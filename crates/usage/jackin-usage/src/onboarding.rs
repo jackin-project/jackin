@@ -108,9 +108,6 @@ pub enum LoginPrompt {
         masked: bool,
         reply: oneshot::Sender<Secret>,
     },
-    Callback {
-        url: Url,
-    },
     Key {
         url: &'static str,
         reply: oneshot::Sender<Secret>,
@@ -133,7 +130,6 @@ impl fmt::Debug for LoginPrompt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Field { .. } => "Field",
-            Self::Callback { .. } => "Callback",
             Self::Key { .. } => "Key",
             Self::Browser { .. } => "Browser",
             Self::Device { .. } => "Device",

@@ -218,13 +218,6 @@ impl JackinBackend {
                     masked,
                 }
             }
-            LoginPrompt::Callback { url } => {
-                active.url = Some(url.clone());
-                UsageUpdate::Browser {
-                    url: url.into(),
-                    accepts_paste: false,
-                }
-            }
             LoginPrompt::AntigravityStatusLine { command } => {
                 UsageUpdate::AntigravityStatusLine { command }
             }

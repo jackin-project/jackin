@@ -279,9 +279,6 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
                 }
             }
         }
-        LoginPrompt::Callback { url } => app.io.note(&format!(
-            "Authorize your Google account in the browser: {url}"
-        )),
         LoginPrompt::BrowserUnavailable => {
             app.io.note("Open the displayed URL to continue.");
         }
