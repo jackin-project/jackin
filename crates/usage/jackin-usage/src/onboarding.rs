@@ -41,6 +41,7 @@ pub struct OwnedLogin {
     clock: Arc<dyn Clock>,
     google_registration: Option<GoogleRegistrationFile>,
     vault: Option<Arc<dyn crate::accounts::CredentialVault>>,
+    store_wait: std::time::Duration,
 }
 
 #[derive(Debug, Error)]
@@ -49,6 +50,10 @@ pub enum LoginError {
     Wait(i64),
     #[error("refresh timed out after 120 seconds")]
     Timeout,
+    #[error(
+        "the OS credential store did not answer in time; approve the Keychain access prompt or unlock the credential store, then retry"
+    )]
+    CredentialStoreTimeout,
     #[error(transparent)]
     Reset(#[from] crate::resets::ResetError),
     #[error(
@@ -71,7 +76,9 @@ pub enum LoginError {
     OpenBrowser,
     #[error("the stored credential cannot be decoded; sign in again")]
     Encoding,
-    #[error("Antigravity has no direct sign-in, so this refresh did not read quota from Google")]
+    #[error(
+        "this Antigravity account is updated by the Antigravity status-line hook, so refresh cannot read it from Google; sign in directly to refresh it"
+    )]
     NotDirect,
     #[error("usage account operation was interrupted")]
     Worker,
@@ -208,7 +215,14 @@ impl OwnedLogin {
             clock,
             vault: None,
             google_registration: None,
+            store_wait: std::time::Duration::from_secs(30),
         }
+    }
+
+    #[must_use]
+    pub fn with_store_wait(mut self, wait: std::time::Duration) -> Self {
+        self.store_wait = wait;
+        self
     }
     #[must_use]
     pub fn with_google_registration(
@@ -239,6 +253,10 @@ impl OwnedLogin {
         self.clock.now()
     }
 
+    pub fn utc_offset_secs(&self) -> i32 {
+        self.clock.utc_offset_secs()
+    }
+
     #[must_use]
     pub fn with_vault(mut self, vault: Arc<dyn crate::accounts::CredentialVault>) -> Self {
         self.vault = Some(vault);
@@ -250,6 +268,7 @@ impl OwnedLogin {
             Some(vault) => AccountRegistry::with_vault(&self.path, Arc::clone(vault)),
             None => AccountRegistry::open(&self.path),
         }
+        .map(|registry| registry.with_lock_wait(self.store_wait))
     }
 
     pub async fn with_registry<T: Send + 'static>(
@@ -267,7 +286,12 @@ impl OwnedLogin {
         &self,
         id: Uuid,
     ) -> Result<(CredentialVersion, SecretBytes), LoginError> {
-        self.with_registry(move |db| db.credential(id)).await
+        tokio::time::timeout(
+            self.store_wait,
+            self.with_registry(move |db| db.credential(id)),
+        )
+        .await
+        .map_err(|_| LoginError::CredentialStoreTimeout)?
     }
 
     async fn rotate(
@@ -403,7 +427,9 @@ impl OwnedLogin {
         let Some(id) = replace else { return Ok(None) };
         match self.read_credential(id).await {
             Ok(value) => Ok(Some(value)),
-            Err(LoginError::Store(ConnectionError::MissingCredential)) => Ok(None),
+            Err(LoginError::Store(
+                ConnectionError::MissingCredential | ConnectionError::CredentialKind,
+            )) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -1023,6 +1049,9 @@ impl LoginError {
                     FailureKind::Authentication
                 }
                 ProviderError::Unsupported(_) => FailureKind::Limitation,
+                ProviderError::Denied { reason, .. } if reason == "SERVICE_DISABLED" => {
+                    FailureKind::Limitation
+                }
                 ProviderError::Network(_) => FailureKind::Network,
                 ProviderError::RateLimited {
                     retry_after_seconds,
@@ -1031,7 +1060,9 @@ impl LoginError {
             },
             Self::Store(ConnectionError::MissingCredential)
             | Self::Grant(GrantError::SignInAgain) => FailureKind::Authentication,
-            Self::Timeout => FailureKind::Timeout,
+            Self::Timeout
+            | Self::CredentialStoreTimeout
+            | Self::Store(ConnectionError::StoreBusy) => FailureKind::Timeout,
             _ => return None,
         };
         Some((kind, None))

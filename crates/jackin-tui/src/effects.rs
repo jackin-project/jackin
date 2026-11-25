@@ -27,10 +27,10 @@ use jackin_core::{lock_path, plain};
 use jackin_image::Rebuild;
 use jackin_openshell::{GatewayError, PowerAction};
 use jackin_session::{
-    AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
-    RoleError, Session, Source, WorkspaceHold, build_observed, error_chain, launch_events,
-    plan_account_edits_for_agents, read_chatgpt_login, read_kimi_host_login, read_mimo_host_login,
-    read_minimax_host_login,
+    AccountPlan, BuildRequest, GatewayScope, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode,
+    RestartError, RoleError, Session, Source, WorkspaceHold, build_observed, error_chain,
+    launch_events, plan_account_edits_for_agents, read_chatgpt_login, read_kimi_host_login,
+    read_mimo_host_login, read_minimax_host_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -311,7 +311,7 @@ impl Inputs {
             project,
             folders: BTreeMap::new(),
         };
-        let edits = persist::workspace(&config, base, workspace, &resolved)?;
+        let edits = persist::workspace(base, workspace, &resolved)?;
         let (saved, warning) = self.applied(&config, edits).await?;
         let name = WorkspaceName::parse(&workspace.name).map_err(PersistError::from)?;
         if let Some(old) = base.filter(|b| b.name != workspace.name) {
@@ -395,6 +395,17 @@ impl Inputs {
         Ok(resolved)
     }
 
+    pub(crate) async fn check_local(
+        &self,
+        console_provider: Provider,
+        path: &str,
+    ) -> Result<(), String> {
+        self.local_source(console_provider, path)
+            .await
+            .map(drop)
+            .map_err(|refused| text(&refused))
+    }
+
     async fn local_source(
         &self,
         console_provider: Provider,
@@ -457,7 +468,7 @@ impl Inputs {
         match plan {
             AccountPlan::Offline(plan) => Ok(self.save_result(plan.apply().await).await?),
             AccountPlan::Gateway(plan) => {
-                let gateways = self.gateways(plan.config()).await?;
+                let gateways = self.gateways(plan.config(), plan.scope()).await?;
                 match plan.apply(&gateways).await {
                     Ok(config) => Ok((config, None)),
                     Err(jackin_session::AccountEditError::Config(error)) if error.committed() => {
@@ -469,10 +480,20 @@ impl Inputs {
         }
     }
 
-    async fn gateways(&self, config: &Config) -> Result<Box<Gateways>, Refused> {
+    async fn gateways(
+        &self,
+        config: &Config,
+        scope: GatewayScope,
+    ) -> Result<Box<Gateways>, Refused> {
         let home = self
             .sessions
-            .home(config, self.connect.as_ref(), &self.cancel)
+            .home(
+                config,
+                scope,
+                self.connect.as_ref(),
+                self.limits.connect_deadline,
+                &self.cancel,
+            )
             .await;
         match home {
             Home::Ready(gateways) => Ok(gateways),
@@ -489,7 +510,7 @@ impl Inputs {
         if config.gateways().next().is_none() {
             return Ok(None);
         }
-        self.gateways(config)
+        self.gateways(config, GatewayScope::Every)
             .await?
             .ensure_workspace_unused(config, name, &self.cancel)
             .await
@@ -939,9 +960,11 @@ impl Inputs {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
             let root = self.role_root(&config, &name).await?;
-            let found: Vec<RoleFinding> = match self.roles.read_manifest(&root).await {
+            let first = self.roles.read_manifest(&root).await;
+            let found: Vec<RoleFinding> = match &first {
                 Err(errors) => errors.iter().map(|error| finding(error, doc)).collect(),
-                Ok(mut manifest) => {
+                Ok(read) => {
+                    let mut manifest = read.clone();
                     let base = manifest_doc(&manifest);
                     match merge_manifest(&mut manifest, &base, doc) {
                         Ok(()) => self
@@ -955,7 +978,14 @@ impl Inputs {
                     }
                 }
             };
-            locked(&self.checks).insert(name, found);
+            let unchanged = match (&first, self.roles.read_manifest(&root).await) {
+                (Ok(before), Ok(after)) => *before == after,
+                (Err(_), Err(_)) => true,
+                _ => false,
+            };
+            if unchanged {
+                locked(&self.checks).insert(name, found);
+            }
             Ok::<_, Refused>(self.snapshot_of(&config).await)
         }
         .await;

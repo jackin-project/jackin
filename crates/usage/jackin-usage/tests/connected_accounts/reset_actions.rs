@@ -25,7 +25,7 @@ async fn claude_confirmation_checks_fresh_grant_and_remembers_spent_selection() 
     let clock = Arc::new(FakeClock::new());
     let now = clock.now();
     let login = OwnedLogin::new(path, server.endpoints(), clock).with_vault(vault);
-    let org = "f48b9dea-63d6-4c75-be4f-2713758bd42c";
+    let org = "00000000-0000-4000-8000-0000000000a1";
     let bytes = SecretBytes::new(serde_json::to_vec(&(
         "access",
         Option::<String>::None,
@@ -302,7 +302,7 @@ async fn zai_earliest_reset_is_rechecked_and_ambiguous_claim_is_never_retried() 
 
 #[tokio::test]
 async fn mirrored_claude_claim_uses_hub_login_and_verified_organization() -> Result<()> {
-    const ORG: &str = "f48b9dea-63d6-4c75-be4f-2713758bd42c";
+    const ORG: &str = "00000000-0000-4000-8000-0000000000a1";
     const PROFILE: &str = "https://api.anthropic.com/api/oauth/profile";
     const GRANTS: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
     let temp = tempfile::tempdir()?;
@@ -358,7 +358,7 @@ async fn mirrored_claude_claim_uses_hub_login_and_verified_organization() -> Res
     server.serve(p,Method::Post,endpoint,upstream(json!({"cedar_ember":{"eligible":true,"grants":[{"id":"g","type":"weekly","resets_left":1,"ends_at":expiry,"usable_now":true}]}}),|v|v["url"]==GRANTS && v["method"]=="GET"));
     server.serve(p,Method::Post,endpoint,upstream(json!({"result":"reset"}),|v|{
         let payload=v["data"].as_str().and_then(|s|serde_json::from_str::<Value>(s).ok()).unwrap_or(Value::Null);
-        v["url"]=="https://api.anthropic.com/api/organizations/f48b9dea-63d6-4c75-be4f-2713758bd42c/reset_rate_limits" && v["method"]=="POST" && v["auth_index"]=="slot" && v["header"]["Authorization"]=="Bearer $TOKEN$" && payload["program"]=="cedar_ember" && payload["grant_id"]=="g" && payload["request_id"].as_str().is_some_and(|s|uuid::Uuid::parse_str(s).is_ok())
+        v["url"]=="https://api.anthropic.com/api/organizations/00000000-0000-4000-8000-0000000000a1/reset_rate_limits" && v["method"]=="POST" && v["auth_index"]=="slot" && v["header"]["Authorization"]=="Bearer $TOKEN$" && payload["program"]=="cedar_ember" && payload["grant_id"]=="g" && payload["request_id"].as_str().is_some_and(|s|uuid::Uuid::parse_str(s).is_ok())
     }));
     server.serve(
         p,

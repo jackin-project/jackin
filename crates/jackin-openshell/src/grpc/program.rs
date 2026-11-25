@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::hash_map::RandomState;
 use std::collections::{BTreeMap, HashMap};
-use std::hash::BuildHasher;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use jackin_core::{EnvName, OutputStream, SandboxName, SandboxPath, TerminalText};
@@ -21,10 +20,12 @@ pub(crate) const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 const SHELL: &str = "/bin/sh";
 const MARKER_SCRIPT: &str = "marker=$1; shift; \"$@\"; code=$?; if [ \"$code\" -eq 0 ]; then touch -- \"$marker\" || exit 1; fi; exit \"$code\"";
 const NAME_MAX: usize = 255;
-const WRITE_SCRIPT: &str = "umask 077; anchor=$1; dir=$2; name=$3; mode=$4; tmp=$5; trap 'rm -f -- \"./$tmp\"' EXIT HUP INT TERM; cd -P -- \"$anchor\" || exit 1; here=$(pwd -P) || exit 1; set -f; IFS=/; set -- $dir; unset IFS; for part; do [ -L \"./$part\" ] && exit 73; [ -d \"./$part\" ] || mkdir -- \"./$part\" || [ -d \"./$part\" ] || exit 1; cd -P -- \"./$part\" || exit 1; here=$here/$part; [ \"$(pwd -P)\" = \"$here\" ] || exit 73; done; [ -d \"./$name\" ] && exit 73; cat > \"./$tmp\" || exit 1; chmod \"$mode\" \"./$tmp\" || exit 1; mv -f -- \"./$tmp\" \"./$name\" || exit 1";
+const WRITE_SCRIPT: &str = "umask 077; anchor=$1; dir=$2; name=$3; mode=$4; len=$5; template=$6; stage=; trap 'if [ -n \"$stage\" ]; then rm -f -- \"$stage\"; fi' EXIT HUP INT TERM; cd -P -- \"$anchor\" || exit 1; here=$(pwd -P) || exit 1; set -f; IFS=/; set -- $dir; unset IFS; for part; do [ -L \"./$part\" ] && exit 73; [ -d \"./$part\" ] || mkdir -- \"./$part\" || [ -d \"./$part\" ] || exit 1; cd -P -- \"./$part\" || exit 1; here=$here/$part; [ \"$(pwd -P)\" = \"$here\" ] || exit 73; done; [ -d \"./$name\" ] && exit 73; stage=$(mktemp -- \"./$template\") || { stage=; exit 75; }; head -c \"$((len + 1))\" > \"$stage\" || exit 1; size=$(wc -c < \"$stage\") || exit 1; [ \"$((size))\" -eq \"$len\" ] || exit 74; chmod \"$mode\" \"$stage\" || exit 1; sync -- \"$stage\" || exit 1; mv -f -- \"$stage\" \"./$name\" || exit 1; stage=; sync -- . || exit 76";
 const READ_SCRIPT: &str = "[ -f \"$1\" ] || exit 66; exec cat -- \"$1\"";
 const MISSING_FILE: i32 = 66;
 const UNSAFE_PATH: i32 = 73;
+const WRITE_NOT_DURABLE: i32 = 76;
+const STAGE_SUFFIX: &str = ".jackin-XXXXXXXXXXXX";
 const WRITE_ANCHOR: &str = "/sandbox";
 
 pub(super) fn exec_start(
@@ -80,15 +81,27 @@ fn command(run: &ProgramRun) -> Vec<String> {
     argv
 }
 
-fn temp_name(base: &str) -> String {
-    let token = format!("{:016x}", RandomState::new().hash_one(0_u8));
-    let suffix = format!(".jackin-{token}");
-    let beside = format!(".{base}{suffix}");
+fn stage_template(base: &str) -> String {
+    let beside = format!(".{base}{STAGE_SUFFIX}");
     if beside.len() <= NAME_MAX {
         beside
     } else {
-        suffix
+        STAGE_SUFFIX.to_owned()
     }
+}
+
+fn definitely_unwritten(error: &GatewayError, opened: bool) -> bool {
+    matches!(error, GatewayError::NotFound { .. })
+        || !opened
+            && matches!(
+                error,
+                GatewayError::NotReady { .. }
+                    | GatewayError::FailedPrecondition { .. }
+                    | GatewayError::InvalidArgument { .. }
+                    | GatewayError::PermissionDenied { .. }
+                    | GatewayError::Unauthenticated
+                    | GatewayError::Tls { .. }
+            )
 }
 
 fn write_split(target: &SandboxPath) -> Result<(&str, &str), GatewayError> {
@@ -149,6 +162,7 @@ impl Inner {
             messages,
             run.timeout,
             cancel,
+            None,
         )
         .await
     }
@@ -172,6 +186,7 @@ impl Inner {
                     vec![start_input(start)],
                     self.call_timeout,
                     &cancel,
+                    None,
                 )
                 .await?;
             match outcome.exit_code {
@@ -204,13 +219,19 @@ impl Inner {
             dir,
             name,
             &format!("{:o}", file.mode.0),
-            &temp_name(name),
+            &file.content.expose().len().to_string(),
+            &stage_template(name),
         ]
         .map(str::to_owned)
         .to_vec();
         let start = exec_start(self.scope(), sandbox, argv, None, HashMap::new());
         let mut messages = vec![start_input(start)];
         messages.extend(stdin_inputs(file.content.expose()));
+        let opened = AtomicBool::new(false);
+        let unconfirmed = |cause: GatewayError| GatewayError::WriteUnconfirmed {
+            path: file.path.clone(),
+            cause: Box::new(cause),
+        };
         let outcome = self
             .exec_collect(
                 GatewayOp::WriteFile,
@@ -218,17 +239,32 @@ impl Inner {
                 messages,
                 self.call_timeout,
                 &CancellationToken::new(),
+                Some(&opened),
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                if definitely_unwritten(&error, opened.load(Ordering::SeqCst)) {
+                    error
+                } else {
+                    unconfirmed(error)
+                }
+            })?;
         match outcome.exit_code {
             0 => Ok(()),
             UNSAFE_PATH => Err(GatewayError::UnsafePath {
                 path: file.path.clone(),
             }),
-            code => Err(protocol(format!(
+            WRITE_NOT_DURABLE => Err(GatewayError::WriteNotDurable {
+                path: file.path.clone(),
+            }),
+            code @ (1 | 74 | 75) => Err(protocol(format!(
                 "writing {} failed with exit code {code}",
                 file.path.as_str()
             ))),
+            code => Err(unconfirmed(protocol(format!(
+                "writing {} failed with exit code {code}",
+                file.path.as_str()
+            )))),
         }
     }
 
@@ -239,6 +275,7 @@ impl Inner {
         messages: Vec<ExecSandboxInput>,
         timeout: Duration,
         cancel: &CancellationToken,
+        opened: Option<&AtomicBool>,
     ) -> Result<ProgramOutcome, GatewayError> {
         let missing = Some(Missing::Sandbox(sandbox.clone()));
         let collect = async {
@@ -248,6 +285,9 @@ impl Inner {
                 .await
                 .map_err(|status| self.map_status(op, missing.clone(), &status))?
                 .into_inner();
+            if let Some(opened) = opened {
+                opened.store(true, Ordering::SeqCst);
+            }
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
             let mut exit = None;

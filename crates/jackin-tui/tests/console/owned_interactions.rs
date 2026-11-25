@@ -51,15 +51,18 @@ async fn open_all(lab: &mut Lab) -> TestResult {
 }
 
 #[tokio::test]
-async fn moved_history_row_stays_above_the_balance_after_reopening() -> TestResult {
+async fn moved_window_row_stays_above_the_main_limit_after_reopening() -> TestResult {
     let mut lab = Lab::open().await?;
     let mut db = registry(&lab)?;
     seed(
         &mut db,
         &lab,
-        UsageProvider::OpenRouter,
+        UsageProvider::Claude,
         "Everyday",
-        &json!({"resources":{"balance":{"kind":"balance","available":4,"unit":"usd"}}, "period_spend":{"today":{"spend":3}}}),
+        &json!({"resources":{
+            "weekly":{"kind":"consumption","unit":"percent","used":50,"limit":100},
+            "session":{"kind":"consumption","unit":"percent","used":10,"limit":100}
+        }}),
     )?;
     open_all(&mut lab).await?;
     activate(&mut lab, BOARD, "save").await?;
@@ -67,16 +70,16 @@ async fn moved_history_row_stays_above_the_balance_after_reopening() -> TestResu
     lab.step("down").await?;
     activate(&mut lab, BOARD, "save").await?;
     let details = lab.console.screen_at(150, 65);
-    assert!(details.contains("Everyday · Today"), "{details}");
+    assert!(details.contains("Everyday · Session"), "{details}");
     activate(&mut lab, BOARD, "order").await?;
     activate(&mut lab, "usage.connected_board", "up").await?;
     lab.step("esc").await?;
     open_all(&mut lab).await?;
     activate(&mut lab, BOARD, "save").await?;
     let screen = lab.console.screen_at(150, 65);
-    let today = screen.find("Today").ok_or("missing today")?;
-    let balance = screen.find("Balance").ok_or("missing balance")?;
-    assert!(today < balance, "{screen}");
+    let session = screen.find("Session").ok_or("missing session")?;
+    let weekly = screen.find("Weekly").ok_or("missing weekly")?;
+    assert!(session < weekly, "{screen}");
     Ok(())
 }
 
@@ -120,7 +123,7 @@ async fn concealed_account_keeps_its_alias_across_dashboard_and_management() -> 
     lab.step("N").await?;
     let screen = lab.console.screen_at(150, 65);
     assert!(
-        screen.contains("Account 1 · Claude") && !screen.contains("Secret Alpha"),
+        screen.contains("Account 2 · ChatGPT / Codex") && !screen.contains("Secret Beta"),
         "{screen}"
     );
     Ok(())

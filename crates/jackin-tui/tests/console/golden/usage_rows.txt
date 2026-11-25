@@ -1,0 +1,45 @@
+summary | 14 accounts · all stale
+notice | FAILING · Antigravity (Google AI) · personal@example.com #a0000014 · HTTP 403 SERVICE_DISABLED · retry due since Mon 22:28
+notice | NEAR LIMIT · Muse · work@example.com · Weekly 99% used · resets in 5d 8h · Mon 07:00
+notice | NEAR LIMIT · Antigravity (Google AI) · personal@example.com #a0000013 #a0000014 · Claude weekly >99% used · resets in 1d 7h · Thu 06:19
+notice | DUPLICATE · Antigravity (Google AI) · personal@example.com #a0000013 #a0000014 · jackin account usage rm a0000014-0000-4000-8000-000000000014
+Claude | work@example.com · Weekly | stale · 9% used · 2d 15h | resets in 2d 15h · Fri 13:59 | Normal
+Claude | work@example.com · Fable weekly | stale · 0% used · 2d 15h | resets in 2d 15h · Fri 14:00 | Normal
+Claude | work@example.com · Limit resets | 3 ready · next expires 11 Dec | - | Normal
+Claude | work2@example.com · Weekly | stale · 2% used · 5d 3h | resets in 5d 3h · Mon 02:00 | Normal
+Claude | work2@example.com · Fable weekly | stale · 4% used · 5d 3h | resets in 5d 3h · Mon 02:00 | Normal
+Claude | work2@example.com · Extra usage | stale · 0% used | reset not reported | Normal
+Claude | work2@example.com · Limit resets | 2 ready · next expires 11 Dec | - | Normal
+ChatGPT / Codex | work@example.com · Weekly | stale · 1% used · 4d 6h | resets in 4d 6h · Sun 05:12 | Normal
+ChatGPT / Codex | work@example.com · Credits | 19,290 credits · ≈ 771.60 USD | - | Normal
+ChatGPT / Codex | work@example.com · Limit resets | 1 ready · next expires 13 Dec | - | Normal
+ChatGPT / Codex | work@example.com · Tokens | today n/a · yesterday 420K · 30… | - | Normal
+ChatGPT / Codex | home@example.com · Weekly | stale · 2% used · 4d 12h | resets in 4d 12h · Sun 11:35 | Normal
+ChatGPT / Codex | home@example.com · Credits | 44,515 credits · ≈ 1,780.60 USD | - | Normal
+ChatGPT / Codex | home@example.com · Limit resets | 2 ready · next expires 2 Dec | - | Normal
+ChatGPT / Codex | home@example.com · Tokens | today n/a · yesterday 4.17M · 3… | - | Normal
+Muse | work@example.com · Weekly | stale · 99% used · 5d 8h | resets in 5d 8h · Mon 07:00 | Danger
+Muse | work@example.com · Session | stale reset 11h 26m ago · was 9% | reset 11h 26m ago · 11:10 | Muted
+Grok | Grok Account · Weekly | stale reset 1h 49m ago · was 55% | reset 1h 49m ago · 20:47 | Muted
+Kimi | Kimi Code · Weekly | stale · <1% used · 5d 22h | resets in 5d 22h · Mon 21:33 | Normal
+Kimi | Kimi Code · Session | stale reset 10h 3m ago · was 0% | reset 10h 3m ago · 12:33 | Muted
+Z.AI | Z.ai Account · Weekly | stale · 0% used · 5d 0h | resets in 5d 0h · Sun 22:49 | Normal
+Z.AI | Z.ai Account · Session | stale · 0% used | reset not reported | Normal
+Z.AI | Z.ai Account · Web searches | stale · <1% used · 7d 1h | resets in 7d 1h · 2 Dec 00:08 | Normal
+Z.AI | Z.ai Account · Limit resets | 1 ready, 1 queued · next expire… | - | Normal
+MiniMax | MiniMax Token Plan · General weekly | stale · 34% used · 8h 27m | resets in 8h 27m · Wed 07:04 | Normal
+MiniMax | MiniMax Token Plan · General 5h | stale reset 8h 57m ago · was 0% | reset 8h 57m ago · 13:39 | Muted
+MiMo | MiMo Token Plan · Token Plan | stale · 38% used · 17d 8h | resets in 17d 8h · 12 Dec 06:59 | Normal
+Antigravity (Google AI) | personal@example.com #a0000013 · Claude weekly | stale · dup · >99% used · 1d 7h | resets in 1d 7h · Thu 06:19 | Danger
+Antigravity (Google AI) | personal@example.com #a0000013 · Claude 5h | stale · dup reset 1d 5h ago · w… | reset 1d 5h ago · Mon 17:15 | Muted
+Antigravity (Google AI) | personal@example.com #a0000013 · Gemini 5h | stale · dup reset 1d 5h ago · w… | reset 1d 5h ago · Mon 17:15 | Muted
+Antigravity (Google AI) | personal@example.com #a0000013 · Gemini weekly | stale · dup · <1% used · 3d 20h | resets in 3d 20h · Sat 19:05 | Normal
+Antigravity (Google AI) | personal@example.com #a0000014 · Claude weekly | failed · dup · >99% used · 1d 7h | resets in 1d 7h · Thu 06:19 | Danger
+Antigravity (Google AI) | personal@example.com #a0000014 · Claude 5h | failed · dup reset 1d 0h ago · … | reset 1d 0h ago · Mon 22:06 | Muted
+Antigravity (Google AI) | personal@example.com #a0000014 · Gemini 5h | failed · dup reset 1d 0h ago · … | reset 1d 0h ago · Mon 22:06 | Muted
+Antigravity (Google AI) | personal@example.com #a0000014 · Gemini weekly | failed · dup · <1% used · 3d 20h | resets in 3d 20h · Sat 19:05 | Normal
+OpenCode | work@example.com · Monthly | stale · 11% used · 13d 15h | resets in 13d 15h · 8 Dec 14:15 | Normal
+OpenCode | work@example.com · Session | stale · reset 9h 8m ago · was 0% | reset 9h 8m ago · 13:28 | Muted
+OpenCode | work@example.com · Weekly | stale · 8% used · 5d 8h | resets in 5d 8h · Mon 07:00 | Normal
+OpenRouter | OpenRouter Account · Free requests | stale · 0% used · 8h 23m | resets in 8h 23m · Wed 07:00 | Normal
+OpenRouter | OpenRouter Account · Spend | today 0 USD · week 0 USD · mont… | - | Normal

@@ -188,3 +188,151 @@ async fn a_git_role_whose_tag_was_deleted_at_the_origin_no_longer_loads() -> Tes
     })
     .await
 }
+
+#[tokio::test]
+async fn roles_named_a_and_a_dot_lock_load_in_either_order_without_sharing_a_lock_path()
+-> TestResult {
+    guard(async {
+        for order in [["a", "a.lock"], ["a.lock", "a"]] {
+            let (cache, _keep) = cache()?;
+            let origins = [
+                Origin::named("a", "https://example.invalid/a.git").await?,
+                Origin::named("a.lock", "https://example.invalid/a-lock.git").await?,
+            ];
+            for name in order {
+                let origin = origins
+                    .iter()
+                    .find(|origin| origin.name == name)
+                    .ok_or("origin")?;
+                let (commit, _) = origin
+                    .load(&cache, None)
+                    .await?
+                    .map_err(|e| format!("{name}: {e:?}"))?;
+                assert_eq!(
+                    Some(commit),
+                    git(origin.role.root().as_path(), &["rev-parse", "main"])
+                        .await
+                        .ok(),
+                    "{name}"
+                );
+            }
+            for origin in &origins {
+                origin
+                    .load(&cache, None)
+                    .await?
+                    .map_err(|e| format!("{}: {e:?}", origin.name))?;
+            }
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_pinned_role_updates_while_the_origin_head_points_nowhere_and_an_unpinned_one_follows_a_new_default()
+-> TestResult {
+    guard(async {
+        for (rev, wanted) in [("v1", 0_usize), ("dev", 1)] {
+            let origin = Origin::new().await?;
+            let (cache, _keep) = cache()?;
+            let first = origin
+                .load(&cache, Some(rev))
+                .await?
+                .map_err(|e| format!("{e:?}"))?;
+            assert_eq!(first.0, origin.commits[wanted]);
+            git(
+                origin.role.root().as_path(),
+                &["symbolic-ref", "HEAD", "refs/heads/gone"],
+            )
+            .await?;
+            let again = origin
+                .load(&cache, Some(rev))
+                .await?
+                .map_err(|e| format!("{rev}: {e:?}"))?;
+            assert_eq!(again.0, origin.commits[wanted], "{rev}");
+        }
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        origin
+            .load(&cache, None)
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        git(
+            origin.role.root().as_path(),
+            &["symbolic-ref", "HEAD", "refs/heads/dev"],
+        )
+        .await?;
+        let (commit, _) = origin
+            .load(&cache, None)
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(commit, origin.commits[1]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_revision_naming_the_remote_head_follows_a_new_default_branch_like_an_unpinned_role()
+-> TestResult {
+    guard(async {
+        for rev in [
+            "HEAD",
+            "refs/heads/HEAD",
+            "origin/HEAD",
+            "remotes/origin/HEAD",
+            "refs/remotes/origin/HEAD",
+        ] {
+            let origin = Origin::new().await?;
+            let (cache, _keep) = cache()?;
+            origin
+                .load(&cache, Some(rev))
+                .await?
+                .map_err(|e| format!("{rev}: {e:?}"))?;
+            git(
+                origin.role.root().as_path(),
+                &["symbolic-ref", "HEAD", "refs/heads/dev"],
+            )
+            .await?;
+            let (commit, _) = origin
+                .load(&cache, Some(rev))
+                .await?
+                .map_err(|e| format!("{rev}: {e:?}"))?;
+            assert_eq!(commit, origin.commits[1], "{rev}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_branch_named_like_the_remote_head_alias_loads_while_the_origin_head_points_nowhere()
+-> TestResult {
+    guard(async {
+        let origin = Origin::new().await?;
+        git(
+            origin.role.root().as_path(),
+            &["branch", "origin/HEAD", &origin.commits[1]],
+        )
+        .await?;
+        let (cache, _keep) = cache()?;
+        let rev = "refs/heads/origin/HEAD";
+        let first = origin
+            .load(&cache, Some(rev))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(first.0, origin.commits[1]);
+        git(
+            origin.role.root().as_path(),
+            &["symbolic-ref", "HEAD", "refs/heads/gone"],
+        )
+        .await?;
+        let again = origin
+            .load(&cache, Some(rev))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(again.0, origin.commits[1]);
+        Ok(())
+    })
+    .await
+}
