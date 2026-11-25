@@ -1961,19 +1961,39 @@ fn scan_fails_closed_when_ls_is_missing_while_it_looks_for_hard_links() -> TestR
     Ok(())
 }
 
+const PADDING_LS: &str = r#"n=0
+/bin/ls "$@" | while IFS= read -r line; do
+    n=$((n + 1))
+    pad=
+    i=0
+    while [ "$i" -lt $((n % 7 + 1)) ]; do
+        pad="$pad "
+        i=$((i + 1))
+    done
+    printf '%s%s\n' "$pad" "$line"
+done
+"#;
+
 #[test]
-fn scan_reads_the_hard_links_of_names_with_spaces_and_of_very_different_inode_widths() -> TestResult
-{
+fn scan_reads_hard_links_from_ls_lines_that_are_padded_to_different_widths() -> TestResult {
     let fx = Fixture::new()?;
     fx.dir("/opt", 0o755)?;
-    for index in 0..40 {
-        fx.file(&format!("/opt/filler {index}"), b"x", 0o644)?;
-    }
     fx.file("/sandbox/ lead and trail ", b"data", 0o644)?;
     fs::hard_link(
         fx.image("/sandbox/ lead and trail "),
         fx.image("/opt/ outside name "),
     )?;
+    fx.file("/opt/unrelated one", b"x", 0o644)?;
+    fs::hard_link(
+        fx.image("/opt/unrelated one"),
+        fx.image("/opt/unrelated two"),
+    )?;
+    fx.file("/opt/unrelated three", b"y", 0o644)?;
+    fs::hard_link(
+        fx.image("/opt/unrelated three"),
+        fx.image("/opt/unrelated four"),
+    )?;
+    fx.stub("ls", PADDING_LS)?;
     let out = fx.scan_read_write(&["/sandbox"])?;
     assert_eq!(
         out.lines(),
@@ -1981,5 +2001,19 @@ fn scan_reads_the_hard_links_of_names_with_spaces_and_of_very_different_inode_wi
         "{}",
         out.stderr
     );
+    Ok(())
+}
+
+#[test]
+fn scan_matches_the_writable_set_literally_whatever_characters_its_paths_hold() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/opt", 0o755)?;
+    fx.file("/sand\\nbox/f*[a]?", b"data", 0o644)?;
+    fs::hard_link(fx.image("/sand\\nbox/f*[a]?"), fx.image("/opt/o"))?;
+    fx.file("/sandXnbox/g", b"data", 0o644)?;
+    let out = fx.scan_read_write(&["/sand\\nbox"])?;
+    assert_eq!(out.lines(), [hard_linked("/opt/o")], "{}", out.stderr);
+    let out = fx.scan_read_write(&["/sand\\nbox/f*[a]?", "/opt"])?;
+    assert!(out.ok, "{}", out.stderr);
     Ok(())
 }

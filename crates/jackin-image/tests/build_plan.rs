@@ -1788,10 +1788,11 @@ fn argv_the_scan_receives(dir: &Path, paths: &[&str]) -> Result<Vec<String>, Box
     let plan = ImagePlan::new(&request_with(paths)?)?;
     let args = build_arg_map(&plan.final_builds(&construct_id()?).derived.args)?;
     let (script, argv, _) = scan_script_of_the_derived_stage(dir)?;
-    let output = Command::new("sh")
+    let output = Command::new("/bin/sh")
         .arg("-c")
         .arg(&script)
         .current_dir(dir)
+        .env_clear()
         .envs(&args)
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
@@ -1886,7 +1887,11 @@ fn the_derived_scan_stage_declares_an_empty_writable_set_instead_of_leaving_it_o
         .iter()
         .position(|arg| arg == "/image")
         .ok_or("no scan root")?;
-    assert!(argv.iter().position(|arg| arg == "--no-read-write") < Some(root));
+    let marker = argv
+        .iter()
+        .position(|arg| arg == "--no-read-write")
+        .ok_or("no --no-read-write")?;
+    assert!(marker < root, "{argv:?}");
     let one = argv_the_scan_receives(&scratch.fresh("one")?, &["/sandbox"])?;
     assert_eq!(read_write_values(&one), ["/sandbox"]);
     assert!(!one.iter().any(|arg| arg == "--no-read-write"), "{one:?}");
