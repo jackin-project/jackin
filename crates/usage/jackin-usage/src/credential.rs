@@ -606,10 +606,12 @@ where
         connection
             .progress_handler(STORE_QUERY_STEP, Some(move || budget.spent()))
             .map_err(|_| Unresolved::Unreadable(opened))?;
+        let mut image = image;
         let length = image.as_slice().len();
         connection
             .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
             .map_err(|_| Unresolved::Unreadable(opened))?;
+        image.wipe();
         work(&connection)
     })
     .await;

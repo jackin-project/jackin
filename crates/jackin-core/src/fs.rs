@@ -19,7 +19,7 @@ use rustix::io::Errno;
 use rustix::process::geteuid;
 
 use crate::boundary::{
-    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, Hold,
     LinkProblem, RegularFile, RegularFileProblem,
 };
 use crate::paths::{HostPath, RepoPath};
@@ -326,6 +326,8 @@ fn open_parent<'a>(
     Ok(Err(RegularFileProblem::Missing))
 }
 
+const RESERVE_CEILING: u64 = 1 << 30;
+
 fn read_below(
     root: &Path,
     file: &RepoPath,
@@ -347,7 +349,11 @@ fn read_below(
     let limit = u64::try_from(max_bytes)
         .unwrap_or(u64::MAX)
         .saturating_add(1);
-    let sized = meta.len().saturating_add(meta.len() / 16 + 4096).min(limit);
+    let sized = meta
+        .len()
+        .saturating_add(meta.len() / 16 + 4096)
+        .min(limit)
+        .min(RESERVE_CEILING);
     let mut bytes = Vec::new();
     bytes
         .try_reserve_exact(usize::try_from(sized).unwrap_or(0))
@@ -470,6 +476,21 @@ impl FileSystem for StdFileSystem {
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let file = file.clone();
         blocking(root, move |p| read_below(p, &file, max_bytes)).await
+    }
+
+    async fn read_regular_holding(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+        hold: Hold,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let file = file.clone();
+        blocking(root, move |p| {
+            let _hold = hold;
+            read_below(p, &file, max_bytes)
+        })
+        .await
     }
 
     async fn read_link(

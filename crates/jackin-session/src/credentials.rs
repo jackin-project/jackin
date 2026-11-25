@@ -269,11 +269,12 @@ pub async fn read_omp_host_key(
         connection
             .progress_handler(jackin_core::STORE_QUERY_STEP, Some(move || budget.spent()))
             .ok()?;
-        let image = captured.image;
+        let mut image = captured.image;
         let length = image.as_slice().len();
         connection
             .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
             .ok()?;
+        image.wipe();
         omp_key_of(&connection, &wanted)
     })
     .await;

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zeroize::Zeroizing;
 
-use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError, RegularFileProblem};
+use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError, Hold, RegularFileProblem};
 use crate::paths::{HostPath, RepoPath};
 
 pub const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
@@ -22,6 +22,7 @@ const WAL_FRAME_HEADER: usize = 24;
 const WAL_MAGIC: u32 = 0x377f_0682;
 const WAL_MAGIC_SWAPPED: u32 = 0x377f_0683;
 const WAL_FORMAT: u32 = 3_007_000;
+const WAL_FORMAT_VERSION: u8 = 2;
 const MIN_PAGE: usize = 512;
 const MAX_PAGE: usize = 65_536;
 
@@ -77,6 +78,10 @@ impl StoreImage {
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes
     }
+
+    pub fn wipe(&mut self) {
+        self.bytes = Zeroizing::new(Vec::new());
+    }
 }
 
 #[derive(Debug)]
@@ -102,11 +107,13 @@ async fn read_file(
     dir: &HostPath,
     name: &str,
     limit: usize,
-    too_large: CaptureProblem,
-    unusable: CaptureProblem,
+    kinds: (CaptureProblem, CaptureProblem),
+    slot: &Slot,
 ) -> Result<Read, CaptureProblem> {
+    let (too_large, unusable) = kinds;
     let file = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
-    match fs.read_regular(dir, &file, limit).await {
+    let hold: Hold = Arc::<OwnedSemaphorePermit>::clone(slot);
+    match fs.read_regular_holding(dir, &file, limit, hold).await {
         Ok(Ok(found)) => {
             let bytes = Zeroizing::new(found.bytes);
             if bytes.len() > limit {
@@ -218,6 +225,23 @@ async fn capture_pinned(
         if journal_is_hot(fs, &dir, &journal_name).await? {
             continue;
         }
+        let first = if first.get(18) == Some(&WAL_FORMAT_VERSION) {
+            first
+        } else {
+            let again = read_database(fs, &dir, name, limits, &slot).await?;
+            let held = Arc::clone(&slot);
+            let (first, same) = offload(move || {
+                let _held = held;
+                let same =
+                    matches!(&again, Read::Bytes(bytes) if bytes.as_slice() == first.as_slice());
+                (first, same)
+            })
+            .await?;
+            if !same {
+                continue;
+            }
+            first
+        };
         if before != fence_of(fs, &dir, &target, &log_target).await? {
             continue;
         }
@@ -246,14 +270,18 @@ async fn read_database(
     dir: &HostPath,
     name: &str,
     limits: CaptureLimits,
+    slot: &Slot,
 ) -> Result<Read, CaptureProblem> {
     read_file(
         fs,
         dir,
         name,
         limits.database_bytes,
-        CaptureProblem::DatabaseTooLarge,
-        CaptureProblem::NotARegularFile,
+        (
+            CaptureProblem::DatabaseTooLarge,
+            CaptureProblem::NotARegularFile,
+        ),
+        slot,
     )
     .await
 }
@@ -263,14 +291,15 @@ async fn read_log(
     dir: &HostPath,
     name: &str,
     limits: CaptureLimits,
+    slot: &Slot,
 ) -> Result<Read, CaptureProblem> {
     read_file(
         fs,
         dir,
         name,
         limits.log_bytes,
-        CaptureProblem::LogTooLarge,
-        CaptureProblem::LogUnreadable,
+        (CaptureProblem::LogTooLarge, CaptureProblem::LogUnreadable),
+        slot,
     )
     .await
 }
@@ -303,12 +332,12 @@ async fn read_pair(
     limits: CaptureLimits,
     slot: &Slot,
 ) -> Result<Option<Pair>, CaptureProblem> {
-    let first = read_database(fs, dir, name, limits).await?;
+    let first = read_database(fs, dir, name, limits, slot).await?;
     if matches!(first, Read::Absent) {
         return Err(CaptureProblem::Missing);
     }
-    let log_first = read_log(fs, dir, log_name, limits).await?;
-    let again = read_database(fs, dir, name, limits).await?;
+    let log_first = read_log(fs, dir, log_name, limits, slot).await?;
+    let again = read_database(fs, dir, name, limits, slot).await?;
     let held = Arc::clone(slot);
     let (first, same) = offload(move || {
         let _held = held;
@@ -319,7 +348,7 @@ async fn read_pair(
     if !same {
         return Ok(None);
     }
-    let log_again = read_log(fs, dir, log_name, limits).await?;
+    let log_again = read_log(fs, dir, log_name, limits, slot).await?;
     let held = Arc::clone(slot);
     let (log_first, same) = offload(move || {
         let _held = held;

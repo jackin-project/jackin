@@ -751,6 +751,38 @@ async fn a_credential_view_that_never_finishes_is_given_up_on_and_frees_its_plac
     .await
 }
 
+async fn view_report(view: &str) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+    let omp = started(&[]).await?;
+    let directory = omp.directory.path().join(".omp").join("agent");
+    std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
+    std::fs::create_dir_all(&directory)?;
+    let connection = Connection::open(directory.join("agent.db"))?;
+    connection.execute_batch(view)?;
+    drop(connection);
+    omp.report().await
+}
+
+#[tokio::test]
+async fn a_value_that_a_view_builds_beyond_the_length_limit_is_refused() -> TestResult {
+    guard(async {
+        let small = view_report(
+            "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'zai' AS provider, 'api_key' AS credential_type, substr('{\"key\":\"SECRET_TOKEN_OMP\"}' || printf('%.*c', 30, 'x'), 1, 26) AS data;",
+        )
+        .await?;
+        assert_eq!(windows_of(&small).len(), 2);
+        let large = view_report(
+            "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'zai' AS provider, 'api_key' AS credential_type, substr('{\"key\":\"SECRET_TOKEN_OMP\"}' || printf('%.*c', 300000, 'x'), 1, 26) AS data;",
+        )
+        .await?;
+        assert_eq!(
+            unavailable(&large),
+            &UnavailableReason::Provider("the OMP store could not be read".to_owned())
+        );
+        Ok(())
+    })
+    .await
+}
+
 fn padded_key_json(total: usize) -> String {
     let frame = key_json("");
     let pad = total - frame.len() - KEY.len();

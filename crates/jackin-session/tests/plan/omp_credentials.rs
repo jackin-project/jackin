@@ -137,3 +137,23 @@ async fn an_omp_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unreadabl
         .unwrap_err();
     Ok(())
 }
+
+#[tokio::test]
+async fn an_omp_value_that_a_view_builds_beyond_the_length_limit_is_refused() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let store = view_store(
+        dir.path(),
+        "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, substr('{\"key\": \"k\"}' || printf('%.*c', 300000, 'x'), 1, 12) AS data;",
+    )?;
+    read_omp_host_key(&StdFileSystem::default(), &store, "wanted")
+        .await
+        .unwrap_err();
+    let small = tempfile::tempdir()?;
+    let store = view_store(
+        small.path(),
+        "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, substr('{\"key\": \"k\"}' || printf('%.*c', 30, 'x'), 1, 12) AS data;",
+    )?;
+    let key = read_omp_host_key(&StdFileSystem::default(), &store, "wanted").await?;
+    assert_eq!(key.expose(), "k");
+    Ok(())
+}

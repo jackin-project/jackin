@@ -174,6 +174,14 @@ async fn a_database_reached_through_a_linked_directory_is_still_read() -> TestRe
 fn page_database(pages: usize) -> Vec<u8> {
     let mut bytes = database(pages * 512);
     bytes[16..18].copy_from_slice(&512_u16.to_be_bytes());
+    bytes[18..20].copy_from_slice(&[2, 2]);
+    bytes
+}
+
+fn rollback_database(marker: u8) -> Vec<u8> {
+    let mut bytes = page_database(1);
+    bytes[18..20].copy_from_slice(&[1, 1]);
+    bytes[100] = marker;
     bytes
 }
 
@@ -852,5 +860,71 @@ async fn only_two_captures_run_at_once_and_a_dropped_one_frees_its_place() -> Te
     capture(&free, &at("agent.db")?, LIMITS)
         .await
         .map_err(|problem| format!("{problem:?}"))?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_rollback_that_follows_two_identical_reads_is_noticed_by_a_later_read() -> TestResult {
+    let fs = fixture(&[("agent.db", rollback_database(5))]).await?;
+    fs.after_read_of("agent.db", |fs: &MemFs, count: usize| {
+        if let (3, Ok(path)) = (count, at("agent.db")) {
+            fs.overwrite(&path, rollback_database(0));
+        }
+    });
+    let captured = capture(&fs, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(captured.image.as_slice()[100], 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_wiped_image_keeps_its_slot_until_it_is_dropped() -> TestResult {
+    let mut held = Vec::new();
+    for _ in 0..2 {
+        let fs = fixture(&[("agent.db", database(512))]).await?;
+        let mut captured = capture(&fs, &at("agent.db")?, LIMITS)
+            .await
+            .map_err(|problem| format!("{problem:?}"))?;
+        captured.image.wipe();
+        assert!(captured.image.as_slice().is_empty());
+        held.push(captured);
+    }
+    let waiting = CaptureLimits {
+        deadline: Duration::from_millis(200),
+        ..LIMITS
+    };
+    let free = fixture(&[("agent.db", database(512))]).await?;
+    assert_eq!(
+        capture(&free, &at("agent.db")?, waiting).await.err(),
+        Some(CaptureProblem::TimedOut)
+    );
+    held.pop();
+    capture(&free, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_read_that_outlives_its_capture_keeps_the_slot_it_was_given() -> TestResult {
+    let short = CaptureLimits {
+        deadline: Duration::from_millis(150),
+        ..LIMITS
+    };
+    for _ in 0..2 {
+        let fs = fixture(&[("agent.db", database(512))]).await?;
+        let probe = fs.strand_reads_after("agent.db", 1);
+        assert_eq!(
+            capture(&fs, &at("agent.db")?, short).await.err(),
+            Some(CaptureProblem::TimedOut)
+        );
+        assert_eq!(probe.entered(), 1);
+    }
+    let free = fixture(&[("agent.db", database(512))]).await?;
+    assert_eq!(
+        capture(&free, &at("agent.db")?, short).await.err(),
+        Some(CaptureProblem::TimedOut)
+    );
     Ok(())
 }

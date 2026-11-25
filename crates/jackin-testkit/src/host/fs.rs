@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, Hold,
     HostPath, LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 
@@ -59,6 +59,7 @@ struct Stall {
     name: String,
     passes: usize,
     probe: Arc<StallProbe>,
+    strand: bool,
 }
 
 type ReadAction = Arc<dyn Fn(&MemFs, usize) + Send + Sync>;
@@ -188,13 +189,32 @@ impl MemFs {
     }
 
     pub fn stall_reads_after(&self, name: &str, passes: usize) -> Arc<StallProbe> {
+        self.stalling(name, passes, false)
+    }
+
+    pub fn strand_reads_after(&self, name: &str, passes: usize) -> Arc<StallProbe> {
+        self.stalling(name, passes, true)
+    }
+
+    fn stalling(&self, name: &str, passes: usize, strand: bool) -> Arc<StallProbe> {
         let probe = Arc::new(StallProbe::default());
         locked(&self.state).stall = Some(Stall {
             name: name.to_owned(),
             passes,
             probe: Arc::clone(&probe),
+            strand,
         });
         probe
+    }
+
+    fn stalled(&self, file: &RepoPath) -> Option<(Arc<StallProbe>, bool)> {
+        let state = locked(&self.state);
+        let done = state.reads.get(file.as_str()).copied().unwrap_or(0);
+        state
+            .stall
+            .as_ref()
+            .filter(|stall| stall.name == file.as_str() && done >= stall.passes)
+            .map(|stall| (Arc::clone(&stall.probe), stall.strand))
     }
 
     pub fn after_read_of(
@@ -550,22 +570,32 @@ impl FileSystem for MemFs {
         })
     }
 
+    async fn read_regular_holding(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+        hold: Hold,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        if self.stalled(file).is_some_and(|(_, strand)| strand) {
+            tokio::spawn(async move {
+                let _held = hold;
+                std::future::pending::<()>().await;
+            });
+            return self.read_regular(root, file, max_bytes).await;
+        }
+        let read = self.read_regular(root, file, max_bytes).await;
+        drop(hold);
+        read
+    }
+
     async fn read_regular(
         &self,
         root: &HostPath,
         file: &RepoPath,
         max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        let stalled = {
-            let state = locked(&self.state);
-            let done = state.reads.get(file.as_str()).copied().unwrap_or(0);
-            state
-                .stall
-                .as_ref()
-                .filter(|stall| stall.name == file.as_str() && done >= stall.passes)
-                .map(|stall| Arc::clone(&stall.probe))
-        };
-        if let Some(probe) = stalled {
+        if let Some((probe, _)) = self.stalled(file) {
             probe.entered.fetch_add(1, Ordering::SeqCst);
             let _abandoned = Abandoned(&probe);
             std::future::pending::<()>().await;
