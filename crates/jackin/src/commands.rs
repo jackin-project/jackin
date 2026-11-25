@@ -5,6 +5,7 @@ mod account;
 mod agent;
 mod attach;
 mod build;
+mod connections;
 pub(crate) mod console;
 mod doctor;
 mod export;
@@ -42,7 +43,11 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
         Command::Start(arg) => power::run(app, arg, PowerAction::Start).await,
         Command::Purge(args) => purge::run(app, args).await,
         Command::Ls(arg) => ls::run(app, &arg).await,
-        Command::Usage(arg) => usage::run(app, &arg).await,
+        Command::Usage(arg) => match arg.command {
+            Some(crate::cli::UsageCommand::Host(host)) => usage::run(app, &host).await,
+            Some(command) => connections::usage(app, command).await,
+            None => connections::overview(app, arg.json).await,
+        },
         Command::Inspect(args) => inspect::run(app, args).await,
         Command::Role(command) => role::run(app, command).await,
         Command::Workspace(command) => workspace::run(app, command).await,

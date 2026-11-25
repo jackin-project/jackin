@@ -346,7 +346,7 @@ Obey these rules in the port:
 
 - Remove every dependency on deleted crates, such as `jackin-protocol`, `jackin-telemetry`, Capsule, and Docker. Move the usage wire types into the usage crates.
 - Delete the old tests and comments, as for all other code.
-- Usage runs on the host. It reads the credentials of a jackin account on the host. It never sends a credential into a sandbox. It never refreshes a token: a lapsed login shows the reason `expired_login`.
+- Usage runs on the host. Execution-account credential sources remain read-only. An expired imported login reports `expired_login`. Jackin-owned usage connections renew their provider-issued tokens through the OS credential store. Only explicit D26 account bindings can authorize a launch.
 - Delete `jackin-usage-capsule-telemetry` and `jackin-runtime-usage-relay`. They exist only for Capsule.
 - Usage supports every provider, not only the agents that jackin can run (D26).
 - The task that ports the crates can merge crates when a crate has one caller. It records each merge in the trail.
@@ -358,6 +358,10 @@ Obey these rules in the port:
 - the monthly window, credits, or spend, when the provider has them
 
 For each window, it shows the percentage used, the remaining amount when the provider gives it, and the reset time. When a provider gives no data for an account, `jackin usage` shows the reason, for example an expired login. `jackin usage --json` prints the same data with a typed data model. The console usage panel shows the same data for all accounts and for the bound accounts of each workspace.
+
+Usage connections have a stable UUID, provider-scoped identity and independent preferences. Account metadata, last-good snapshots and failure state live in a private SQLite database beside the host configuration. The vault stores versioned secrets. A validated candidate replaces the credential slot atomically with its first snapshot. Account removal invalidates writers holding an older version. A per-account file lock serializes renewal across the CLI and console.
+
+`jackin usage` reads connected accounts from local snapshots. `jackin usage refresh` contacts providers. `jackin usage host` reads usage for the execution-account credential sources described above. The Accounts screen calls the same sign-in and refresh services as the CLI. [Implementation plan](../docs/usage/implementation-plan.md)
 
 ### D26. Accounts cover every provider, and the console manages them
 

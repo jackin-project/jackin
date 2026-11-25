@@ -96,8 +96,8 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
                 ],
                 true,
             ),
-            (&["usage"], true),
-            (&["usage", "--json"], true),
+            (&["usage", "host"], true),
+            (&["usage", "host", "--json"], true),
         ];
         let mut haystack = Vec::new();
         let mut outputs = Vec::new();

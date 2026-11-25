@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-provider-mimo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Personal Token Plan quota from Xiaomi MiMo."
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+chrono = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+jackin-core = { workspace = true }
+jackin-testkit = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

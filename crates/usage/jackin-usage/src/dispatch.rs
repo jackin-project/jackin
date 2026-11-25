@@ -191,7 +191,7 @@ fn reason(error: ProviderError, now: i64) -> UnavailableReason {
     let text = error.to_string();
     match error {
         ProviderError::Unauthorized => UnavailableReason::ExpiredLogin,
-        ProviderError::Forbidden => UnavailableReason::Provider(text),
+        ProviderError::HubRefused | ProviderError::Forbidden => UnavailableReason::Provider(text),
         ProviderError::RateLimited {
             retry_after_seconds,
         } => UnavailableReason::RateLimited {

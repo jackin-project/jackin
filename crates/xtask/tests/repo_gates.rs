@@ -843,7 +843,7 @@ mod layers {
         add(
             &mut specs,
             "jackin-usage-provider-kimi",
-            Dev("jackin-testkit"),
+            Dev("jackin-session"),
         );
         let violations = run(&specs, &[])?;
         let expected: Vec<Found> = [
@@ -867,7 +867,7 @@ mod layers {
                 &["jackin-usage-provider-claude", "jackin-usage"],
                 &["jackin-usage-provider-codex", "jackin-core"],
                 &["jackin-usage-provider-core", "jackin-usage-provider-codex"],
-                &["jackin-usage-provider-kimi", "jackin-testkit"],
+                &["jackin-usage-provider-kimi", "jackin-session"],
                 &["jackin-usage", "jackin-openshell"],
                 &["jackin-usage", "jackin-session"],
                 &["jackin", "jackin-usage-provider-core"],

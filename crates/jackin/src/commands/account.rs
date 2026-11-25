@@ -20,6 +20,7 @@ use crate::views::AccountLs;
 
 pub(crate) async fn run(app: &mut App, command: AccountCommand) -> Result<(), CommandError> {
     match command {
+        AccountCommand::Usage(command) => super::connections::account(app, command).await,
         AccountCommand::Add(args) => add(app, args).await,
         AccountCommand::Ls(arg) => ls(app, &arg).await,
         AccountCommand::Rm(arg) => rm(app, arg).await,

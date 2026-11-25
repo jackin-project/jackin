@@ -39,6 +39,9 @@ pub struct Route {
     headers: Vec<(String, String)>,
     require_headers: Vec<(String, String)>,
     require_body: Option<Value>,
+    require_text: Option<String>,
+    match_json: Option<fn(&Value) -> bool>,
+    reply_body: Option<fn(&[u8]) -> Value>,
     delay: Option<Duration>,
     framed: bool,
 }
@@ -51,6 +54,9 @@ impl Route {
             headers: Vec::new(),
             require_headers: Vec::new(),
             require_body: None,
+            require_text: None,
+            match_json: None,
+            reply_body: None,
             delay: None,
             framed: true,
         }
@@ -76,6 +82,24 @@ impl Route {
     #[must_use]
     pub fn requires_json_body(mut self, body: Value) -> Route {
         self.require_body = Some(body);
+        self
+    }
+
+    #[must_use]
+    pub fn matching_json(mut self, matches: fn(&Value) -> bool) -> Route {
+        self.match_json = Some(matches);
+        self
+    }
+
+    #[must_use]
+    pub fn responding_with(mut self, body: fn(&[u8]) -> Value) -> Route {
+        self.reply_body = Some(body);
+        self
+    }
+
+    #[must_use]
+    pub fn requires_text_body(mut self, body: &str) -> Route {
+        self.require_text = Some(body.to_owned());
         self
     }
 
@@ -206,14 +230,15 @@ impl UsageServer {
         locked(&self.state).mismatches.clone()
     }
 
+    pub fn provider_base(&self, provider: Provider) -> String {
+        format!("http://{}/{}", self.addr, provider.as_str())
+    }
+
     pub fn endpoints(&self) -> ProviderEndpoints {
         Provider::ALL
             .into_iter()
             .fold(ProviderEndpoints::real(), |endpoints, provider| {
-                endpoints.with(
-                    provider,
-                    format!("http://{}/{}", self.addr, provider.as_str()),
-                )
+                endpoints.with(provider, self.provider_base(provider))
             })
     }
 }
@@ -257,9 +282,14 @@ fn answer(request: &Request, state: &Mutex<State>) -> (Vec<u8>, Option<Duration>
         request.method.token(),
         request.target
     )];
-    for route in candidates {
+    for mut route in candidates {
         match unmet_requirement(&route, request) {
-            None => return (render(&route), route.delay),
+            None => {
+                if let Some(render_body) = route.reply_body {
+                    route.body = render_body(&request.body).to_string();
+                }
+                return (render(&route), route.delay);
+            }
             Some(reason) => unmet = vec![reason],
         }
     }
@@ -275,6 +305,24 @@ fn unmet_requirement(route: &Route, request: &Request) -> Option<String> {
                 request.target
             ));
         }
+    }
+    if route
+        .require_text
+        .as_ref()
+        .is_some_and(|text| text.as_bytes() != request.body)
+    {
+        return Some(format!(
+            "body of {} did not match the route",
+            request.target
+        ));
+    }
+    if let Some(matches) = route.match_json
+        && !serde_json::from_slice::<Value>(&request.body).is_ok_and(|v| matches(&v))
+    {
+        return Some(format!(
+            "JSON fields of {} did not match the route",
+            request.target
+        ));
     }
     if let Some(wanted) = &route.require_body {
         let found: Option<Value> = serde_json::from_slice(&request.body).ok();

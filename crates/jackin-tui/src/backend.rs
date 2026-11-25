@@ -32,6 +32,9 @@ pub(crate) struct JackinBackend {
     pub(crate) bridge: Bridge,
     words: Vocabulary,
     panes: PaneHub,
+    pub(crate) usage_schedule: Arc<crate::connections::Schedule>,
+    pub(crate) dashboard: Arc<std::sync::Mutex<jackin_usage::dashboard::DashboardMemory>>,
+    pub(crate) usage_attempt: Arc<std::sync::Mutex<Option<crate::connections::Attempt>>>,
     refreshes: Refreshes,
     refreshed_at: Arc<AtomicI64>,
 }
@@ -55,6 +58,9 @@ impl JackinBackend {
             words,
             panes,
             refreshes: Refreshes::default(),
+            usage_attempt: Arc::default(),
+            dashboard: Arc::default(),
+            usage_schedule: Arc::default(),
             refreshed_at: Arc::new(AtomicI64::new(NEVER)),
         }
     }
@@ -265,6 +271,12 @@ impl Drop for Refreshing {
 }
 
 impl Backend for JackinBackend {
+    fn usage_connections(
+        &self,
+    ) -> Option<&dyn jackin_console::usage_connections::UsageConnections> {
+        Some(self)
+    }
+
     fn perform(&self, effect: &Effect, world: &World) -> Option<Completion> {
         match effect {
             Effect::Refresh { ticket } => {
@@ -285,6 +297,7 @@ impl Backend for JackinBackend {
 
     fn due(&self, world: &World) -> Vec<Msg> {
         let now = world.now_secs();
+        self.schedule_usage(now);
         let last = self.refreshed_at.load(Ordering::SeqCst);
         if last == NEVER {
             self.refreshed_at.store(now, Ordering::SeqCst);

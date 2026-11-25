@@ -18,6 +18,7 @@ members = [
   "crates/usage/jackin-usage-provider-gemini",
   "crates/usage/jackin-usage-provider-grok",
   "crates/usage/jackin-usage-provider-kimi",
+  "crates/usage/jackin-usage-provider-mimo",
   "crates/usage/jackin-usage-provider-minimax",
   "crates/usage/jackin-usage-provider-opencode",
   "crates/usage/jackin-usage-provider-openrouter",
@@ -50,6 +51,7 @@ jackin-usage-provider-cursor = { path = "crates/usage/jackin-usage-provider-curs
 jackin-usage-provider-gemini = { path = "crates/usage/jackin-usage-provider-gemini", version = "0.1.0" }
 jackin-usage-provider-grok = { path = "crates/usage/jackin-usage-provider-grok", version = "0.1.0" }
 jackin-usage-provider-kimi = { path = "crates/usage/jackin-usage-provider-kimi", version = "0.1.0" }
+jackin-usage-provider-mimo = { path = "crates/usage/jackin-usage-provider-mimo", version = "0.1.0" }
 jackin-usage-provider-minimax = { path = "crates/usage/jackin-usage-provider-minimax", version = "0.1.0" }
 jackin-usage-provider-opencode = { path = "crates/usage/jackin-usage-provider-opencode", version = "0.1.0" }
 jackin-usage-provider-openrouter = { path = "crates/usage/jackin-usage-provider-openrouter", version = "0.1.0" }
@@ -65,8 +67,8 @@ futures = "0.3.34"
 getrandom = "0.4.3"
 gix-hash = { version = "0.28.1", features = ["sha1", "sha256"] }
 globset = { version = "0.4.21", default-features = false }
-jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "36f11b66d3fcb27d33762e37724be8b70246bb32", default-features = false }
-junie-tui = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "36f11b66d3fcb27d33762e37724be8b70246bb32", default-features = false, features = ["terminal"] }
+jackin-console = { version = "0.1.0", path = "/tmp/jackin-ref-console-ef56/apps/jackin", default-features = false }
+junie-tui = { version = "0.1.0", path = "/tmp/jackin-ref-console-ef56/", default-features = false, features = ["terminal"] }
 noyalib = { version = "0.0.58", default-features = false, features = ["std", "lossless-u64"] }
 openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
@@ -76,6 +78,10 @@ portable-pty = "0.9.0"
 ratatui = { version = "0.30.2", features = ["crossterm_0_29"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
+keyring = { version = "4.2.0", default-features = false, features = ["v1"] }
+webbrowser = { version = "1.2.7", default-features = false }
+url = "2.5.8"
+uuid = { version = "1.29.0", features = ["v4", "serde"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 russh = { version = "0.65.1", default-features = false, features = ["aws-lc-rs", "flate2"] }
 rustix = { version = "1.1.6", features = ["fs", "process"] }

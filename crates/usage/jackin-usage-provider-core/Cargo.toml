@@ -12,8 +12,12 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+uuid = { workspace = true }
+zeroize = { workspace = true }
+tokio = { workspace = true, features = ["macros", "time"] }
+tokio-util = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["form"] }
 rustls = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
