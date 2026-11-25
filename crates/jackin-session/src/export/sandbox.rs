@@ -27,7 +27,7 @@ const STATUS_MARK: &str = "jackin-git-status=";
 const HEAD_UNTRACKED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z; echo \"jackin-git-status=$?\" >&2; } | head -c 4194304";
 const COUNT_UNTRACKED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z; echo \"jackin-git-status=$?\" >&2; } | tr -cd '\\000' | wc -c";
 const COUNT_CHANGED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" -c core.quotepath=false diff-index --numstat --find-renames \"$3\" --; echo \"jackin-git-status=$?\" >&2; } | wc -l";
-const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; p=$(cat \"$d/gitdir\"; printf x) || continue; p=${p%x}; p=${p%?}; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
+const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; p=$(cat \"$d/gitdir\"; printf x) || continue; p=${p%x}; p=${p%?}; if [ -d \"${p%/.git}\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
 static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
@@ -103,9 +103,9 @@ fn failure(outcome: &ProgramOutcome) -> RemoteError {
     }
 }
 
-fn first_names(listed: &[u8], keep: usize, hidden: usize) -> (Vec<Vec<u8>>, usize) {
+fn first_names(listed: &[u8], keep: usize) -> (Vec<Vec<u8>>, usize) {
     let mut kept = Vec::new();
-    let mut rest = hidden;
+    let mut rest = 0;
     for name in listed
         .split(|byte| *byte == 0)
         .filter(|name| !name.is_empty())
@@ -506,10 +506,6 @@ impl Remote<'_> {
         let (listed, unlisted) = self.untracked_names(root, budget.untracked).await?;
         budget.omitted += unlisted;
         for name in &listed {
-            if budget.untracked == 0 {
-                budget.omitted += 1;
-                continue;
-            }
             budget.untracked -= 1;
             let content = match std::str::from_utf8(name) {
                 Ok(name) => self.read_untracked(root, name).await?,
@@ -539,7 +535,7 @@ impl Remote<'_> {
             ])
             .await;
         match listed {
-            Ok(outcome) if outcome.exit_code == 0 => Ok(first_names(&outcome.stdout, keep, 0)),
+            Ok(outcome) if outcome.exit_code == 0 => Ok(first_names(&outcome.stdout, keep)),
             Ok(outcome) => Err(failure(&outcome)),
             Err(GatewayError::OutputTooLarge { .. }) => {
                 let git = sandbox_layout::GIT.as_str();
@@ -552,7 +548,7 @@ impl Remote<'_> {
                     .iter()
                     .rposition(|byte| *byte == 0)
                     .map_or(&head[..0], |last| &head[..=last]);
-                let (kept, _) = first_names(complete, keep, 0);
+                let (kept, _) = first_names(complete, keep);
                 let unlisted = total.saturating_sub(kept.len());
                 Ok((kept, unlisted))
             }
@@ -577,6 +573,10 @@ impl Remote<'_> {
             Some(status) if outcome.exit_code == 0 && accepted.contains(&status) => {
                 Ok(outcome.stdout)
             }
+            Some(status) if outcome.exit_code == 0 => Err(RemoteError::Git {
+                exit_code: status,
+                output: TerminalText::sanitize(&outcome.stderr),
+            }),
             _ => Err(failure(&outcome)),
         }
     }

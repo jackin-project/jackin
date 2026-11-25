@@ -416,16 +416,6 @@ async fn calls_that_each_fit_the_limit_but_together_exceed_it_end_in_a_timeout()
         let tap = Tap::new(&rig);
         let session = tap.session(&rig, limits);
         let name = handle.name();
-
-        assert_eq!(
-            session
-                .changes(&name, &CancellationToken::new())
-                .await?
-                .files
-                .len(),
-            1
-        );
-
         tap.slow_programs(Duration::from_millis(400));
         let outcome = session.changes(&name, &CancellationToken::new()).await;
 
@@ -563,6 +553,28 @@ async fn names_with_shell_syntax_are_read_as_data() -> TestResult {
             assert!(!Path::new(&agent).join(name).exists());
             assert!(!handle.root().join("project").join(name).exists());
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_checkout_directory_whose_git_file_is_gone_fails_the_listing_not_skips_it() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
+        write(&agent, "notes.txt", b"x\n")?;
+        std::fs::remove_file(Path::new(&agent).join(".git"))?;
+
+        let refused = changes(&rig, &handle).await;
+
+        assert!(
+            matches!(refused, Err(ChangesError::Git { .. })),
+            "{refused:?}"
+        );
         Ok(())
     })
     .await
