@@ -288,7 +288,7 @@ impl Drop for InterruptOnDrop {
                     return;
                 }
                 handle.interrupt();
-                std::thread::sleep(Duration::from_millis(25));
+                std::thread::park_timeout(Duration::from_millis(25));
             }
         });
     }
