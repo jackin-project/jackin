@@ -85,6 +85,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
             "--work-dir" => options.work_dir = PathBuf::from(value("--work-dir")?),
             "--calls" => options.calls = value("--calls")?.parse()?,
             "--rebuild" => options.rebuild = Rebuild::Yes,
+            "--no-read-write" => options.read_write.clear(),
             "--read-write" => options
                 .read_write
                 .push(SandboxPath::parse(&value("--read-write")?)?),
