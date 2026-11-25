@@ -1621,14 +1621,6 @@ fn read_write_argument(paths: &[&str]) -> Result<String, Box<dyn Error>> {
 
 #[test]
 fn the_policy_read_write_paths_reach_the_derived_build_as_one_sorted_argument() -> TestResult {
-    assert!(matches!(
-        ImagePlan::new(&request_with(&[])?),
-        Err(ImageError::NoReadWritePaths)
-    ));
-    assert!(matches!(
-        ImageKey::derive(&request_with(&[])?, &construct_id()?),
-        Err(ImageError::NoReadWritePaths)
-    ));
     assert_eq!(
         read_write_argument(&["/tmp", "/sandbox"])?,
         "/sandbox\n/tmp"
@@ -1747,100 +1739,163 @@ fn the_derived_scan_stage_hands_the_read_write_paths_and_the_sandbox_owner_to_th
     let run = scan_run(derived_text()?)?;
     assert!(run.contains("--sandbox-owner 1000:1000"), "{run}");
     let loop_at = run
-        .find("if [ -n \"$READ_WRITE_PATHS\" ]")
+        .find("--read-write \"$rw\"")
         .ok_or("no read_write hand-over")?;
     let scan_at = run.find("/bin/sh /jackin-scan").ok_or("no scan call")?;
     assert!(loop_at < scan_at, "{run}");
     Ok(())
 }
 
-fn hand_over_fragment() -> Result<String, Box<dyn Error>> {
+fn scan_script_of_the_derived_stage(
+    dir: &Path,
+) -> Result<(String, PathBuf, PathBuf), Box<dyn Error>> {
     let run = scan_run(derived_text()?)?;
-    let start = run
-        .find("if [ -n \"$READ_WRITE_PATHS\" ]")
-        .ok_or("no read_write hand-over")?;
-    let end = run[start..]
-        .find(" ; /bin/sh /jackin-scan")
-        .ok_or("no scan call after the hand-over")?;
-    Ok(run[start..start + end].to_owned())
+    let mut script = run.strip_prefix("RUN ").ok_or("no RUN")?;
+    while let Some(rest) = script.strip_prefix("--mount=") {
+        script = rest.split_once(' ').ok_or("a mount without a command")?.1;
+    }
+    let recorder = dir.join("recorder");
+    fs::write(&recorder, "printf '%s\\0' \"$@\" > \"$0.argv\"\n")?;
+    let verdict = dir.join("verdict");
+    assert_eq!(
+        script.matches("/bin/sh /jackin-scan").count(),
+        1,
+        "{script}"
+    );
+    assert_eq!(script.matches("> /verdict").count(), 1, "{script}");
+    let script = script
+        .replace(
+            "/bin/sh /jackin-scan",
+            &format!("/bin/sh '{}'", recorder.display()),
+        )
+        .replace("> /verdict", &format!("> '{}'", verdict.display()));
+    Ok((
+        script,
+        PathBuf::from(format!("{}.argv", recorder.display())),
+        verdict,
+    ))
 }
 
-fn hand_over(dir: &Path, value: &str) -> Result<(Vec<String>, String), Box<dyn Error>> {
-    let fragment = hand_over_fragment()?;
-    let body = format!(
-        "set -u; set -- --owner 0:0 --sandbox-owner 1000:1000; saved=$IFS; {fragment}; printf '%s\\0' \"$@\"; case $- in *f*) echo globbing-left-off >&2 ;; esac; [ \"$IFS\" = \"$saved\" ] || echo ifs-changed >&2"
-    );
+fn argv_the_scan_receives(dir: &Path, paths: &[&str]) -> Result<Vec<String>, Box<dyn Error>> {
+    let plan = ImagePlan::new(&request_with(paths)?)?;
+    let args = build_arg_map(&plan.final_builds(&construct_id()?).derived.args)?;
+    let (script, argv, _) = scan_script_of_the_derived_stage(dir)?;
     let output = Command::new("sh")
         .arg("-c")
-        .arg(&body)
+        .arg(&script)
         .current_dir(dir)
+        .envs(&args)
         .env("LC_ALL", "C")
-        .env("READ_WRITE_PATHS", value)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?
         .wait_with_output()?;
     assert!(output.status.success(), "{output:?}");
-    let argv = output
-        .stdout
+    Ok(fs::read(argv)?
         .split(|byte| *byte == 0)
         .filter(|part| !part.is_empty())
         .map(|part| String::from_utf8_lossy(part).into_owned())
-        .collect();
-    Ok((argv, String::from_utf8(output.stderr)?))
+        .collect())
+}
+
+fn read_write_values(argv: &[String]) -> Vec<&str> {
+    argv.windows(2)
+        .filter(|pair| pair[0] == "--read-write")
+        .map(|pair| pair[1].as_str())
+        .collect()
 }
 
 #[test]
-fn the_scan_stage_hands_each_policy_path_to_the_scan_as_exactly_one_argument() -> TestResult {
+fn the_derived_scan_stage_calls_the_scan_with_each_policy_path_as_exactly_one_argument()
+-> TestResult {
     let scratch = Scratch::new("read-write-hand-over")?;
-    let dir = scratch.fresh("cwd")?;
-    assert!(Path::new("/usr").is_dir() && Path::new("/etc").is_dir());
+    let glob = scratch.fresh("globbed")?;
+    fs::create_dir(glob.join("usr"))?;
+    fs::create_dir(glob.join("etc"))?;
+    fs::write(glob.join("-dash"), b"")?;
+    let globbed = glob.display().to_string();
     let paths = [
-        "/sand box",
-        "/a:b",
-        "/semi;colon",
-        "/q'uote\"s",
-        "/dollar$x`tick`",
-        "/[u]sr",
-        "/[e]tc",
-        "/us?",
-        "/e*c",
-        "/back\\slash",
-        "/-dash",
-        "/  lead and trail  ",
-        "/caf\u{e9}",
-        "/--read-write",
-        "/#hash",
+        "/sand box".to_owned(),
+        "/a:b".to_owned(),
+        "/semi;colon".to_owned(),
+        "/q'uote\"s".to_owned(),
+        "/dollar$x`tick`".to_owned(),
+        format!("{globbed}/[u]sr"),
+        format!("{globbed}/[e]tc"),
+        format!("{globbed}/us?"),
+        format!("{globbed}/e*c"),
+        format!("{globbed}/*"),
+        "/back\\slash".to_owned(),
+        "/-dash".to_owned(),
+        "/  lead and trail  ".to_owned(),
+        "/caf\u{e9}".to_owned(),
+        "/--read-write".to_owned(),
+        "/#hash".to_owned(),
     ];
-    let (argv, stderr) = hand_over(&dir, &paths.join("\n"))?;
-    let mut wanted: Vec<String> = ["--owner", "0:0", "--sandbox-owner", "1000:1000"]
+    let listed: Vec<&str> = paths.iter().map(String::as_str).collect();
+    let dir = scratch.fresh("one")?;
+    let argv = argv_the_scan_receives(&dir, &listed)?;
+    let mut sorted = listed.clone();
+    sorted.sort_unstable();
+    assert_eq!(read_write_values(&argv), sorted);
+    assert_eq!(
+        argv.iter().filter(|arg| *arg == "--read-write").count(),
+        sorted.len()
+    );
+    assert_eq!(
+        argv[..4],
+        ["--owner", "0:0", "--sandbox-owner", "1000:1000"]
+    );
+    let root = argv
         .iter()
-        .map(|arg| (*arg).to_owned())
-        .collect();
-    for path in paths {
-        wanted.push("--read-write".to_owned());
-        wanted.push(path.to_owned());
+        .position(|arg| arg == "/image")
+        .ok_or("no scan root")?;
+    assert_eq!(argv[root + 1], "/usr/local/bin/jackin-start");
+    assert!(!argv.iter().any(|arg| arg == "--no-read-write"), "{argv:?}");
+    for path in &sorted {
+        let at = argv
+            .iter()
+            .position(|arg| arg == path)
+            .ok_or("a path was lost")?;
+        assert_eq!(argv[at - 1], "--read-write", "{path}");
+        assert!(at < root, "{path}");
     }
-    assert_eq!(argv, wanted);
-    assert_eq!(stderr, "", "the shell state was not restored");
-    let (argv, stderr) = hand_over(&dir, "")?;
-    assert_eq!(argv, ["--owner", "0:0", "--sandbox-owner", "1000:1000"]);
-    assert_eq!(stderr, "");
-    for (value, passed) in [
-        ("/only", &["/only"][..]),
-        ("/a\n\n/b\n", &["/a", "/b"][..]),
-        ("\n/a\n", &["/a"][..]),
-        ("\n", &[][..]),
-    ] {
-        let (argv, stderr) = hand_over(&dir, value)?;
-        let mut wanted = vec!["--owner", "0:0", "--sandbox-owner", "1000:1000"];
-        for path in passed {
-            wanted.extend(["--read-write", path]);
-        }
-        assert_eq!(argv, wanted, "{value:?}");
-        assert_eq!(stderr, "", "{value:?}");
-    }
+    Ok(())
+}
+
+#[test]
+fn the_derived_scan_stage_declares_an_empty_writable_set_instead_of_leaving_it_out() -> TestResult {
+    let scratch = Scratch::new("read-write-none")?;
+    let argv = argv_the_scan_receives(&scratch.fresh("none")?, &[])?;
+    assert!(read_write_values(&argv).is_empty(), "{argv:?}");
+    assert_eq!(
+        argv.iter().filter(|arg| *arg == "--no-read-write").count(),
+        1,
+        "{argv:?}"
+    );
+    let root = argv
+        .iter()
+        .position(|arg| arg == "/image")
+        .ok_or("no scan root")?;
+    assert!(argv.iter().position(|arg| arg == "--no-read-write") < Some(root));
+    let one = argv_the_scan_receives(&scratch.fresh("one")?, &["/sandbox"])?;
+    assert_eq!(read_write_values(&one), ["/sandbox"]);
+    assert!(!one.iter().any(|arg| arg == "--no-read-write"), "{one:?}");
+    Ok(())
+}
+
+#[test]
+fn an_empty_writable_set_is_a_valid_plan_with_its_own_tag_and_key() -> TestResult {
+    let construct = construct_id()?;
+    assert_eq!(read_write_argument(&[])?, "-");
+    let none = ImagePlan::new(&request_with(&[])?)?;
+    let some = ImagePlan::new(&request_with(&["/tmp"])?)?;
+    assert_ne!(none.final_tag(&construct), some.final_tag(&construct));
+    assert_ne!(
+        ImageKey::derive(&request_with(&[])?, &construct)?,
+        ImageKey::derive(&request_with(&["/tmp"])?, &construct)?
+    );
     Ok(())
 }
 

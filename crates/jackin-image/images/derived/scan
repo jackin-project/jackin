@@ -9,7 +9,7 @@ newline='
 '
 
 usage() {
-    echo "usage: scan --owner UID:GID --sandbox-owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... --read-write PATH... ROOT PROTECTED..." >&2
+    echo "usage: scan --owner UID:GID --sandbox-owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... (--read-write PATH... | --no-read-write) ROOT PROTECTED..." >&2
     exit 64
 }
 
@@ -230,6 +230,59 @@ check_read_write() {
         fi
         [ -e "$root$prefix" ] || return 0
     done
+    present="$present$newline$1"
+}
+
+linked_files() {
+    find "$1" ! -type d ! -type l -links +1 -exec ls -di {} +
+}
+
+inside_read_write() {
+    while IFS= read -r listed; do
+        [ -n "$listed" ] || continue
+        case $1 in
+            "$listed" | "$listed"/*) return 0 ;;
+        esac
+    done <<EOF
+$read_write
+EOF
+    return 1
+}
+
+split_link() {
+    link_line=${1#"${1%%[! ]*}"}
+    link_inode=${link_line%% *}
+    link_path=${link_line#* }
+    link_path=${link_path#"$root"}
+}
+
+check_hard_links() {
+    inodes=" "
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        inside=$(linked_files "$root$path") || report "find or ls failed while looking for hard links below a read_write path: $(show "$path")"
+        [ -n "$inside" ] || continue
+        while IFS= read -r line; do
+            split_link "$line"
+            inodes="$inodes$link_inode "
+        done <<EOF
+$inside
+EOF
+    done <<EOF
+$present
+EOF
+    [ "$inodes" != " " ] || return 0
+    everywhere=$(linked_files "$root") || report "find or ls failed while looking for hard links"
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        split_link "$line"
+        inside_read_write "$link_path" && continue
+        case $inodes in
+            *" $link_inode "*) report "file of a read_write path of the role policy is hard linked outside the writable set: $(show "$link_path")" ;;
+        esac
+    done <<EOF
+$everywhere
+EOF
 }
 
 normal_path() {
@@ -268,6 +321,8 @@ allow=
 data=
 absent=
 read_write=
+no_read_write=0
+present=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --owner)
@@ -306,6 +361,10 @@ while [ "$#" -gt 0 ]; do
             read_write="$read_write$newline$2"
             shift 2
             ;;
+        --no-read-write)
+            no_read_write=1
+            shift
+            ;;
         -*) usage ;;
         *) break ;;
     esac
@@ -342,7 +401,8 @@ case $sandbox_owner in
     *:*) ;;
     *) usage ;;
 esac
-[ -n "$read_write" ] || usage
+[ -n "$read_write" ] || [ "$no_read_write" -eq 1 ] || usage
+[ -z "$read_write" ] || [ "$no_read_write" -eq 0 ] || usage
 [ "$#" -ge 2 ] || usage
 uid=${owner%%:*}
 gid=${owner#*:}
@@ -421,6 +481,7 @@ while IFS= read -r path; do
 done <<EOF
 $read_write
 EOF
+check_hard_links
 
 for pair in $pairs; do
     path=${pair%%=*}

@@ -79,6 +79,7 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
     Ok(())
 }
 
+const NO_READ_WRITE_PATHS: &str = "-";
 const SCAN_ROOT_PATH_BYTES: usize = 4095;
 const SCAN_ROOT: &str = "/image";
 pub(crate) const READ_WRITE_PATH_MAX_BYTES: usize = SCAN_ROOT_PATH_BYTES - SCAN_ROOT.len();
@@ -88,7 +89,7 @@ const READ_WRITE_ARGUMENT_MAX_BYTES: usize =
 
 fn read_write_argument(paths: &[SandboxPath]) -> Result<String, ImageError> {
     if paths.is_empty() {
-        return Err(ImageError::NoReadWritePaths);
+        return Ok(build_arg("READ_WRITE_PATHS", NO_READ_WRITE_PATHS));
     }
     let mut sorted: Vec<&str> = paths.iter().map(SandboxPath::as_str).collect();
     sorted.sort_unstable();

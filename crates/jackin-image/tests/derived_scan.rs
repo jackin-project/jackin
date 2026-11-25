@@ -177,7 +177,7 @@ impl Fixture {
             gid: meta.gid(),
             absent: scan_absent_paths()?,
         };
-        for name in ["find", "tr", "cmp"] {
+        for name in ["find", "tr", "cmp", "ls"] {
             fx.tool(name)?;
         }
         fx.stub("getcap", NO_GETCAP)?;
@@ -1813,5 +1813,131 @@ fn scan_refuses_a_read_write_flag_without_a_value() -> TestResult {
     let mut args = fx.owners();
     args.push("--read-write".to_owned());
     assert_eq!(fx.run(&args)?.code, Some(64));
+    Ok(())
+}
+
+fn without_read_write(fx: &Fixture) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut args = fx.arguments();
+    let at = args
+        .iter()
+        .position(|arg| arg == "--read-write")
+        .ok_or("no read_write flag")?;
+    args.drain(at..at + 2);
+    Ok(args)
+}
+
+#[test]
+fn scan_accepts_an_explicit_empty_writable_set_but_never_a_silent_one() -> TestResult {
+    let fx = Fixture::new()?;
+    let mut args = without_read_write(&fx)?;
+    assert_eq!(fx.run(&args)?.code, Some(64));
+    let at = args
+        .iter()
+        .position(|arg| arg == "--owner")
+        .ok_or("no owner flag")?;
+    args.insert(at, "--no-read-write".to_owned());
+    let out = fx.run(&args)?;
+    assert!(out.ok, "{}", out.stderr);
+    assert_eq!(out.stdout, "jackin-image-scan 1\n");
+    assert_eq!(out.stderr, "");
+    args.splice(at..at, ["--read-write".to_owned(), "/tmp".to_owned()]);
+    assert_eq!(fx.run(&args)?.code, Some(64));
+    Ok(())
+}
+
+#[test]
+fn scan_still_checks_the_rest_of_the_image_when_the_writable_set_is_empty() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.file("/usr/bin/sudo", b"x", 0o755)?;
+    let mut args = without_read_write(&fx)?;
+    args.insert(0, "--no-read-write".to_owned());
+    let out = fx.run(&args)?;
+    assert!(!out.ok);
+    assert_eq!(out.lines(), [forbidden("/usr/bin/sudo")], "{}", out.stderr);
+    Ok(())
+}
+
+fn hard_linked(path: &str) -> String {
+    format!(
+        "file of a read_write path of the role policy is hard linked outside the writable set: {path}"
+    )
+}
+
+#[test]
+fn scan_refuses_a_writable_file_that_has_another_hard_link_outside_the_writable_set() -> TestResult
+{
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/shared", b"data", 0o644)?;
+    fx.dir("/opt", 0o755)?;
+    fs::hard_link(fx.image("/sandbox/shared"), fx.image("/opt/other name"))?;
+    let out = fx.scan_read_write(&["/sandbox/shared"])?;
+    assert!(!out.ok, "a hard linked writable file passed");
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/opt/other name")],
+        "{}",
+        out.stderr
+    );
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/opt/other name")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::hard_link(fx.image(START), fx.image("/sandbox/js"))?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(out.lines(), [hard_linked(START)], "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_allows_hard_links_that_stay_inside_the_writable_set_or_outside_it() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/tmp", 0o1777)?;
+    fx.dir("/opt", 0o755)?;
+    fx.file("/sandbox/one", b"data", 0o644)?;
+    fs::hard_link(fx.image("/sandbox/one"), fx.image("/sandbox/two"))?;
+    fs::hard_link(fx.image("/sandbox/one"), fx.image("/tmp/three"))?;
+    fx.file("/opt/a", b"data", 0o644)?;
+    fs::hard_link(fx.image("/opt/a"), fx.image("/opt/b"))?;
+    fx.file("/sandbox/solo", b"data", 0o644)?;
+    let out = fx.scan_read_write(&["/sandbox", "/tmp"])?;
+    assert!(out.ok, "{}", out.stderr);
+    assert_eq!(out.stderr, "");
+    let out = fx.scan_read_write(&["/sandbox/solo"])?;
+    assert!(out.ok, "{}", out.stderr);
+    let out = fx.scan_read_write(&["/sandbox/not-created-yet"])?;
+    assert!(out.ok, "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_reads_a_hard_link_outside_a_writable_prefix_sibling_as_outside() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/sandbox-extra", 0o755)?;
+    fx.file("/sandbox/f", b"data", 0o644)?;
+    fs::hard_link(fx.image("/sandbox/f"), fx.image("/sandbox-extra/f"))?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/sandbox-extra/f")],
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_fails_closed_when_ls_is_missing_while_it_looks_for_hard_links() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/shared", b"data", 0o644)?;
+    fx.dir("/opt", 0o755)?;
+    fs::hard_link(fx.image("/sandbox/shared"), fx.image("/opt/other"))?;
+    fx.drop_tool("ls")?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert!(!out.ok, "a missing ls passed");
     Ok(())
 }

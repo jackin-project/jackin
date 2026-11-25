@@ -187,7 +187,9 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
             extra="$extra $path"; \
         done; \
     fi \
-    ; if [ -n "$READ_WRITE_PATHS" ]; then \
+    ; if [ "$READ_WRITE_PATHS" = - ]; then \
+        set -- "$@" --no-read-write; \
+    elif [ -n "$READ_WRITE_PATHS" ]; then \
         nl=$(printf '\n_'); nl=${nl%_}; rest=$READ_WRITE_PATHS; \
         while [ -n "$rest" ]; do \
             rw=${rest%%"$nl"*}; \

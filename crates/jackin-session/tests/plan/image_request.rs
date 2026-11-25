@@ -147,3 +147,44 @@ async fn the_image_request_carries_the_normalized_read_write_paths_of_the_role_p
     })
     .await
 }
+
+#[tokio::test]
+async fn a_role_policy_with_no_writable_path_at_all_still_plans_an_image() -> TestResult {
+    guard(async {
+        let construct = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
+        let policy = policy_with(&[])
+            .replace("include_workdir: true", "include_workdir: false")
+            .replace("    - /usr\n", "    - /usr\n    - /tmp\n    - /dev/null\n")
+            .replace("  read_write:\n", "  read_write: []\n");
+        let role = RoleFixture::new("sentinel")?.policy_yaml(&policy);
+        let setup = Spec::new(role).build().await?;
+        let request = plan_image_for(
+            &setup.config,
+            &setup.role,
+            &setup.gateway,
+            None,
+            Rebuild::No,
+            jackin_core::Agent::Codex,
+        )?;
+        assert!(request.read_write.is_empty(), "{:?}", request.read_write);
+        let plan = ImagePlan::new(&request)?;
+        let with_tmp = {
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_with(&["/tmp"]));
+            let setup = Spec::new(role).build().await?;
+            plan_image_for(
+                &setup.config,
+                &setup.role,
+                &setup.gateway,
+                None,
+                Rebuild::No,
+                jackin_core::Agent::Codex,
+            )?
+        };
+        assert_ne!(
+            plan.final_tag(&construct),
+            ImagePlan::new(&with_tmp)?.final_tag(&construct)
+        );
+        Ok(())
+    })
+    .await
+}
