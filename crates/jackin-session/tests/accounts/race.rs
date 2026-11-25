@@ -635,3 +635,106 @@ async fn exact_undo_removes_only_the_codex_provider_created_by_the_failed_accoun
     })
     .await
 }
+
+#[tokio::test]
+async fn a_failed_config_write_after_a_login_became_a_key_restores_the_login_provider_and_keeps_the_held_key_provider()
+-> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let home = Home::new(&login_json()).await?;
+        let account = codex_account(&home.path, super::support::ACCOUNT_ID)?;
+        world
+            .config
+            .edit(
+                vec![ConfigEdit::AddAccount(account.clone())],
+                &CancellationToken::new(),
+            )
+            .await?;
+        world
+            .session
+            .sync_account(
+                &account,
+                jackin_core::Agent::Codex,
+                &CancellationToken::new(),
+            )
+            .await?;
+        let held_key = Account::new(
+            account.name().clone(),
+            jackin_core::Provider::Codex,
+            CredentialSource::File {
+                path: HostPath::parse(&world.home().as_path().join("held.key"))?,
+            },
+        )?;
+        world
+            .fs
+            .write_new(
+                &HostPath::parse(&world.home().as_path().join("held.key"))?,
+                b"HELD-KEY",
+                jackin_core::FileMode(0o600),
+            )
+            .await?;
+        let swap = |credential: CredentialSource| async {
+            let cancel = CancellationToken::new();
+            world
+                .config
+                .edit(
+                    vec![ConfigEdit::SetAccountCredential {
+                        account: account.name().clone(),
+                        credential,
+                    }],
+                    &cancel,
+                )
+                .await
+        };
+        swap(held_key.credential().clone()).await?;
+        world
+            .session
+            .sync_account(
+                &held_key,
+                jackin_core::Agent::Omp,
+                &CancellationToken::new(),
+            )
+            .await?;
+        swap(account.credential().clone()).await?;
+        let login_name = ProviderName::for_account(account.name(), jackin_core::Agent::Codex);
+        let key_name = ProviderName::for_account(account.name(), jackin_core::Agent::Omp);
+        let login_record = world
+            .gateway
+            .provider(&login_name)
+            .ok_or("no login provider")?;
+
+        let (fs, store) = failing_store(&world).await?;
+        store
+            .edit(
+                vec![ConfigEdit::AddAccount(account.clone())],
+                &CancellationToken::new(),
+            )
+            .await?;
+        let before = store.load().await?;
+        fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let failed = plan_account_edits(
+            &world.desk_over(store.clone()),
+            vec![ConfigEdit::SetAccountCredential {
+                account: account.name().clone(),
+                credential: held_key.credential().clone(),
+            }],
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(
+            &Gateways::single(world.session.clone()),
+            &CancellationToken::new(),
+        )
+        .await;
+
+        assert!(
+            matches!(failed, Err(AccountEditError::Config(ConfigError::Fs(_)))),
+            "{failed:?}"
+        );
+        assert_eq!(store.load().await?, before);
+        assert_eq!(world.gateway.provider(&login_name), Some(login_record));
+        assert!(world.gateway.provider(&key_name).is_some());
+        Ok(())
+    })
+    .await
+}

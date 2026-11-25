@@ -1491,6 +1491,7 @@ pub enum ProviderState { Absent, Present }
 pub enum ProviderWriteEffect { NoWrite, Created, Existing, Unknown }
 pub struct ProviderWriteError { /* source: GatewayError, effect: ProviderWriteEffect */ }
 impl ProviderWriteError { pub fn new(source: GatewayError, effect: ProviderWriteEffect) -> ProviderWriteError; pub fn effect(&self) -> ProviderWriteEffect; pub fn gateway_error(&self) -> &GatewayError; pub fn into_parts(self) -> (GatewayError, ProviderWriteEffect) }
+impl ProviderWriteEffect { pub fn after_failed_write(provider_held: bool, error: &GatewayError) -> ProviderWriteEffect }   // Existing when the provider is held, else Unknown when the error may have reached the gateway, else NoWrite; the adapter and the fake share it
 impl GatewayError { pub fn outcome_unknown(&self) -> bool }   // exhaustive: true when the request may have reached the gateway and its outcome is not known
 pub struct ProviderSpec { pub name: ProviderName, pub profile: ProfileId, pub keys: CredentialKeys, pub material: ProviderMaterial }
 pub enum ProviderMaterial {
@@ -2509,7 +2510,7 @@ pub enum AccountError {
     Unsupported { account: AccountName, mode: CodexAuthMode },
     AccountIdMismatch { account: AccountName },
     ProviderWrite(ProviderWriteError),                               // a provider write failed; `write_effect()` says whether it created, updated or wrote nothing
-    ProviderWriteUncertain { account: AccountName, source: Box<AccountError> },   // the write may have completed; nothing was deleted
+    ProviderWriteUncertain { account: AccountName, gateway: GatewayName, source: Box<AccountError> },   // the write may have completed; nothing was deleted
 }
 impl AccountError { pub fn write_effect(&self) -> ProviderWriteEffect; pub fn is_cancelled(&self) -> bool }   // a cancel before the commit, a cancelled lock, or a cancelled credential read
 ```
@@ -3864,7 +3865,7 @@ This file records where U6 (`jackin-testkit`) differs from `rewrite/API.md` sect
 
 - `Gateway::delete_profile` is `Ok` when the profile is absent and `FailedPrecondition` when a provider uses it.
 - `NotFound { Missing::Sandbox }` on `run_program`, `read_files`, `write_file`, `open_terminal(Shell)` and `open_terminal(MainProcess)` for an absent sandbox. `set_power` on an absent sandbox is the same; `delete_sandbox` of an absent sandbox is `Ok`.
-- `put_provider` returns `NotFound { Missing::Profile }` when the profile was not ensured, and drops the secret material: the fake keeps only the provider name and the profile ID. `create_sandbox` with a provider that does not exist is `FailedPrecondition` ("provider '<name>' not found", `OS@v0.1.6:crates/openshell-server/src/grpc/sandbox.rs:557`).
+- `put_provider` returns a `ProviderWriteError` with effect `NoWrite` and source `NotFound { Missing::Profile }` when the profile was not ensured, reports `Created` or `Existing` for a write, and classifies an injected failure with `ProviderWriteEffect::after_failed_write`, and drops the secret material: the fake keeps only the provider name and the profile ID. `create_sandbox` with a provider that does not exist is `FailedPrecondition` ("provider '<name>' not found", `OS@v0.1.6:crates/openshell-server/src/grpc/sandbox.rs:557`).
 - The generated rule key is `RuleKey::provider_rule(provider)`, so `_provider_jackin_work_codex`. `sandbox_detail` adds that rule to the effective policy for each attached provider whose profile is known; the endpoints and binaries come from the profile.
 - `SandboxCreate::environment()` is the environment of the sandbox (`JACKIN_LAUNCH_ID` only).
 - `GatewayError::SandboxUnreachable` exists; no fault is needed, because `FailNext` takes any error.

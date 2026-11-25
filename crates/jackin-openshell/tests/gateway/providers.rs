@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Agent, ProfileId, Provider as ProviderKind, ProviderName, Secret};
+use jackin_core::{Agent, ProfileId, Provider as ProviderKind, ProviderName, SandboxPath, Secret};
 use jackin_openshell::{
-    Gateway, GatewayError, Missing, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
-    ProviderState, ProviderWriteEffect,
+    Gateway, GatewayError, GatewayOp, Missing, ProfileSync, ProviderMaterial, ProviderProfile,
+    ProviderSpec, ProviderState, ProviderWriteEffect,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderCredentialRefreshStrategy};
 use tonic::Code;
@@ -753,4 +753,47 @@ async fn a_missing_profile_is_reported_as_no_write() {
         "{error:?}"
     );
     assert!(env.server.state().providers.is_empty());
+}
+
+#[test]
+fn every_error_that_may_have_reached_the_gateway_is_an_unknown_outcome() {
+    let path = SandboxPath::parse("/sandbox/x").unwrap();
+    let unknown = [
+        GatewayError::WriteUnconfirmed {
+            path: path.clone(),
+            cause: Box::new(GatewayError::Protocol {
+                message: "lost".to_owned(),
+            }),
+        },
+        GatewayError::WriteNotDurable { path },
+        GatewayError::Protocol {
+            message: "lost".to_owned(),
+        },
+        GatewayError::Timeout {
+            op: GatewayOp::Provider,
+            after: std::time::Duration::from_secs(1),
+            group: None,
+        },
+    ];
+    for error in &unknown {
+        assert!(error.outcome_unknown(), "{error:?}");
+        assert_eq!(
+            ProviderWriteEffect::after_failed_write(false, error),
+            ProviderWriteEffect::Unknown,
+            "{error:?}"
+        );
+        assert_eq!(
+            ProviderWriteEffect::after_failed_write(true, error),
+            ProviderWriteEffect::Existing,
+            "{error:?}"
+        );
+    }
+    let refused = GatewayError::PermissionDenied {
+        what: "the provider".to_owned(),
+    };
+    assert!(!refused.outcome_unknown());
+    assert_eq!(
+        ProviderWriteEffect::after_failed_write(false, &refused),
+        ProviderWriteEffect::NoWrite
+    );
 }

@@ -182,6 +182,8 @@ impl GatewayError {
             | GatewayError::OutputTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
+            | GatewayError::WriteUnconfirmed { .. }
+            | GatewayError::WriteNotDurable { .. }
             | GatewayError::Protocol { .. } => true,
             GatewayError::Unauthenticated
             | GatewayError::PermissionDenied { .. }
