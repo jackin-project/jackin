@@ -168,14 +168,15 @@ impl CommandError {
             | CommandError::EnvValue { .. }
             | CommandError::Integrate(IntegrateError::UnknownAgent { .. }) => ExitClass::Usage,
             CommandError::Plan(PlanError::EnvNeeded(_))
-            | CommandError::Restart(RestartError::AlreadyRunning { .. })
+            | CommandError::Restart(
+                RestartError::AlreadyRunning { .. } | RestartError::NotManaged(_),
+            )
             | CommandError::Purge(
                 PurgeError::WorkNotExported { .. }
                 | PurgeError::Replaced { .. }
                 | PurgeError::NotManaged { .. },
             )
             | CommandError::Attach(AttachError::NotManaged(_))
-            | CommandError::Restart(RestartError::NotManaged(_))
             | CommandError::Integrate(IntegrateError::NotManaged(_))
             | CommandError::Lifecycle(LifecycleError::NotManaged(_))
             | CommandError::Export(ExportError::NotManaged(_)) => ExitClass::Refused,

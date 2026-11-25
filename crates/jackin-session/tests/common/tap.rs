@@ -53,9 +53,16 @@ struct Hooks {
     pause: Duration,
     active: BTreeMap<SandboxName, usize>,
     peak: usize,
-    duplicate_names: bool,
-    deleted: bool,
+    names: Names,
+    deletes: u32,
     finds_after_delete: Option<Lookup>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+enum Names {
+    #[default]
+    Plain,
+    Doubled,
 }
 
 #[derive(Debug)]
@@ -130,7 +137,7 @@ impl Tap {
     }
 
     pub(crate) fn list_each_sandbox_twice_by_name(&self) {
-        self.hooks().duplicate_names = true;
+        self.hooks().names = Names::Doubled;
     }
 
     pub(crate) fn replace_next_download(&self, bytes: Vec<u8>) {
@@ -342,7 +349,7 @@ impl Gateway for Tap {
         }
         let hang = {
             let mut hooks = self.hooks();
-            if hooks.deleted {
+            if hooks.deletes > 0 {
                 match hooks.finds_after_delete.take() {
                     Some(Lookup::Fail(error)) => return Err(error),
                     Some(Lookup::Hang) => {
@@ -359,7 +366,7 @@ impl Gateway for Tap {
             std::future::pending::<()>().await;
         }
         let found = self.inner.find_sandboxes(query).await?;
-        if matches!(query, SandboxQuery::Name(_)) && self.hooks().duplicate_names {
+        if matches!(query, SandboxQuery::Name(_)) && (self.hooks().names == Names::Doubled) {
             return Ok(found
                 .into_iter()
                 .flat_map(|view| [view.clone(), view])
@@ -389,7 +396,7 @@ impl Gateway for Tap {
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
         let result = self.inner.delete_sandbox(name).await;
-        self.hooks().deleted = true;
+        self.hooks().deletes += 1;
         result
     }
 

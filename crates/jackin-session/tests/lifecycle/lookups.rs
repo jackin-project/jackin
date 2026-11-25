@@ -5,11 +5,24 @@ use std::time::Duration;
 
 use jackin_core::{Labels, Phase, SandboxName};
 use jackin_openshell::{GatewayError, GatewayOp, PowerAction};
-use jackin_session::{AgentNamesError, LifecycleError};
+use jackin_session::{AgentNamesError, LifecycleError, Session};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard_within};
 use tokio_util::sync::CancellationToken;
 
 const WITHIN: Duration = Duration::from_secs(20);
+
+async fn read(
+    session: &Session,
+    name: &SandboxName,
+    op: GatewayOp,
+    token: &CancellationToken,
+) -> Result<(), LifecycleError> {
+    if op == GatewayOp::Find {
+        session.list(token).await.map(drop)
+    } else {
+        session.inspect(name, token).await.map(drop)
+    }
+}
 
 #[tokio::test]
 async fn list_and_inspect_end_with_cancelled_when_their_token_is_cancelled() -> TestResult {
@@ -38,13 +51,7 @@ async fn list_and_inspect_end_with_cancelled_when_their_token_is_cancelled() -> 
                 trigger: hold.clone(),
             });
             let token = CancellationToken::new();
-            let reading = async {
-                if op == GatewayOp::Find {
-                    session.list(&token).await.map(drop)
-                } else {
-                    session.inspect(&name, &token).await.map(drop)
-                }
-            };
+            let reading = read(session, &name, op, &token);
             let driver = async {
                 assert!(rig.gateway().until_held(&hold).await);
                 token.cancel();
