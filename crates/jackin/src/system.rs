@@ -11,7 +11,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     ConfigStore, EnvName, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
-    ProcessRunner, settle_critical_writes,
+    ProcessRunner, WriteTracker,
 };
 use jackin_openshell::{Gateway, GrpcGateway, GrpcGatewayConfig, TermSize, resolve_gateway};
 use jackin_session::{
@@ -64,27 +64,49 @@ impl Driven<ExitClass> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Interrupts {
+    #[default]
+    Process,
+    Ignored,
+}
+
 pub fn drive<F: Future>(future: F) -> io::Result<Driven<F::Output>> {
+    drive_with(&WriteTracker::process(), Interrupts::Process, future)
+}
+
+pub fn drive_with<F: Future>(
+    writes: &WriteTracker,
+    listen: Interrupts,
+    future: F,
+) -> io::Result<Driven<F::Output>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    let mut interrupts = {
-        let _entered = runtime.enter();
-        Signals::install().ok()
+    let mut interrupts = match listen {
+        Interrupts::Process => {
+            let _entered = runtime.enter();
+            Signals::install().ok()
+        }
+        Interrupts::Ignored => None,
     };
     let driven = runtime.block_on(async {
         let output = future.await;
         if let Some(interrupts) = interrupts.as_mut() {
             interrupts.discard_pending();
         }
-        let writes = finish_critical_writes(
+        let fate = finish_critical_writes(
+            writes,
             &mut io::stderr(),
             CRITICAL_WRITE_NOTICE,
             CRITICAL_WRITE_LIMIT,
             interrupted(interrupts.as_mut()),
         )
         .await;
-        Driven { output, writes }
+        Driven {
+            output,
+            writes: fate,
+        }
     });
     runtime.shutdown_timeout(SHUTDOWN_GRACE);
     Ok(driven)
@@ -99,24 +121,26 @@ async fn interrupted(signals: Option<&mut Signals>) {
     }
 }
 
-async fn settle(limit: Duration) -> bool {
-    tokio::task::spawn_blocking(move || settle_critical_writes(limit))
+async fn settle(writes: &WriteTracker, limit: Duration) -> bool {
+    let writes = writes.clone();
+    tokio::task::spawn_blocking(move || writes.settle(limit))
         .await
         .unwrap_or(false)
 }
 
 async fn finish_critical_writes(
+    writes: &WriteTracker,
     out: &mut impl Write,
     notice_after: Duration,
     limit: Duration,
     interrupt: impl Future<Output = ()>,
 ) -> WriteFate {
-    if settle_critical_writes(Duration::ZERO) {
+    if writes.settle(Duration::ZERO) {
         return WriteFate::Settled;
     }
     tokio::pin!(interrupt);
     tokio::select! {
-        settled = settle(notice_after) => {
+        settled = settle(writes, notice_after) => {
             if settled {
                 return WriteFate::Settled;
             }
@@ -125,7 +149,7 @@ async fn finish_critical_writes(
     }
     drop(out.write_all(b"jackin: finishing a credential write (Ctrl-C abandons it)...\n"));
     tokio::select! {
-        settled = settle(limit.saturating_sub(notice_after)) => {
+        settled = settle(writes, limit.saturating_sub(notice_after)) => {
             if settled {
                 return WriteFate::Settled;
             }
@@ -394,8 +418,6 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Instant;
 
-    use jackin_core::CriticalWrite;
-
     use super::*;
 
     const NOTICE: &str = "jackin: finishing a credential write (Ctrl-C abandons it)...\n";
@@ -407,18 +429,21 @@ mod tests {
     }
 
     async fn report(
+        writes: &WriteTracker,
         notice_after: Duration,
         limit: Duration,
         interrupt: impl Future<Output = ()>,
     ) -> (String, WriteFate) {
         let mut out = Vec::new();
-        let fate = finish_critical_writes(&mut out, notice_after, limit, interrupt).await;
+        let fate = finish_critical_writes(writes, &mut out, notice_after, limit, interrupt).await;
         (String::from_utf8_lossy(&out).into_owned(), fate)
     }
 
     #[tokio::test]
     async fn nothing_is_printed_when_no_write_is_in_flight() {
+        let writes = WriteTracker::new();
         let report = report(
+            &writes,
             Duration::from_millis(50),
             Duration::from_secs(5),
             std::future::pending(),
@@ -429,12 +454,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_slow_write_prints_one_notice_and_settles() {
-        let write = CriticalWrite::begin();
+        let writes = WriteTracker::new();
+        let write = writes.begin();
         let releaser = std::thread::spawn(move || {
             pause(Duration::from_millis(300));
             drop(write);
         });
         let report = report(
+            &writes,
             Duration::from_millis(50),
             Duration::from_secs(10),
             std::future::pending(),
@@ -446,8 +473,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_write_that_never_ends_is_reported_as_given_up() {
-        let _stuck = CriticalWrite::begin();
+        let writes = WriteTracker::new();
+        let _stuck = writes.begin();
         let report = report(
+            &writes,
             Duration::from_millis(20),
             Duration::from_millis(200),
             std::future::pending(),
@@ -464,9 +493,11 @@ mod tests {
 
     #[tokio::test]
     async fn an_interrupt_during_the_wait_abandons_the_write_promptly() {
-        let _stuck = CriticalWrite::begin();
+        let writes = WriteTracker::new();
+        let _stuck = writes.begin();
         let started = Instant::now();
         let report = report(
+            &writes,
             Duration::from_millis(20),
             Duration::from_secs(60),
             tokio::time::sleep(Duration::from_millis(150)),
@@ -481,8 +512,10 @@ mod tests {
 
     #[tokio::test]
     async fn an_interrupt_before_the_notice_still_abandons_the_write() {
-        let _stuck = CriticalWrite::begin();
+        let writes = WriteTracker::new();
+        let _stuck = writes.begin();
         let report = report(
+            &writes,
             Duration::from_secs(60),
             Duration::from_secs(120),
             std::future::ready(()),
@@ -540,8 +573,9 @@ mod tests {
     }
 
     async fn signalled_during_the_wait(signal: &str) {
+        let writes = WriteTracker::new();
         let mut signals = Signals::install().expect("signal listeners");
-        let _stuck = CriticalWrite::begin();
+        let _stuck = writes.begin();
         let pid = std::process::id().to_string();
         let name = signal.to_owned();
         let sender = std::thread::spawn(move || {
@@ -555,6 +589,7 @@ mod tests {
         let report = tokio::time::timeout(
             Duration::from_secs(5),
             report(
+                &writes,
                 Duration::from_millis(20),
                 Duration::from_secs(60),
                 interrupted(Some(&mut signals)),
@@ -568,23 +603,8 @@ mod tests {
         assert_eq!(sender.join().ok().flatten(), Some(true));
     }
 
-    #[tokio::test]
-    async fn a_real_sigint_during_the_wait_abandons_the_write() {
-        signalled_during_the_wait("-INT").await;
-    }
-
-    #[tokio::test]
-    async fn a_real_sigterm_during_the_wait_abandons_the_write() {
-        signalled_during_the_wait("-TERM").await;
-    }
-
-    #[tokio::test]
-    async fn a_real_sighup_during_the_wait_abandons_the_write() {
-        signalled_during_the_wait("-HUP").await;
-    }
-
-    #[tokio::test]
     async fn a_signal_received_before_the_wait_is_discarded() {
+        let writes = WriteTracker::new();
         let mut signals = Signals::install().expect("signal listeners");
         let pid = std::process::id().to_string();
         let sent = std::process::Command::new("kill")
@@ -595,13 +615,22 @@ mod tests {
         assert_eq!(sent, Some(true));
         tokio::time::sleep(Duration::from_millis(100)).await;
         signals.discard_pending();
-        let _stuck = CriticalWrite::begin();
+        let _stuck = writes.begin();
         let report = report(
+            &writes,
             Duration::from_millis(20),
             Duration::from_millis(200),
             interrupted(Some(&mut signals)),
         )
         .await;
         assert_eq!(report.1, WriteFate::GaveUp);
+    }
+
+    #[tokio::test]
+    async fn real_signals_abandon_the_write_and_stale_ones_are_discarded() {
+        for signal in ["-INT", "-TERM", "-HUP"] {
+            signalled_during_the_wait(signal).await;
+        }
+        a_signal_received_before_the_wait_is_discarded().await;
     }
 }

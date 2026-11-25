@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-use jackin::WriteFate;
-use jackin_core::{Clock, CriticalWrite, Provider, SecretBytes};
+use jackin::{Interrupts, WriteFate};
+use jackin_core::{Clock, CriticalWrite, Provider, SecretBytes, WriteTracker};
 use jackin_testkit::{Method, Route, TestResult, UsageServer, World};
 use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, CredentialVault, UsageProvider};
 use jackin_usage::onboarding::OwnedLogin;
@@ -26,7 +26,7 @@ fn drive_returns_while_a_blocking_task_is_stuck() -> TestResult {
     let (started_tx, started_rx) = mpsc::channel::<()>();
     let (done_tx, done_rx) = mpsc::channel::<u8>();
     let driver = std::thread::spawn(move || {
-        let output = jackin::drive(async move {
+        let output = jackin::drive_with(&WriteTracker::new(), Interrupts::Ignored, async move {
             let stuck = tokio::task::spawn_blocking(move || {
                 started_tx.send(()).is_ok() && parked.recv().is_err()
             });
@@ -51,7 +51,7 @@ fn drive_returns_while_a_blocking_task_is_stuck() -> TestResult {
 fn drive_lets_short_blocking_work_finish_before_it_returns() -> TestResult {
     let finished = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&finished);
-    jackin::drive(async move {
+    jackin::drive_with(&WriteTracker::new(), Interrupts::Ignored, async move {
         drop(tokio::task::spawn_blocking(move || {
             let (_hold, wait) = mpsc::channel::<()>();
             let waited = wait.recv_timeout(Duration::from_millis(300)).is_err();
@@ -70,11 +70,12 @@ fn drive_lets_short_blocking_work_finish_before_it_returns() -> TestResult {
 fn drive_waits_for_a_critical_write_but_abandons_a_stuck_read() -> TestResult {
     let (release, parked) = mpsc::channel::<()>();
     let (done_tx, done_rx) = mpsc::channel::<Duration>();
+    let writes = WriteTracker::new();
     let driver = std::thread::spawn(move || {
         let started = Instant::now();
-        let finished = jackin::drive(async move {
+        let finished = jackin::drive_with(&writes, Interrupts::Ignored, async {
             drop(tokio::task::spawn_blocking(move || parked.recv().is_err()));
-            let write = CriticalWrite::begin();
+            let write = writes.begin();
             drop(tokio::task::spawn_blocking(move || {
                 pause(CRITICAL_WORK);
                 drop(write);
@@ -144,7 +145,7 @@ fn drive_lets_a_rotation_stuck_in_the_keychain_store_its_tokens() -> TestResult 
     let (service_path, service_vault) = (path.clone(), Arc::clone(&vault));
     let clock = Arc::clone(&world.clock);
     let started = Instant::now();
-    jackin::drive(async move {
+    jackin::drive_with(&WriteTracker::process(), Interrupts::Ignored, async move {
         let server = UsageServer::start().await?;
         server.serve(
             Provider::Claude,
@@ -203,12 +204,12 @@ fn kill_self(signal: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-#[test]
-fn drive_abandons_a_stuck_write_when_interrupted_during_the_wait() -> TestResult {
+fn an_interrupt_during_the_wait_abandons_a_stuck_write() -> TestResult {
     let (release, parked) = mpsc::channel::<()>();
     let started = Instant::now();
-    let driven = jackin::drive(async move {
-        let write = CriticalWrite::begin();
+    let writes = WriteTracker::new();
+    let driven = jackin::drive_with(&writes, Interrupts::Process, async {
+        let write = writes.begin();
         drop(tokio::task::spawn_blocking(move || {
             let _held = parked.recv().is_err();
             drop(write);
@@ -224,10 +225,10 @@ fn drive_abandons_a_stuck_write_when_interrupted_during_the_wait() -> TestResult
     Ok(())
 }
 
-#[test]
-fn drive_does_not_replay_the_interrupt_that_ended_the_run() -> TestResult {
-    let driven = jackin::drive(async move {
-        let write = CriticalWrite::begin();
+fn the_interrupt_that_ended_the_run_is_not_replayed() -> TestResult {
+    let writes = WriteTracker::new();
+    let driven = jackin::drive_with(&writes, Interrupts::Process, async {
+        let write = writes.begin();
         drop(tokio::task::spawn_blocking(move || {
             pause(Duration::from_millis(1500));
             drop(write);
@@ -239,4 +240,9 @@ fn drive_does_not_replay_the_interrupt_that_ended_the_run() -> TestResult {
     assert!(driven.output, "the interrupt was not sent");
     assert_eq!(driven.writes, WriteFate::Settled);
     Ok(())
+}
+
+pub(super) fn real_interrupts_reach_a_drive() -> TestResult {
+    an_interrupt_during_the_wait_abandons_a_stuck_write()?;
+    the_interrupt_that_ended_the_run_is_not_replayed()
 }
