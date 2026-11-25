@@ -483,6 +483,39 @@ async fn a_patch_over_the_gateway_output_limit_is_counted_not_fatal() -> TestRes
 }
 
 #[tokio::test]
+async fn a_failing_git_in_the_over_limit_patch_count_fails_the_listing() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let lead = lead(&handle)?;
+        write(&lead, "big.txt", b"old\n")?;
+        handle.git(&["add", "-A"]).await?;
+        handle.git(&["commit", "-q", "-m", "big"]).await?;
+        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
+        write(
+            &agent,
+            "big.txt",
+            "0123456789abcdef\n".repeat(1_100_000).as_bytes(),
+        )?;
+        let tap = Tap::new(&rig);
+        let session = tap.session(&rig, jackin_testkit::default_limits());
+        tap.fail_git_in_shell("diff-index --numstat", "/usr/bin/false");
+
+        let outcome = session
+            .changes(&handle.name(), &CancellationToken::new())
+            .await;
+
+        assert!(
+            matches!(outcome, Err(ChangesError::Git { exit_code: 1, .. })),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_untracked_listing_over_the_gateway_output_limit_is_counted_not_fatal() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
