@@ -713,29 +713,39 @@ async fn a_committed_update_that_only_the_log_holds_is_read() -> TestResult {
     .await
 }
 
+async fn hung_view_report() -> TestResult {
+    let omp = started(&[]).await?;
+    let directory = omp.directory.path().join(".omp").join("agent");
+    std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
+    std::fs::create_dir_all(&directory)?;
+    let connection = Connection::open(directory.join("agent.db"))?;
+    connection.execute_batch(
+        "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'zai' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
+    )?;
+    drop(connection);
+    let finished = tokio::time::timeout(Duration::from_secs(30), omp.report()).await;
+    let outcome = finished.map_err(|_| "the report did not finish")??;
+    assert!(
+        matches!(
+            unavailable(&outcome),
+            UnavailableReason::Provider(message) if message.contains("could not be read")
+        ),
+        "{outcome:?}"
+    );
+    Ok(())
+}
+
 #[tokio::test]
-async fn a_credential_view_that_never_finishes_is_given_up_on() -> TestResult {
+async fn a_credential_view_that_never_finishes_is_given_up_on_and_frees_its_place() -> TestResult {
     guard(async {
-        let omp = started(&[]).await?;
-        let directory = omp.directory.path().join(".omp").join("agent");
-        std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
-        std::fs::create_dir_all(&directory)?;
-        let connection = Connection::open(directory.join("agent.db"))?;
-        connection.execute_batch(
-            "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'zai' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
-        )?;
-        drop(connection);
-        let finished = tokio::time::timeout(Duration::from_secs(30), omp.report()).await;
-        let outcome = finished.map_err(|_| "the report did not finish")??;
-        assert!(
-            matches!(
-                unavailable(&outcome),
-                UnavailableReason::Provider(message) if message.contains("could not be read")
-            ),
-            "{outcome:?}"
-        );
+        for _ in 0..3 {
+            hung_view_report().await?;
+        }
         let again = started(&[(1, &key_json(KEY))]).await?;
-        assert_eq!(windows_of(&again.report().await?).len(), 2);
+        let outcome = tokio::time::timeout(Duration::from_secs(10), again.report())
+            .await
+            .map_err(|_| "the worker of an abandoned query still holds its place")??;
+        assert_eq!(windows_of(&outcome).len(), 2);
         Ok(())
     })
     .await

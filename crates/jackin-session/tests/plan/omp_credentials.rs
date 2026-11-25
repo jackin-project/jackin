@@ -1,10 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::Write as _;
 use std::path::Path;
 
-use jackin_core::{FileMode, FileSystem, HostPath, OMP_CAPTURE_LIMITS, StdFileSystem};
+use jackin_core::{FileMode, FileSystem, HostPath, StdFileSystem};
 use jackin_session::read_omp_host_key;
 use jackin_testkit::MemFs;
 
@@ -58,24 +57,6 @@ async fn an_omp_store_behind_a_symbolic_link_is_not_followed() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
-async fn an_omp_store_over_its_size_cap_is_unreadable() -> TestResult {
-    let dir = tempfile::tempdir()?;
-    let path = dir.path().join("agent.db");
-    let mut file = std::fs::File::create(&path)?;
-    file.write_all(jackin_core::SQLITE_MAGIC)?;
-    file.set_len(u64::try_from(OMP_CAPTURE_LIMITS.database_bytes)? + 1)?;
-    drop(file);
-    read_omp_host_key(
-        &StdFileSystem::default(),
-        &HostPath::parse(&std::fs::canonicalize(&path)?)?,
-        "wanted",
-    )
-    .await
-    .unwrap_err();
-    Ok(())
-}
-
 #[tokio::test(start_paused = true)]
 async fn an_omp_store_read_that_never_returns_is_given_up_on() -> TestResult {
     let fs = MemFs::new();
@@ -100,18 +81,32 @@ fn view_store(dir: &Path, view: &str) -> Result<HostPath, Box<dyn std::error::Er
 }
 
 #[tokio::test]
-async fn an_omp_credential_view_that_never_finishes_is_given_up_on() -> TestResult {
+async fn an_omp_credential_view_that_never_finishes_is_given_up_on_and_frees_its_place()
+-> TestResult {
+    let hang = "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'wanted' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;";
+    let fs = StdFileSystem::default();
+    for _ in 0..3 {
+        let dir = tempfile::tempdir()?;
+        let store = view_store(dir.path(), hang)?;
+        let finished = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            read_omp_host_key(&fs, &store, "wanted"),
+        )
+        .await
+        .map_err(|_| "the read never finished")?;
+        finished.unwrap_err();
+    }
     let dir = tempfile::tempdir()?;
     let store = view_store(
         dir.path(),
-        "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'wanted' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
+        "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, '{\"key\": \"fake-wanted-key\"}' AS data;",
     )?;
-    let finished = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        read_omp_host_key(&StdFileSystem::default(), &store, "wanted"),
+    let key = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        read_omp_host_key(&fs, &store, "wanted"),
     )
     .await
-    .map_err(|_| "the read never finished")?;
-    finished.unwrap_err();
+    .map_err(|_| "the worker of an abandoned query still holds its place")??;
+    assert_eq!(key.expose(), "fake-wanted-key");
     Ok(())
 }

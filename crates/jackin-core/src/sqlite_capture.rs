@@ -64,7 +64,7 @@ pub enum CaptureProblem {
 
 pub struct StoreImage {
     bytes: Zeroizing<Vec<u8>>,
-    _slot: OwnedSemaphorePermit,
+    _slot: Slot,
 }
 
 impl std::fmt::Debug for StoreImage {
@@ -89,6 +89,8 @@ enum Read {
     Bytes(Zeroizing<Vec<u8>>),
     Absent,
 }
+
+type Slot = Arc<OwnedSemaphorePermit>;
 
 fn capture_slots() -> &'static Arc<Semaphore> {
     static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
@@ -133,10 +135,12 @@ pub async fn capture(
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
     let within = async {
-        let slot = Arc::clone(capture_slots())
-            .acquire_owned()
-            .await
-            .map_err(|_| CaptureProblem::Unreadable)?;
+        let slot = Arc::new(
+            Arc::clone(capture_slots())
+                .acquire_owned()
+                .await
+                .map_err(|_| CaptureProblem::Unreadable)?,
+        );
         capture_pinned(fs, database, limits, slot).await
     };
     tokio::time::timeout(limits.deadline, within)
@@ -171,7 +175,7 @@ async fn capture_pinned(
     fs: &dyn FileSystem,
     database: &HostPath,
     limits: CaptureLimits,
-    slot: OwnedSemaphorePermit,
+    slot: Slot,
 ) -> Result<Capture, CaptureProblem> {
     match fs.stat(database).await {
         Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
@@ -209,7 +213,7 @@ async fn capture_pinned(
             continue;
         }
         let before = fence_of(fs, &dir, &target, &log_target).await?;
-        let Some((first, log)) = read_pair(fs, &dir, name, &log_name, limits).await? else {
+        let Some((first, log)) = read_pair(fs, &dir, name, &log_name, limits, &slot).await? else {
             continue;
         };
         if !first.starts_with(SQLITE_MAGIC) {
@@ -222,9 +226,12 @@ async fn capture_pinned(
             continue;
         }
         let image_bytes = limits.image_bytes;
-        let image =
-            offload(move || store_image(first, log.as_deref().map(Vec::as_slice), image_bytes))
-                .await??;
+        let held = Arc::clone(&slot);
+        let image = offload(move || {
+            let _held = held;
+            store_image(first, log.as_deref().map(Vec::as_slice), image_bytes)
+        })
+        .await??;
         return Ok(Capture {
             image: StoreImage {
                 bytes: image,
@@ -298,6 +305,7 @@ async fn read_pair(
     name: &str,
     log_name: &str,
     limits: CaptureLimits,
+    slot: &Slot,
 ) -> Result<Option<Pair>, CaptureProblem> {
     let first = read_database(fs, dir, name, limits).await?;
     if matches!(first, Read::Absent) {
@@ -305,7 +313,9 @@ async fn read_pair(
     }
     let log_first = read_log(fs, dir, log_name, limits).await?;
     let again = read_database(fs, dir, name, limits).await?;
+    let held = Arc::clone(slot);
     let (first, same) = offload(move || {
+        let _held = held;
         let same = same_bytes(&first, &again);
         (first, same)
     })
@@ -314,7 +324,9 @@ async fn read_pair(
         return Ok(None);
     }
     let log_again = read_log(fs, dir, log_name, limits).await?;
+    let held = Arc::clone(slot);
     let (log_first, same) = offload(move || {
+        let _held = held;
         let same = log_only_grew(&log_first, &log_again);
         (log_first, same)
     })

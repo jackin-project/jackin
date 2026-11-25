@@ -678,6 +678,23 @@ async fn a_log_that_only_grows_between_its_reads_is_taken_at_its_first_read() ->
 }
 
 #[tokio::test]
+async fn a_log_whose_first_read_is_only_a_partial_header_is_read_again() -> TestResult {
+    let full = log(&[(1, 1, marked_page(7))]);
+    let partial = full[..10].to_vec();
+    let complete = full.clone();
+    let swap = move |fs: &MemFs, count: usize| {
+        if count == 1 {
+            fs.overwrite(&at("agent.db-wal").expect("a path"), complete.clone());
+        }
+    };
+    let image = swapped_during("agent.db-wal", swap, partial)
+        .await?
+        .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(image[100], 7);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_log_that_shrinks_or_restarts_between_its_reads_is_read_again() -> TestResult {
     let restarted = Wal {
         salt: [8, 7, 6, 5, 4, 3, 2, 1],

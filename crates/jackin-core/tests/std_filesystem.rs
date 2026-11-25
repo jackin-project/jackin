@@ -313,18 +313,22 @@ async fn read_regular_returns_at_most_the_cap_plus_one_byte_and_keeps_every_refu
 }
 
 #[tokio::test]
-async fn read_regular_holds_a_file_in_one_allocation_of_its_own_size() -> TestResult {
+async fn read_regular_holds_a_file_in_one_allocation_near_its_own_size() -> TestResult {
     let dir = tempfile::tempdir()?;
     let fs = StdFileSystem::default();
     let base = HostPath::parse(&std::fs::canonicalize(dir.path())?)?;
-    for len in [3_usize, 4096, 100_000] {
+    for len in [3_usize, 4096, 100_000, 1_000_000] {
         std::fs::write(dir.path().join("file"), vec![7_u8; len])?;
         let read = fs
-            .read_regular(&base, &RepoPath::parse("file")?, 1 << 20)
+            .read_regular(&base, &RepoPath::parse("file")?, 1 << 22)
             .await?
             .map_err(|problem| format!("{problem:?}"))?;
         assert_eq!(read.bytes.len(), len);
-        assert_eq!(read.bytes.capacity(), len, "{len} bytes");
+        assert!(
+            read.bytes.capacity() <= len + len / 16 + 4096,
+            "{len} bytes held in {} bytes",
+            read.bytes.capacity()
+        );
     }
     Ok(())
 }

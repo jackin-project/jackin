@@ -347,7 +347,8 @@ fn read_below(
     let limit = u64::try_from(max_bytes)
         .unwrap_or(u64::MAX)
         .saturating_add(1);
-    let mut bytes = Vec::with_capacity(usize::try_from(meta.len().min(limit)).unwrap_or(0));
+    let sized = meta.len().saturating_add(meta.len() / 16 + 4096).min(limit);
+    let mut bytes = Vec::with_capacity(usize::try_from(sized).unwrap_or(0));
     (&mut opened).take(limit).read_to_end(&mut bytes)?;
     Ok(Ok(RegularFile {
         bytes,
