@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, CaptureLimits, CaptureProblem, CredentialFileProblem, CredentialSource, FileIdentity,
-    HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret, StoreImage, capture,
-    lookup_tuple, read_credential_file,
+    HostPath, InterruptWatch, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret,
+    StoreImage, capture, lookup_tuple, read_credential_file,
 };
 use jackin_usage_provider_core::Credential;
 use serde_json::Value;
@@ -576,11 +576,12 @@ where
     Work: FnOnce(&rusqlite::Connection) -> Result<T, Unresolved> + Send + 'static,
 {
     let connection = store_connection(words.opened)?;
-    let interrupt = InterruptOnDrop::new(connection.get_interrupt_handle());
+    let handle = connection.get_interrupt_handle();
+    let interrupt = InterruptWatch::new(move || handle.interrupt());
     let (opened, read) = (words.opened, words.read);
     let finished = interrupt.finished();
     let task = tokio::task::spawn_blocking(move || {
-        let done = FinishedOnDrop(finished);
+        let done = finished;
         let mut connection = connection;
         let length = image.as_slice().len();
         connection
@@ -603,51 +604,6 @@ fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unreso
         .execute_batch("PRAGMA temp_store = MEMORY;")
         .map_err(|_| Unresolved::Unreadable(opened))?;
     Ok(connection)
-}
-
-struct FinishedOnDrop(std::sync::Arc<std::sync::atomic::AtomicBool>);
-
-impl Drop for FinishedOnDrop {
-    fn drop(&mut self) {
-        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
-    }
-}
-
-struct InterruptOnDrop {
-    handle: std::sync::Arc<rusqlite::InterruptHandle>,
-    finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
-}
-
-impl InterruptOnDrop {
-    fn new(handle: rusqlite::InterruptHandle) -> InterruptOnDrop {
-        InterruptOnDrop {
-            handle: std::sync::Arc::new(handle),
-            finished: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        }
-    }
-
-    fn finished(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
-        std::sync::Arc::clone(&self.finished)
-    }
-}
-
-impl Drop for InterruptOnDrop {
-    fn drop(&mut self) {
-        if self.finished.load(std::sync::atomic::Ordering::SeqCst) {
-            return;
-        }
-        let handle = std::sync::Arc::clone(&self.handle);
-        let finished = std::sync::Arc::clone(&self.finished);
-        std::thread::spawn(move || {
-            for _ in 0..200 {
-                if finished.load(std::sync::atomic::Ordering::SeqCst) {
-                    return;
-                }
-                handle.interrupt();
-                std::thread::park_timeout(Duration::from_millis(25));
-            }
-        });
-    }
 }
 
 async fn read_credential(

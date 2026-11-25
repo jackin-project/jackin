@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use zeroize::Zeroizing;
 
 use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError, RegularFileProblem};
@@ -386,4 +390,56 @@ fn apply_log(
         size.copy_from_slice(&u32::try_from(pages).map_err(|_| bad)?.to_be_bytes());
     }
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct Finished(Arc<AtomicBool>);
+
+impl Drop for Finished {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+pub struct InterruptWatch {
+    interrupt: Arc<dyn Fn() + Send + Sync>,
+    finished: Arc<AtomicBool>,
+}
+
+impl std::fmt::Debug for InterruptWatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("InterruptWatch")
+    }
+}
+
+impl InterruptWatch {
+    pub fn new(interrupt: impl Fn() + Send + Sync + 'static) -> InterruptWatch {
+        InterruptWatch {
+            interrupt: Arc::new(interrupt),
+            finished: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn finished(&self) -> Finished {
+        Finished(Arc::clone(&self.finished))
+    }
+}
+
+impl Drop for InterruptWatch {
+    fn drop(&mut self) {
+        if self.finished.load(Ordering::SeqCst) {
+            return;
+        }
+        let interrupt = Arc::clone(&self.interrupt);
+        let finished = Arc::clone(&self.finished);
+        std::thread::spawn(move || {
+            for _ in 0..200 {
+                if finished.load(Ordering::SeqCst) {
+                    return;
+                }
+                interrupt();
+                std::thread::park_timeout(Duration::from_millis(25));
+            }
+        });
+    }
 }
