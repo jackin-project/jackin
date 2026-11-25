@@ -17,7 +17,7 @@ use crate::accounts::{
     AccountRegistry, ConnectedAccount, ConnectionError, FailureKind, RefreshFailure, UsageProvider,
 };
 use crate::catalog;
-use crate::dashboard::{DashboardSettings, concealed_label};
+use crate::dashboard::{DashboardSettings, concealed_label, visible_resource_reset};
 
 fn float(value: &Value) -> Option<f64> {
     match value {
@@ -165,7 +165,15 @@ fn quota(
     let body = source.payload.as_ref();
     let hidden = &source.account.preferences.hidden;
     let mut meters = body
-        .map(|body| meters(body, source.fetched_at, now, hidden))
+        .map(|body| {
+            meters(
+                body,
+                source.account.provider,
+                source.fetched_at,
+                now,
+                hidden,
+            )
+        })
         .unwrap_or_default();
     meters.sort_by(|left, right| {
         (left.role, left.window_secs.unwrap_or(u32::MAX), &left.name).cmp(&(
@@ -277,6 +285,7 @@ fn best<K: Ord>(
 
 fn meters(
     body: &Value,
+    provider: UsageProvider,
     fetched_at: Option<i64>,
     now: Timestamp,
     hidden: &BTreeSet<String>,
@@ -286,11 +295,17 @@ fn meters(
         .into_iter()
         .flatten()
         .filter(|(key, _)| !hidden.contains(key.as_str()))
-        .filter_map(|(key, resource)| meter(key, resource, fetched_at, now))
+        .filter_map(|(key, resource)| meter(key, resource, provider, fetched_at, now))
         .collect()
 }
 
-fn meter(key: &str, resource: &Value, fetched_at: Option<i64>, now: Timestamp) -> Option<Meter> {
+fn meter(
+    key: &str,
+    resource: &Value,
+    provider: UsageProvider,
+    fetched_at: Option<i64>,
+    now: Timestamp,
+) -> Option<Meter> {
     if !matches!(resource["kind"].as_str()?, "consumption" | "quota") {
         return None;
     }
@@ -309,7 +324,8 @@ fn meter(key: &str, resource: &Value, fetched_at: Option<i64>, now: Timestamp) -
         name,
         role,
         window_secs: window(resource, resets_at),
-        resets_at,
+        resets_at: resets_at
+            .filter(|_| visible_resource_reset(provider, key, resource, now.0).is_some()),
         used,
         rolled_over,
     })
@@ -413,8 +429,8 @@ fn notes(
     if !hidden.contains("rateLimitResets") {
         notes.extend(resets(body, provider, now));
     }
-    notes.extend(tokens(body));
-    notes.extend(spend(body));
+    notes.extend(tokens(body, hidden));
+    notes.extend(spend(body, hidden));
     notes
 }
 
@@ -544,7 +560,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|grant| {
+        .enumerate()
+        .filter_map(|(index, grant)| {
             let at = grant["expiresAt"].as_i64()?;
             let live = at > now.0;
             let usable = grant["usable"] == true && live;
@@ -556,6 +573,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
                     (false, false) => ResetStatus::Unavailable,
                 },
                 expires_at: Timestamp(at),
+                remaining: grant["remaining"].as_u64().unwrap_or(1),
+                index,
             })
         })
         .collect();
@@ -565,7 +584,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
             .into_iter()
             .flatten()
             .filter_map(Value::as_i64)
-            .map(|at| ResetCredit {
+            .enumerate()
+            .map(|(index, at)| ResetCredit {
                 kind: "reset".to_owned(),
                 status: if at > now.0 {
                     ResetStatus::Ready
@@ -573,6 +593,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
                     ResetStatus::Unavailable
                 },
                 expires_at: Timestamp(at),
+                remaining: 1,
+                index,
             })
             .collect();
     }
@@ -615,13 +637,14 @@ fn activity(range: &Value) -> Option<Activity> {
     })
 }
 
-fn tokens(body: &Value) -> Option<Note> {
+fn tokens(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
     let ranges = &body["history"]["ranges"];
+    let shown = |key: &str| !hidden.contains(key);
     let (today, yesterday, last30) = if ranges.is_object() {
         (
-            count(&ranges["today"]["totals"]["tokens"]),
-            activity(&ranges["yesterday"]),
-            activity(&ranges["last30"]),
+            count(&ranges["today"]["totals"]["tokens"]).filter(|_| shown("today")),
+            activity(&ranges["yesterday"]).filter(|_| shown("yesterday")),
+            activity(&ranges["last30"]).filter(|_| shown("last30")),
         )
     } else {
         let log = &body["activity"];
@@ -630,7 +653,11 @@ fn tokens(body: &Value) -> Option<Note> {
             "observedDays": log["observed_days"],
             "expectedDays": log["expected_days"],
         });
-        (None, activity(&log["yesterday"]), activity(&prior))
+        (
+            None,
+            activity(&log["yesterday"]).filter(|_| shown("yesterday")),
+            activity(&prior).filter(|_| shown("prior30")),
+        )
     };
     (today.is_some() || yesterday.is_some() || last30.is_some()).then_some(Note::Tokens {
         today,
@@ -639,12 +666,13 @@ fn tokens(body: &Value) -> Option<Note> {
     })
 }
 
-fn spend(body: &Value) -> Option<Note> {
+fn spend(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
     let period = |key: &str, field: &str| float(&body["period_spend"][key][field]);
+    let shown = |key: &str| !hidden.contains(key);
     let (today, week, month) = (
-        period("today", "spend"),
-        period("thisWeek", "spend"),
-        period("thisMonth", "spend"),
+        period("today", "spend").filter(|_| shown("today")),
+        period("thisWeek", "spend").filter(|_| shown("week")),
+        period("thisMonth", "spend").filter(|_| shown("month")),
     );
     if today.is_none() && week.is_none() && month.is_none() {
         return None;
@@ -653,7 +681,7 @@ fn spend(body: &Value) -> Option<Note> {
         today,
         week,
         month,
-        byok: period("thisMonth", "byokSpend"),
+        byok: period("thisMonth", "byokSpend").filter(|_| shown("month")),
         currency: Currency::USD,
     })
 }

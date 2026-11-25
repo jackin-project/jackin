@@ -1,15 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
-use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, UsageProvider};
+use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, UsageProvider};
 use jackin_usage::catalog::{InfoProduct, UsageProduct, info_only, providers};
-use jackin_usage::view::{Line, Span, Tone};
+use jackin_usage::view::{Ctx, Line, Span, Tone, text};
 use serde::Serialize;
+use uuid::Uuid;
 
+use super::overview::context;
 use super::{database, failure};
 use crate::{app::App, error::CommandError};
+
+const INFO_TAG: &str = "Info";
+const INFO_INDENT: usize = 6;
 
 #[derive(Serialize)]
 pub(super) struct ProviderRow {
@@ -108,19 +113,18 @@ fn plural(count: usize, noun: &str) -> String {
 
 fn duplicate_note(
     accounts: &[ConnectedAccount],
+    identities: &BTreeMap<Uuid, String>,
     connector: Option<UsageProvider>,
 ) -> Option<String> {
-    let labels: Vec<&str> = accounts
+    let mut shared: BTreeMap<&str, usize> = BTreeMap::new();
+    for identity in accounts
         .iter()
         .filter(|a| Some(a.provider) == connector)
-        .map(|a| a.label.as_str())
-        .collect();
-    let repeats = labels
-        .iter()
-        .map(|label| labels.iter().filter(|other| *other == label).count())
-        .max()
-        .unwrap_or(0);
-    match repeats {
+        .filter_map(|a| identities.get(&a.id))
+    {
+        *shared.entry(identity.as_str()).or_default() += 1;
+    }
+    match shared.into_values().max().unwrap_or(0) {
         0 | 1 => None,
         2 => Some("same account connected twice".to_owned()),
         n => Some(format!("same account connected {n} times")),
@@ -135,7 +139,11 @@ struct Cells {
     note: Option<(String, Tone)>,
 }
 
-fn cells(row: &ProviderRow, accounts: &[ConnectedAccount]) -> Cells {
+fn cells(
+    row: &ProviderRow,
+    accounts: &[ConnectedAccount],
+    identities: &BTreeMap<Uuid, String>,
+) -> Cells {
     let connector = providers()
         .find(|p| p.id == row.id)
         .and_then(|p| p.connector);
@@ -146,7 +154,7 @@ fn cells(row: &ProviderRow, accounts: &[ConnectedAccount]) -> Cells {
     } else {
         (
             row.account_count.to_string(),
-            duplicate_note(accounts, connector).map(|note| (note, Tone::Warn)),
+            duplicate_note(accounts, identities, connector).map(|note| (note, Tone::Warn)),
         )
     };
     Cells {
@@ -175,19 +183,32 @@ fn table(
     rows: &[&ProviderRow],
     totals: &[ProviderRow],
     accounts: &[ConnectedAccount],
+    identities: &BTreeMap<Uuid, String>,
+    ctx: Ctx,
 ) -> Vec<Line> {
     let tracked = totals.iter().filter(|r| r.status != "unavailable").count();
     let connected = totals.iter().filter(|r| r.account_count > 0).count();
     let total: usize = totals.iter().map(|r| r.account_count).sum();
-    let cells: Vec<Cells> = rows.iter().map(|row| cells(row, accounts)).collect();
+    let cells: Vec<Cells> = rows
+        .iter()
+        .map(|row| cells(row, accounts, identities))
+        .collect();
     let name_width = widest(&cells, |c| c.name, "PROVIDER");
     let id_width = widest(&cells, |c| c.id, "ID");
     let count_width = widest(&cells, |c| &c.count, "ACCOUNTS");
-    let mut lines = vec![
-        Line::of(vec![Span::strong(format!(
-            "Providers · {tracked} tracked · {connected} connected · {}",
-            plural(total, "account")
-        ))]),
+    let mut lines = text::wrap(
+        Vec::new(),
+        0,
+        &text::split_parts(
+            &format!(
+                "Providers · {tracked} tracked · {connected} connected · {}",
+                plural(total, "account")
+            ),
+            Tone::Strong,
+        ),
+        ctx.columns(),
+    );
+    lines.extend([
         Line::blank(),
         Line::of(vec![Span::dim(format!(
             "{}  {}  {:>count_width$}  NOTE",
@@ -195,7 +216,7 @@ fn table(
             pad("ID", id_width),
             "ACCOUNTS"
         ))]),
-    ];
+    ]);
     for cell in cells {
         let figure = format!("{:>count_width$}", cell.count);
         let mut spans = vec![
@@ -216,15 +237,22 @@ fn table(
     lines
 }
 
-fn info_lines() -> Vec<Line> {
+fn info_lines(ctx: Ctx) -> Vec<Line> {
     let mut lines = Vec::new();
     for info in info_only() {
         lines.push(Line::blank());
-        lines.push(Line::of(vec![
-            Span::strong("Info"),
-            Span::plain(format!("  {}: {}.", info.name, info.reason)),
-        ]));
-        lines.push(Line::of(vec![Span::plain(format!("      {}", info.hint))]));
+        lines.extend(text::wrap(
+            vec![Span::strong(INFO_TAG), Span::plain("  ")],
+            INFO_INDENT,
+            &[(format!("{}: {}.", info.name, info.reason), Tone::Plain)],
+            ctx.columns(),
+        ));
+        lines.extend(text::wrap(
+            vec![Span::plain(" ".repeat(INFO_INDENT))],
+            INFO_INDENT,
+            &[(info.hint.to_owned(), Tone::Plain)],
+            ctx.columns(),
+        ));
     }
     lines
 }
@@ -235,15 +263,17 @@ fn footer() -> Vec<Line> {
         Line::of(vec![Span::plain(
             "Connect: jackin account usage connect <id>",
         )]),
-        Line::of(vec![Span::plain("Filter:  jackin usage --provider <id>")]),
+        Line::of(vec![Span::plain(
+            "Filter:  jackin usage details --provider <id>",
+        )]),
     ]
 }
 
 pub(crate) fn show(app: &mut App, id: Option<&str>, json: bool) -> Result<(), CommandError> {
     let selected = id.map(product).transpose()?;
-    let accounts = AccountRegistry::open_read_only(&database(app)?)
+    let (accounts, identities) = AccountRegistry::open_read_only(&database(app)?)
         .map_err(failure)?
-        .map(|db| db.list())
+        .map(|db| Ok::<_, ConnectionError>((db.list()?, db.identities()?)))
         .transpose()
         .map_err(failure)?
         .unwrap_or_default();
@@ -261,9 +291,10 @@ pub(crate) fn show(app: &mut App, id: Option<&str>, json: bool) -> Result<(), Co
         app.io
             .json(&serde_json::json!({"schema":1,"providers":rows,"info":info}))
     } else {
-        let mut lines = table(&rows, &totals, &accounts);
+        let ctx = context(app);
+        let mut lines = table(&rows, &totals, &accounts, &identities, ctx);
         if selected.is_none() {
-            lines.extend(info_lines());
+            lines.extend(info_lines(ctx));
         }
         lines.extend(footer());
         app.io.lines(&lines)

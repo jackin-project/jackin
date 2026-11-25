@@ -24,8 +24,7 @@ use super::{Result, Vault, db};
 
 const CLIENT_ID: &str = "jackin-fixture-desktop.apps.googleusercontent.com";
 const CLIENT_SECRET: &str = "fixture-not-a-secret";
-const FOREIGN_CLIENT: &str =
-    "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+const FOREIGN_CLIENT: &str = "jackin-fixture-foreign.apps.googleusercontent.com";
 const EMAIL: &str = "ultra@example.com";
 
 fn agent() -> &'static str {
