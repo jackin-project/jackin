@@ -109,6 +109,10 @@ pub enum ConnectionError {
     CredentialKind,
     #[error("unlock the OS credential store and retry; on Linux start a Secret Service session")]
     Vault,
+    #[error(
+        "the credential store is busy or waiting for Keychain access; approve the Keychain prompt and retry"
+    )]
+    StoreBusy,
     #[error("usage account removed; unlock the credential store and retry cleanup")]
     RemovedPendingCleanup,
     #[error(
@@ -138,7 +142,11 @@ pub struct AccountRegistry {
     db: Connection,
     directory: PathBuf,
     vault: Arc<dyn CredentialVault>,
+    lock_wait: Duration,
 }
+
+const LOCK_WAIT: Duration = Duration::from_secs(30);
+const LOCK_POLL: Duration = Duration::from_millis(25);
 
 #[derive(Debug)]
 pub struct KeptGrant<'a> {
@@ -203,6 +211,7 @@ impl AccountRegistry {
             db,
             directory,
             vault: Arc::new(vault::SystemVault),
+            lock_wait: LOCK_WAIT,
         }))
     }
 
@@ -238,7 +247,14 @@ impl AccountRegistry {
             db,
             directory,
             vault,
+            lock_wait: LOCK_WAIT,
         })
+    }
+
+    #[must_use]
+    pub fn with_lock_wait(mut self, wait: Duration) -> Self {
+        self.lock_wait = wait;
+        self
     }
 
     pub fn list(&self) -> Result<Vec<ConnectedAccount>, ConnectionError> {
@@ -297,26 +313,45 @@ impl AccountRegistry {
         &self,
         id: Uuid,
     ) -> Result<(CredentialVersion, SecretBytes), ConnectionError> {
-        let _lock = self.mutation_lock()?;
-        let (slot, statusline) = self
-            .db
-            .query_row(
-                "SELECT slot,kind='statusline' FROM accounts WHERE id=?1",
-                [id.to_string()],
-                |row| Ok((uuid(row, 0)?, row.get::<_, bool>(1)?)),
-            )
-            .optional()?
-            .ok_or(ConnectionError::Changed)?;
-        if statusline {
-            return Err(ConnectionError::CredentialKind);
+        loop {
+            let (slot, statusline) = self
+                .db
+                .query_row(
+                    "SELECT slot,kind='statusline' FROM accounts WHERE id=?1",
+                    [id.to_string()],
+                    |row| Ok((uuid(row, 0)?, row.get::<_, bool>(1)?)),
+                )
+                .optional()?
+                .ok_or(ConnectionError::Changed)?;
+            if statusline {
+                return Err(ConnectionError::CredentialKind);
+            }
+            match self.vault.load(slot) {
+                Err(ConnectionError::MissingCredential) if self.version(id)?.0 != slot => {}
+                loaded => return Ok((CredentialVersion(slot), loaded?)),
+            }
         }
-        Ok((CredentialVersion(slot), self.vault.load(slot)?))
     }
 
-    fn mutation_lock(&self) -> Result<File, ConnectionError> {
+    fn mutation_lock(&self, wait: Option<Duration>) -> Result<File, ConnectionError> {
         let f = private::file(&self.directory.join("credentials.lock"))?;
-        f.lock()?;
-        Ok(f)
+        let Some(wait) = wait else {
+            f.lock()?;
+            return Ok(f);
+        };
+        let deadline = std::time::Instant::now() + wait;
+        loop {
+            match f.try_lock() {
+                Ok(()) => return Ok(f),
+                Err(std::fs::TryLockError::Error(error)) => return Err(error.into()),
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(ConnectionError::StoreBusy);
+                    }
+                    std::thread::park_timeout(LOCK_POLL);
+                }
+            }
+        }
     }
 
     pub(crate) fn renewal_file(&self, id: Uuid) -> Result<File, ConnectionError> {
@@ -549,7 +584,9 @@ impl AccountRegistry {
         expected: CredentialVersion,
         secret: &SecretBytes,
     ) -> Result<CredentialVersion, ConnectionError> {
-        self.install(secret, |tx, slot| replace_slot(tx, id, expected, slot))
+        self.install_within(None, secret, &CancellationToken::new(), |tx, slot| {
+            replace_slot(tx, id, expected, slot)
+        })
     }
 
     fn install(
@@ -566,7 +603,17 @@ impl AccountRegistry {
         cancel: &CancellationToken,
         change: impl FnOnce(&Connection, Uuid) -> Result<(), ConnectionError>,
     ) -> Result<CredentialVersion, ConnectionError> {
-        let _lock = self.mutation_lock()?;
+        self.install_within(Some(self.lock_wait), secret, cancel, change)
+    }
+
+    fn install_within(
+        &mut self,
+        wait: Option<Duration>,
+        secret: &SecretBytes,
+        cancel: &CancellationToken,
+        change: impl FnOnce(&Connection, Uuid) -> Result<(), ConnectionError>,
+    ) -> Result<CredentialVersion, ConnectionError> {
+        let _lock = self.mutation_lock(wait)?;
         if cancel.is_cancelled() {
             return Err(ConnectionError::Cancelled);
         }
@@ -640,7 +687,7 @@ impl AccountRegistry {
     }
 
     pub fn remove(&mut self, id: Uuid) -> Result<(), ConnectionError> {
-        let _lock = self.mutation_lock()?;
+        let _lock = self.mutation_lock(Some(self.lock_wait))?;
         if self.hub_link(id)?.is_some() {
             return Err(ConnectionError::HubManaged);
         }
@@ -679,7 +726,7 @@ impl AccountRegistry {
     }
 
     pub fn clean_retired(&mut self) -> Result<(), ConnectionError> {
-        let _lock = self.mutation_lock()?;
+        let _lock = self.mutation_lock(Some(self.lock_wait))?;
         self.drain_retired()
     }
 

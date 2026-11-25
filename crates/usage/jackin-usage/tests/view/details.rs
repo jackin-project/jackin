@@ -240,7 +240,15 @@ fn no_internal_keys_and_no_repeated_used_limit_remaining_lines_leak_into_details
 fn a_narrow_details_report_keeps_every_card_line_within_its_width() -> Result<()> {
     let seeded = Seeded::new()?;
     let text = details(&seeded, &ViewFilter::default(), 60)?;
-    for line in text.lines().skip_while(|line| !line.starts_with("Claude")) {
+    let cards: Vec<&str> = text
+        .lines()
+        .skip_while(|line| !line.starts_with("Claude"))
+        .collect();
+    assert!(
+        cards.first().is_some_and(|line| line.starts_with("Claude")),
+        "{text}"
+    );
+    for line in cards {
         assert!(line.chars().count() <= 60, "{line}");
     }
     Ok(())

@@ -9,7 +9,9 @@ use jackin_core::plain;
 use jackin_usage::accounts::{
     AccountRegistry, ConnectedAccount, ConnectionError, MetricEdit, MetricState,
 };
-use jackin_usage::dashboard::{Dashboard, DashboardMemory, DashboardRow, DashboardSettings};
+use jackin_usage::dashboard::{
+    Dashboard, DashboardMemory, DashboardRow, DashboardSettings, Section, Summary,
+};
 use jackin_usage::onboarding::OwnedLogin;
 use jackin_usage::presentation::{Level, ReadingText};
 use jackin_usage::view::{self, AccountQuota, ProviderGroup, UsageView, ViewFilter};
@@ -239,6 +241,7 @@ fn reading_of(view: &UsageView, row: &DashboardRow, settings: &DashboardSettings
 }
 
 fn metric(
+    view: &UsageView,
     group: String,
     row: DashboardRow,
     reading: ReadingText,
@@ -246,10 +249,10 @@ fn metric(
     registry: &[ConnectedAccount],
 ) -> BoardMetric {
     let bar = reading.bar.map(|amount| (amount, pace(Some(&row))));
-    let title_label = row
-        .account
-        .and_then(|id| accounts.iter().find(|entry| entry.id == id.to_string()))
-        .map_or_else(|| row.label.clone(), |entry| entry.label.clone());
+    let title_label = row.account.and_then(|id| view.account(id)).map_or_else(
+        || row.label.clone(),
+        |(_, quota)| display::entry_label(quota),
+    );
     BoardMetric {
         member_preferences: if row.account.is_none() {
             row.members
@@ -375,6 +378,7 @@ fn account_rows(
             row.account == Some(account.id) && !covered.contains(&row.metric.as_str())
         }) {
             own.push(metric(
+                view,
                 group.name.to_owned(),
                 row.clone(),
                 stored_reading(row, settings),
@@ -422,6 +426,7 @@ fn all_rows(
                     .map(|row| {
                         let reading = stored_reading(row, &data.settings);
                         metric(
+                            view,
                             group.name.to_owned(),
                             row.clone(),
                             reading,
@@ -441,6 +446,67 @@ fn all_rows(
             ));
         }
     }
+    rows
+}
+
+fn attention_metric(row: display::AttentionRow, accounts: &[UsageEntry]) -> BoardMetric {
+    let reading = row.reading;
+    let bar = reading.bar.map(|amount| (amount, None));
+    BoardMetric {
+        member_preferences: Vec::new(),
+        account: None,
+        members: row
+            .accounts
+            .iter()
+            .filter_map(|id| {
+                accounts
+                    .iter()
+                    .find(|entry| entry.id == id.to_string())
+                    .cloned()
+            })
+            .collect(),
+        provider: row.provider.to_string(),
+        metric: row.key,
+        title: row.title,
+        label: plain(row.label),
+        value: reading.value,
+        exact_value: reading.exact,
+        group: Section::NeedsAttention.to_string(),
+        bounded: bar.is_some(),
+        bar,
+        severity: tone(reading.level),
+        reset: reading.reset,
+        inspector: reading.inspector,
+        details: reading.details,
+        pinned: false,
+    }
+}
+
+fn priority_rows(
+    view: &UsageView,
+    data: &Dashboard,
+    accounts: &[UsageEntry],
+    registry: &[ConnectedAccount],
+) -> Vec<BoardMetric> {
+    let mut rows: Vec<BoardMetric> = display::attention_rows(view)
+        .into_iter()
+        .map(|row| attention_metric(row, accounts))
+        .collect();
+    rows.extend(
+        data.priority
+            .iter()
+            .filter(|(section, _)| *section == Section::Pinned)
+            .map(|(section, row)| {
+                metric(
+                    view,
+                    section.to_string(),
+                    row.clone(),
+                    reading_of(view, row, &data.settings),
+                    accounts,
+                    registry,
+                )
+            }),
+    );
     rows
 }
 
@@ -507,18 +573,7 @@ pub(super) fn load(
         service.utc_offset_secs(),
     )?;
     let rows: Vec<BoardMetric> = if priority {
-        data.priority
-            .iter()
-            .map(|(section, row)| {
-                metric(
-                    section.to_string(),
-                    row.clone(),
-                    reading_of(&view, row, &data.settings),
-                    &accounts,
-                    &registry,
-                )
-            })
-            .collect()
+        priority_rows(&view, &data, &accounts, &registry)
     } else {
         all_rows(&view, &data, &accounts, &registry)
     };
@@ -535,10 +590,7 @@ pub(super) fn load(
         }
     }
     let attention = attention(&view, &accounts);
-    if priority
-        && data.shows_clear_row
-        && data.summary != jackin_usage::dashboard::Summary::AllClear
-    {
+    if priority && data.shows_clear_row && data.summary != Summary::AllClear {
         notices.push(display::ALL_CLEAR.into());
     }
     let settings = BoardSettings {
@@ -576,7 +628,9 @@ pub(super) fn load(
     Ok(UsageBoard {
         providers,
         priority,
-        summary: if priority || rows.is_empty() {
+        summary: if priority && rows.is_empty() && data.summary == Summary::Listed {
+            Summary::AllClear.to_string()
+        } else if priority || rows.is_empty() {
             data.summary.to_string()
         } else {
             display::board_summary(&view)

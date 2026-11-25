@@ -1,0 +1,23 @@
+Usage · Tue 24 Nov 2026 22:37 (+07) · 3 accounts · 2 providers
+
+Needs attention (3)
+  FAILING     Claude · work@example.com
+              the credential is missing; sign in again
+        run: jackin account usage reconnect a0000001-0000-4000-8000-000000000001
+  FAILING     Antigravity (Google AI) · personal@example.com #a0000003
+              refresh timed out · next retry in 4m
+  DUPLICATE   Antigravity (Google AI) · personal@example.com #a0000002 #a0000003
+              jackin account usage rm a0000003-0000-4000-8000-000000000003
+
+Claude                                                                 1 account
+  work@example.com · Max                                 failed · fetched 2m ago
+    ! refresh failed: the credential is missing; sign in again
+      run: jackin account usage reconnect a0000001-0000-4000-8000-000000000001
+
+Antigravity (Google AI)                                               2 accounts
+  personal@example.com #a0000002 · Max                            fetched 2m ago
+    ! also connected as #a0000003 (same provider and label)
+
+  personal@example.com #a0000003 · Max                   failed · fetched 2m ago
+    ! refresh failed: refresh timed out · next retry in 4m
+    ! also connected as #a0000002 (same provider and label)

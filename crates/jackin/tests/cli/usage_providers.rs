@@ -4,10 +4,11 @@
 use super::support::Harness;
 use jackin::ExitClass;
 use jackin_testkit::{
-    TestResult, World, assert_golden, guard, pin_usage_view_clock, seed_usage_view,
+    SeedRow, TestResult, World, assert_golden, guard, pin_usage_view_clock, seed_usage_rows,
+    seed_usage_view,
 };
-use jackin_usage::accounts::DATABASE_PATH;
-use serde_json::Value;
+use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, UsageProvider};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 const GEMINI_APP_REASON: &str = "chat limits are not tracked; there is no usage source";
@@ -91,7 +92,27 @@ async fn json_adds_the_info_array_and_keeps_the_provider_keys() -> TestResult {
         assert_eq!(keys, ["info", "providers", "schema"]);
         assert_eq!(data["schema"], 1);
         let providers = data["providers"].as_array().ok_or("providers")?;
-        assert_eq!(providers.len(), 11);
+        let listed: Vec<&str> = providers
+            .iter()
+            .map(|provider| provider["id"].as_str().ok_or("provider id"))
+            .collect::<Result<_, _>>()?;
+        assert_eq!(
+            listed,
+            [
+                "claude",
+                "codex",
+                "muse",
+                "grok",
+                "kimi",
+                "zai",
+                "minimax",
+                "mimo",
+                "antigravity",
+                "opencode",
+                "openrouter"
+            ]
+        );
+        assert!(!data.to_string().to_lowercase().contains("code assist"));
         let claude = providers
             .iter()
             .find(|p| p["id"] == "claude")
@@ -117,34 +138,67 @@ async fn json_adds_the_info_array_and_keeps_the_provider_keys() -> TestResult {
     .await
 }
 
+const DUPLICATE_NOTE: &str = "same account connected";
+
 #[tokio::test]
-async fn gemini_code_assist_is_not_a_provider_anywhere() -> TestResult {
+async fn two_different_accounts_sharing_a_label_are_not_flagged_as_a_duplicate() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        pin_usage_view_clock(&world.clock);
+        let cli = Harness::new(&world);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join(DATABASE_PATH);
+        let rows = ["first", "second"]
+            .map(|_| SeedRow {
+                provider: UsageProvider::Claude,
+                label: "Work",
+                identity: None,
+                fetched_at: 1_795_534_000,
+                snapshot: json!({"resources":{}}),
+                failure: None,
+            })
+            .into();
+        seed_usage_rows(&path, rows)?;
+        let ran = cli.run(&["usage", "providers"]).await?;
+        ran.ok()?;
+        assert!(ran.stdout.contains("Claude"));
+        assert!(!ran.stdout.contains(DUPLICATE_NOTE), "{}", ran.stdout);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn one_identity_under_different_labels_is_still_flagged_as_a_duplicate() -> TestResult {
     guard(async {
         let (_world, cli, _ids) = seeded()?;
-        for args in [
-            vec!["usage", "providers"],
-            vec!["usage", "providers", "--json"],
-            vec!["usage", "providers", "antigravity"],
-        ] {
-            let ran = cli.run(&args).await?;
-            ran.ok()?;
-            assert!(
-                !ran.stdout.to_lowercase().contains("code assist"),
-                "{args:?}"
-            );
-        }
-        for product in jackin_usage::catalog::providers() {
-            assert!(
-                !product.name.to_lowercase().contains("code assist")
-                    && !product.id.contains("code-assist")
-                    && !product.id.contains("gemini"),
-                "{}",
-                product.id
-            );
-        }
-        let text = cli.run(&["usage", "providers"]).await?;
-        assert_eq!(text.stdout.matches("Gemini").count(), 1);
-        assert!(text.stdout.contains("Info  Gemini app (web): "));
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join(DATABASE_PATH);
+        let registry = AccountRegistry::open(&path)?;
+        let antigravity: Vec<_> = registry
+            .list()?
+            .into_iter()
+            .filter(|a| a.provider == UsageProvider::Antigravity)
+            .collect();
+        assert_eq!(antigravity.len(), 2);
+        registry.rename(antigravity[0].id, "Personal laptop")?;
+        registry.rename(antigravity[1].id, "Personal desktop")?;
+        drop(registry);
+        let ran = cli.run(&["usage", "providers", "antigravity"]).await?;
+        ran.ok()?;
+        assert!(
+            ran.stdout.contains("same account connected twice"),
+            "{}",
+            ran.stdout
+        );
         Ok(())
     })
     .await
