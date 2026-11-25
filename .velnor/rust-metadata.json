@@ -252,7 +252,8 @@
               "features": [
                 "sync",
                 "macros",
-                "rt"
+                "rt",
+                "time"
               ]
             },
             {
@@ -595,6 +596,16 @@
               "requires_features": false
             },
             {
+              "name": "sqlite_capture",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/sqlite_capture.rs",
+              "requires_features": false
+            },
+            {
               "name": "std_filesystem",
               "kinds": [
                 "test"
@@ -758,6 +769,8 @@
               "manifest": null,
               "features": [
                 "bundled",
+                "hooks",
+                "limits",
                 "serialize"
               ]
             },
@@ -1449,6 +1462,8 @@
               "manifest": null,
               "features": [
                 "bundled",
+                "hooks",
+                "limits",
                 "serialize"
               ]
             },
@@ -1555,6 +1570,8 @@
               "manifest": null,
               "features": [
                 "bundled",
+                "hooks",
+                "limits",
                 "serialize"
               ]
             },
@@ -1586,6 +1603,7 @@
                 "sync",
                 "macros",
                 "rt",
+                "test-util",
                 "time"
               ]
             }
@@ -2121,6 +2139,8 @@
               "manifest": null,
               "features": [
                 "bundled",
+                "hooks",
+                "limits",
                 "serialize"
               ]
             },
@@ -3156,11 +3176,11 @@
     }
   },
   "manifests": {
-    "Cargo.toml": "b86ac7e76ff17ee4264154088699d13a6f17ea482141b776c11b4c5103a93909",
-    "crates/jackin-core/Cargo.toml": "b871d103affec6cb8259dfc9757d8fcb4ca5a80a2f55cf7378106f21f568d245",
+    "Cargo.toml": "08fdf61803bb4fcb51d27741f1f7e66edc1d3c1871ebf3ef515b4ab64674f2dc",
+    "crates/jackin-core/Cargo.toml": "485d7bc295ce4a1b789683bfea6edf87118862aed0bff4599595dbc490be6ff6",
     "crates/jackin-image/Cargo.toml": "9b97498a682f4cb9550f4019c4839a2c3a5ff99c142235d9e34edab30cb062f3",
     "crates/jackin-openshell/Cargo.toml": "6f0bc40a09df45272e0697b20345ed999e8f0118abc80a860c9fd57adfc7a4f3",
-    "crates/jackin-session/Cargo.toml": "8cfe405cc6a03c342610da59ced121a806d356a0b85b414d514c957a0d4dc5f2",
+    "crates/jackin-session/Cargo.toml": "2783ffb32252ef139168a7e7809ba27e6513215af117001804295545663130cc",
     "crates/jackin-testkit/Cargo.toml": "fd7d46b8ffdecdf0a729ac518cf1626c6b6d7ceab948ba7844958db574feaf07",
     "crates/jackin-tui/Cargo.toml": "6f540ae8df1d9b2c85dbafc7e1eceaf0327f9c575b6657df78a0aa4187e0342f",
     "crates/jackin/Cargo.toml": "e09c3b3344011f7cc087879ce2ffa485e096901723a6fac811e1c6f55e249f2e",
@@ -3179,5 +3199,5 @@
     "crates/usage/jackin-usage/Cargo.toml": "d2c2a81c400ddbe691b221ef372afdbaa5287d08e143c3db36342454095374de",
     "crates/xtask/Cargo.toml": "8a80645825f1a28861ca030bcc830651a97e2ec12f9528d47c9f8dbc46ef8048"
   },
-  "layout": "95d6db9ce7b12fec19bd404dea77254321f3644ee18f82b155102f0fe3ab0ed6"
+  "layout": "42343c9b6a37f15d1326df7ecb4122e82eb644784c9d5cdb92ba6fc3c215e0dc"
 }
