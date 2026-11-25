@@ -100,6 +100,13 @@ fn is_special(kind: fs::FileType) -> bool {
     kind.is_fifo() || kind.is_socket() || kind.is_char_device() || kind.is_block_device()
 }
 
+fn readable(file: File) -> io::Result<Opened<Option<File>>> {
+    if is_special(file.metadata()?.file_type()) {
+        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
+    }
+    Ok(Opened::Ready(Some(file)))
+}
+
 #[cfg(target_os = "linux")]
 fn open_readable(path: &Path) -> io::Result<Opened<Option<File>>> {
     use std::os::fd::AsRawFd;
@@ -117,10 +124,7 @@ fn open_readable(path: &Path) -> io::Result<Opened<Option<File>>> {
         OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOCTTY | OFlags::CLOEXEC,
         Mode::empty(),
     )?);
-    if is_special(file.metadata()?.file_type()) {
-        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
-    }
-    Ok(Opened::Ready(Some(file)))
+    readable(file)
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -139,10 +143,7 @@ fn open_readable(path: &Path) -> io::Result<Opened<Option<File>>> {
         Err(Errno::NOENT) => return Ok(Opened::Ready(None)),
         Err(other) => return Err(other.into()),
     };
-    if is_special(file.metadata()?.file_type()) {
-        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
-    }
-    Ok(Opened::Ready(Some(file)))
+    readable(file)
 }
 
 fn read_file(path: &Path) -> io::Result<Opened<Option<Vec<u8>>>> {

@@ -3,7 +3,7 @@
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Token, lex_rust, use_tree_path};
+use crate::lex::{Token, alias_names, leading_segment, lex_rust, module_names};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -23,10 +23,11 @@ impl Check for ErrorsCheck {
             if file.kind() == FileKind::Rust && !file.is_third_party_source() {
                 let tokens = lex_rust(file.text()).tokens;
                 let paths = path_names(&tokens);
+                let modules = module_names(&tokens, "path", &["std", "core"]);
                 violations.extend(
                     (0..tokens.len())
                         .filter_map(|index| error_attribute(&tokens, index))
-                        .flat_map(|attribute| attribute_problems(&attribute, &paths))
+                        .flat_map(|attribute| attribute_problems(&attribute, &paths, &modules))
                         .map(|(line, message)| {
                             Violation::at_line(self.step(), file.path(), line, message)
                         }),
@@ -81,7 +82,11 @@ fn ends_expression(token: &Token) -> bool {
         || token.is_punct(']')
 }
 
-fn attribute_problems(attribute: &ErrorAttribute<'_>, paths: &[&str]) -> Vec<(u32, String)> {
+fn attribute_problems(
+    attribute: &ErrorAttribute<'_>,
+    paths: &[&str],
+    modules: &[&str],
+) -> Vec<(u32, String)> {
     let arguments = attribute.arguments;
     let mut problems = Vec::new();
     for (index, token) in arguments.iter().enumerate() {
@@ -90,7 +95,7 @@ fn attribute_problems(attribute: &ErrorAttribute<'_>, paths: &[&str]) -> Vec<(u3
                 problems.push((token.line, message));
             }
         } else if (token.is_punct('.') && is_display_call(arguments, index))
-            || is_qualified_display(arguments, index, paths)
+            || is_qualified_display(arguments, index, paths, modules)
         {
             if !inside_plain(arguments, index) {
                 problems.push((token.line, display_message()));
@@ -127,50 +132,15 @@ fn is_display_call(arguments: &[Token], index: usize) -> bool {
 }
 
 fn path_names(tokens: &[Token]) -> Vec<&str> {
-    let mut names = vec!["Path"];
-    loop {
-        let known = names.len();
-        for (index, token) in tokens.iter().enumerate() {
-            let imported = token.is_ident("Path")
-                && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
-                && imported_through(tokens, index, "path");
-            let aliased = token.is_ident("type")
-                && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-                && alias_of_known(&tokens[index + 3..], "path", &names);
-            let alias = if imported {
-                tokens.get(index + 2).and_then(Token::ident)
-            } else if aliased {
-                tokens.get(index + 1).and_then(Token::ident)
-            } else {
-                None
-            };
-            if let Some(alias) = alias
-                && !names.contains(&alias)
-            {
-                names.push(alias);
-            }
-        }
-        if names.len() == known {
-            return names;
-        }
-    }
+    alias_names(tokens, "Path", "path")
 }
 
-fn imported_through(tokens: &[Token], index: usize, module: &str) -> bool {
-    use_tree_path(tokens, index).contains(&module)
-}
-
-fn alias_of_known(right: &[Token], module: &str, names: &[&str]) -> bool {
-    let path: Vec<&str> = right
-        .iter()
-        .take_while(|t| !t.is_punct(';'))
-        .filter_map(Token::ident)
-        .collect();
-    path.last().is_some_and(|last| names.contains(last))
-        && (path.len() == 1 || path.contains(&module))
-}
-
-fn is_qualified_display(arguments: &[Token], index: usize, paths: &[&str]) -> bool {
+fn is_qualified_display(
+    arguments: &[Token],
+    index: usize,
+    paths: &[&str],
+    modules: &[&str],
+) -> bool {
     if !(arguments[index].is_ident("display")
         && is_path_separator(arguments, index.wrapping_sub(2)))
     {
@@ -184,9 +154,9 @@ fn is_qualified_display(arguments: &[Token], index: usize, paths: &[&str]) -> bo
         return named(&arguments[qualifier])
             && (!arguments[qualifier].is_ident("Path")
                 || !is_path_separator(arguments, qualifier.wrapping_sub(2))
-                || qualifier
-                    .checked_sub(3)
-                    .is_some_and(|module| arguments[module].is_ident("path")));
+                || leading_segment(arguments, qualifier).is_some_and(|first| {
+                    ["std", "core"].contains(&first) || modules.contains(&first)
+                }));
     }
     let mut depth = 0usize;
     let mut open = None;

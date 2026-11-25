@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Tok, Token, lex_rust, use_tree_path};
+use crate::lex::{Tok, Token, alias_names, leading_segment, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -422,47 +422,7 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
 }
 
 fn buffer_names(tokens: &[Token]) -> Vec<&str> {
-    let mut names = vec!["Buffer"];
-    loop {
-        let known = names.len();
-        for (index, token) in tokens.iter().enumerate() {
-            let imported = token.is_ident("Buffer")
-                && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
-                && imported_through(tokens, index, "buffer");
-            let aliased = token.is_ident("type")
-                && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-                && alias_of_known(&tokens[index + 3..], "buffer", &names);
-            let alias = if imported {
-                tokens.get(index + 2).and_then(Token::ident)
-            } else if aliased {
-                tokens.get(index + 1).and_then(Token::ident)
-            } else {
-                None
-            };
-            if let Some(alias) = alias
-                && !names.contains(&alias)
-            {
-                names.push(alias);
-            }
-        }
-        if names.len() == known {
-            return names;
-        }
-    }
-}
-
-fn imported_through(tokens: &[Token], index: usize, module: &str) -> bool {
-    use_tree_path(tokens, index).contains(&module)
-}
-
-fn alias_of_known(right: &[Token], module: &str, names: &[&str]) -> bool {
-    let path: Vec<&str> = right
-        .iter()
-        .take_while(|t| !t.is_punct(';'))
-        .filter_map(Token::ident)
-        .collect();
-    path.last().is_some_and(|last| names.contains(last))
-        && (path.len() == 1 || path.contains(&module))
+    alias_names(tokens, "Buffer", "buffer")
 }
 
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
@@ -494,9 +454,7 @@ fn is_ratatui_path(tokens: &[Token], index: usize) -> bool {
     if !tokens[index].is_ident("Buffer") || !is_path_separator(tokens, index.wrapping_sub(2)) {
         return true;
     }
-    index
-        .checked_sub(3)
-        .is_some_and(|module| tokens[module].is_ident("buffer"))
+    leading_segment(tokens, index) == Some("ratatui")
 }
 
 fn opens_fields(tokens: &[Token], start: usize) -> bool {

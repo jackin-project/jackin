@@ -1963,6 +1963,7 @@ mod error_paths {
     #[test]
     fn a_qualified_display_call_and_a_multi_line_attribute_are_reported() -> TestResult {
         let source = text(&[
+            "use std::path as stdpath;",
             "use std::path::Path as P;",
             "use crate::sanitized::Path as Safe;",
             "use crate::{path::Helper, sanitized::Path as Mixed};",
@@ -1995,6 +1996,10 @@ mod error_paths {
             "    L(Label),",
             "    #[error(\"generic ufcs {}\", <Renderer<Path>>::display(.0))]",
             "    M(Label),",
+            "    #[error(\"module alias {}\", stdpath::Path::display(.0.as_path()))] // p_module",
+            "    X(PathBuf),",
+            "    #[error(\"local path module {}\", crate::path::Path::display(.0))]",
+            "    W(Label),",
             "    #[error(\"own module {}\", crate::sanitized::Path::display(.0))]",
             "    Y(Label),",
             "    #[error(\"own type {}\", Mixed::display(.0))]",
@@ -2022,6 +2027,7 @@ mod error_paths {
                     "p_mapped",
                     "p_deep",
                     "p_typed",
+                    "p_module",
                     "p_chained",
                     "p_aliased",
                     "p_ufcs"
