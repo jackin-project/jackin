@@ -356,6 +356,14 @@ pub fn status_line_note(at: Timestamp, now: Timestamp) -> String {
     )
 }
 
+pub fn plural(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
+    }
+}
+
 pub fn truncate(text: &str, columns: usize) -> String {
     if width(text) <= columns {
         return text.to_owned();

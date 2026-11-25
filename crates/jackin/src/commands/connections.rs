@@ -399,13 +399,12 @@ async fn refresh(app: &mut App, filter: UsageFilter, json: bool) -> Result<(), C
 }
 
 fn failure_summary(accounts: usize, hubs: usize) -> String {
-    let count = |n: usize, noun: &str| format!("{n} {noun}{}", if n == 1 { "" } else { "s" });
     let mut parts = Vec::new();
     if accounts > 0 {
-        parts.push(count(accounts, "account"));
+        parts.push(jackin_usage::view::text::plural(accounts, "account"));
     }
     if hubs > 0 {
-        parts.push(count(hubs, "hub"));
+        parts.push(jackin_usage::view::text::plural(hubs, "hub"));
     }
     format!("refresh failed for {}", parts.join(" and "))
 }

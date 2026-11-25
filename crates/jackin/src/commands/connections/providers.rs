@@ -103,14 +103,6 @@ impl From<InfoProduct> for InfoRow {
     }
 }
 
-fn plural(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
 fn duplicate_note(
     accounts: &[ConnectedAccount],
     identities: &BTreeMap<Uuid, String>,
@@ -198,7 +190,7 @@ fn table(
         &text::split_parts(
             &format!(
                 "Providers · {tracked} tracked · {connected} connected · {}",
-                plural(total, "account")
+                text::plural(total, "account")
             ),
             Tone::Strong,
         ),
