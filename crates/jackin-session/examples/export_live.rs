@@ -384,7 +384,10 @@ impl Live {
         self.session
             .upload_project(&self.project, &sandbox, &launch, &cancel)
             .await?;
-        let state = self.session.work_state(&self.config, &sandbox).await;
+        let state = self
+            .session
+            .work_state(&self.config, &sandbox, &CancellationToken::new())
+            .await;
         say(&format!(
             "work_state after the upload (a fresh sandbox): {state:?}"
         ))
@@ -393,7 +396,10 @@ impl Live {
             "echo {SYNTHETIC_MARK}-main >> driver-note.txt && git add driver-note.txt && git -c user.name=driver -c user.email=driver@example.invalid commit -q -m 'driver main' && git checkout -q -b driver/feature && echo {SYNTHETIC_MARK}-feature >> driver-feature.txt && git add driver-feature.txt && git -c user.name=driver -c user.email=driver@example.invalid commit -q -m 'driver feature' && git checkout -q -"
         );
         self.sandbox_git(&sandbox, &work).await?;
-        let state = self.session.work_state(&self.config, &sandbox).await;
+        let state = self
+            .session
+            .work_state(&self.config, &sandbox, &CancellationToken::new())
+            .await;
         say(&format!("work_state after the sandbox commits: {state:?}")).await?;
         let before = self.host_state().await?;
         let report = self
@@ -415,7 +421,10 @@ impl Live {
             self.exported_refs().await?.trim_end()
         ))
         .await?;
-        let state = self.session.work_state(&self.config, &sandbox).await;
+        let state = self
+            .session
+            .work_state(&self.config, &sandbox, &CancellationToken::new())
+            .await;
         say(&format!("work_state after the export: {state:?}")).await?;
         self.sandbox_git(
             &sandbox,
@@ -424,7 +433,12 @@ impl Live {
         .await?;
         let refused = self
             .session
-            .purge(&self.config, &sandbox, PurgeMode::Guarded)
+            .purge(
+                &self.config,
+                &sandbox,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         say(&format!("purge (guarded): {refused:?}")).await?;
         let still = self
@@ -438,7 +452,12 @@ impl Live {
         .await?;
         let forced = self
             .session
-            .purge(&self.config, &sandbox, PurgeMode::Forced)
+            .purge(
+                &self.config,
+                &sandbox,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
             .await;
         say(&format!("purge (forced): {forced:?}")).await?;
         let gone = self
@@ -452,7 +471,12 @@ impl Live {
         .await?;
         let again = self
             .session
-            .purge(&self.config, &sandbox, PurgeMode::Guarded)
+            .purge(
+                &self.config,
+                &sandbox,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         say(&format!("purge (repeated): {again:?}")).await?;
         if self.options.cleanup_refs {

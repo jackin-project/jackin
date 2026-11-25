@@ -132,6 +132,8 @@ pub enum AttachError {
     Gateway(#[from] GatewayError),
     #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
+    #[error("sandbox {0} exists but is not a jackin sandbox")]
+    NotManaged(SandboxName),
     #[error("the main process of {sandbox} has ended: {phase}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     #[error("the env file of {sandbox} is unusable: {problem}")]
@@ -145,6 +147,8 @@ pub enum AttachError {
 pub enum RestartError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
+    #[error("sandbox {0} exists but is not a jackin sandbox")]
+    NotManaged(SandboxName),
     #[error("the main process of {sandbox} has ended: {phase}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     #[error("the agent in {sandbox} is already running as attempt {attempt}")]
@@ -430,13 +434,13 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<AttachedTerminal, AttachError> {
         let sandbox = &request.sandbox;
-        let view = self
-            .find_managed_until(sandbox, cancel)
-            .await?
-            .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
+        let view = self.locate(sandbox, cancel).await?.require(
+            || AttachError::NotFound(sandbox.clone()),
+            || AttachError::NotManaged(sandbox.clone()),
+        )?;
         require_ready::<AttachError>(view.phase, sandbox)?;
         let names = self
-            .sandbox_agent_names(sandbox)
+            .agent_names_of(sandbox, &view, cancel)
             .await
             .map_err(AttachError::Gateway)?;
         if let Some(agent) = request.agent {
@@ -507,20 +511,36 @@ impl Session {
         })
     }
 
-    pub async fn open_shell(&self, request: ShellRequest) -> Result<TerminalSession, AttachError> {
+    pub async fn open_shell(
+        &self,
+        request: ShellRequest,
+        cancel: &CancellationToken,
+    ) -> Result<TerminalSession, AttachError> {
         let sandbox = &request.sandbox;
-        let view = self
-            .find_managed(sandbox)
-            .await?
-            .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
+        let view = self.locate(sandbox, cancel).await?.require(
+            || AttachError::NotFound(sandbox.clone()),
+            || AttachError::NotManaged(sandbox.clone()),
+        )?;
         require_ready::<AttachError>(view.phase, sandbox)?;
         let gateway = self.deps.gateway.as_ref();
         let values = async {
             let launch = launch_of(&view.labels)?;
             Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
+        };
+        let values = tokio::select! {
+            biased;
+            () = cancel.cancelled() => {
+                return Err(GatewayError::Cancelled { op: GatewayOp::ReadFiles, group: None }.into());
+            }
+            values = values => values.map_err(|failure| AttachError::env(sandbox, failure))?,
+        };
+        if cancel.is_cancelled() {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::Terminal,
+                group: None,
+            }
+            .into());
         }
-        .await
-        .map_err(|failure| AttachError::env(sandbox, failure))?;
         Ok(gateway
             .open_terminal(&TerminalRequest {
                 sandbox: sandbox.clone(),
@@ -547,10 +567,10 @@ impl Session {
         cancel: CancellationToken,
     ) -> Result<AttachTarget, RestartError> {
         let gateway = self.deps.gateway.as_ref();
-        let view = self
-            .find_managed_until(sandbox, &cancel)
-            .await?
-            .ok_or_else(|| not_found(sandbox))?;
+        let view = self.locate(sandbox, &cancel).await?.require(
+            || RestartError::Gateway(not_found(sandbox)),
+            || RestartError::NotManaged(sandbox.clone()),
+        )?;
         require_ready::<RestartError>(view.phase, sandbox)?;
         let values = async {
             let launch = launch_of(&view.labels)?;

@@ -512,7 +512,11 @@ async fn inspect_reports_a_live_rule_on_the_provider_host_of_every_instance()
                 binaries: Vec::new(),
             },
         );
-        let inspected = rig.world.session.inspect(&target.sandbox).await?;
+        let inspected = rig
+            .world
+            .session
+            .inspect(&target.sandbox, &CancellationToken::new())
+            .await?;
         let rules: Vec<(&str, &str)> = inspected
             .closure_violations
             .iter()
@@ -574,7 +578,11 @@ async fn inspect_covers_the_instances_after_their_local_accounts_are_removed()
                 binaries: Vec::new(),
             },
         );
-        let inspected = rig.world.session.inspect(&target.sandbox).await?;
+        let inspected = rig
+            .world
+            .session
+            .inspect(&target.sandbox, &CancellationToken::new())
+            .await?;
         let rules: Vec<(&str, &str)> = inspected
             .closure_violations
             .iter()

@@ -27,9 +27,9 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, RestoreFinding, RoleError, Session,
-    StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events,
-    lookup_workspace, plan_launch,
+    LineDelivery, PlanError, Prompting, RECOVERY_LOOKUP_BUDGET, RestoreCandidate, RestoreFinding,
+    RoleError, Session, StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain,
+    launch_events, lookup_workspace, plan_launch,
 };
 use termrock::widgets::steps::StepState;
 use thiserror::Error;
@@ -686,24 +686,46 @@ impl Run {
                 ..
             } => sandbox,
             RestoreFinding::Absent { .. } => return,
-            RestoreFinding::Ambiguous(_)
-            | RestoreFinding::Unconfirmed {
+            RestoreFinding::Ambiguous(names) => {
+                self.left(format!(
+                    "Cancelled · several sandboxes match this launch: {} · check the fleet before launching again",
+                    names
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+                return;
+            }
+            RestoreFinding::Unconfirmed {
                 last_observed: None,
-                ..
+                planned,
             } => {
-                self.backend.refresh();
+                self.left(format!(
+                    "Cancelled · the gateway could not confirm whether sandbox {planned} exists · the fleet shows the current state"
+                ));
                 return;
             }
         };
-        match self
-            .record(session, config, gateway, &sandbox, &Origins::new())
-            .await
-        {
-            Ok(instance) => self.backend.bridge.send(Msg::LaunchCancelled {
+        let fresh = CancellationToken::new();
+        let recorded = tokio::time::timeout(
+            RECOVERY_LOOKUP_BUDGET,
+            self.record(session, config, gateway, &sandbox, &Origins::new(), &fresh),
+        )
+        .await;
+        match recorded {
+            Ok(Ok(instance)) => self.backend.bridge.send(Msg::LaunchCancelled {
                 instance: Box::new(instance),
             }),
-            Err(_) => self.backend.refresh(),
+            Ok(Err(_)) | Err(_) => self.left(format!(
+                "Cancelled · sandbox {sandbox} was seen during this launch, but its details could not be read · the fleet shows the current state"
+            )),
         }
+    }
+
+    fn left(&self, text: String) {
+        self.backend.bridge.send(Msg::LaunchLeft { text });
+        self.backend.refresh();
     }
 
     async fn record(
@@ -713,9 +735,10 @@ impl Run {
         gateway: &GatewayName,
         sandbox: &SandboxName,
         origins: &Origins,
+        cancel: &CancellationToken,
     ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
-        let inspected = session.inspect(sandbox).await?;
-        let work = session.work_state(config, sandbox).await;
+        let inspected = session.inspect(sandbox, cancel).await?;
+        let work = session.work_state(config, sandbox, cancel).await;
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
             summary: inspected.summary,
@@ -746,7 +769,7 @@ impl Run {
             .map(|origin| (name.clone(), origin))
             .into_iter()
             .collect();
-        self.record(session, config, gateway, sandbox, &origins)
+        self.record(session, config, gateway, sandbox, &origins, &self.cancel)
             .await
     }
 }
