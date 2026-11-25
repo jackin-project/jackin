@@ -224,12 +224,15 @@ fn a_pooled_row_of_exact_amounts_does_not_inherit_an_exhausted_member() -> Resul
     let now = 1700000000;
     for (label, used) in [("spent", "10"), ("fresh", "1")] {
         registry.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             label,
             &scoped(label),
             &bytes("sample"),
-            now,
-            &json!({"resources":{"extraUsage":{"kind":"consumption","unit":"usd","used":used,"limit":"10"}}}),
+            (
+                now,
+                &json!({"resources":{"extraUsage":{"kind":"consumption","unit":"usd","used":used,"limit":"10"}}}),
+            ),
         )?;
     }
     registry.set_dashboard_settings(&DashboardSettings {

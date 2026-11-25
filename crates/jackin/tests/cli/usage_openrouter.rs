@@ -27,7 +27,7 @@ async fn a_refreshed_openrouter_account_keeps_every_digit_in_json_and_text() -> 
         let vault = Arc::new(MemoryVault::default());
         let shared = Arc::clone(&vault);
         let shared: Arc<dyn CredentialVault> = shared;
-        cli.usage_vault = Some(shared);
+        cli.usage_vault = shared;
         let root = cli
             .config_path
             .as_path()
@@ -37,6 +37,7 @@ async fn a_refreshed_openrouter_account_keeps_every_digit_in_json_and_text() -> 
         let mut db = AccountRegistry::with_vault(&root.join("usage/accounts.sqlite3"), stored)?;
         let key = Secret::new("SECRET_TOKEN_ROUTER".to_owned());
         let id = db.add(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::OpenRouter,
             "Router",
             &CandidateIdentity::api_key(&key),

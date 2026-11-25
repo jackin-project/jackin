@@ -592,12 +592,12 @@ fn stored(
     let vault = std::sync::Arc::new(jackin_testkit::MemoryVault::default());
     let mut registry = AccountRegistry::with_vault(&temp.path().join("usage/accounts.db"), vault)?;
     registry.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::OpenRouter,
         "Router",
         &CandidateIdentity::api_key(&Secret::new("fixture".into())),
         &jackin_core::SecretBytes::new(b"fixture".to_vec()),
-        NOW.0,
-        snapshot,
+        (NOW.0, snapshot),
     )?;
     Ok((temp, registry))
 }
