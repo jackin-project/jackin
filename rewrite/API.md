@@ -1460,6 +1460,7 @@ pub trait Gateway: Send + Sync + Debug {
     async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError>;
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError>;
     async fn put_provider(&self, spec: &ProviderSpec) -> Result<ProviderWriteEffect, ProviderWriteError>;
+    async fn create_provider_if_absent(&self, spec: &ProviderSpec) -> Result<CreateOutcome, ProviderWriteError>;
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
@@ -1489,6 +1490,7 @@ pub struct GatewayHealth { pub version: String, pub serving: bool }
 pub enum ProfileSync { Imported, Unchanged, Updated }
 pub enum ProviderState { Absent, Present }
 pub enum ProviderWriteEffect { NoWrite, Created, Existing, Unknown }
+pub enum CreateOutcome { Created, PeerExists }
 pub struct ProviderWriteError { /* source: GatewayError, effect: ProviderWriteEffect */ }
 impl ProviderWriteError { pub fn new(source: GatewayError, effect: ProviderWriteEffect) -> ProviderWriteError; pub fn effect(&self) -> ProviderWriteEffect; pub fn gateway_error(&self) -> &GatewayError; pub fn into_parts(self) -> (GatewayError, ProviderWriteEffect) }
 impl ProviderWriteEffect { pub fn after_failed_write(provider_held: bool, error: &GatewayError) -> ProviderWriteEffect }   // Existing when the provider is held, else Unknown when the error may have reached the gateway, else NoWrite; the adapter and the fake share it
@@ -1553,6 +1555,7 @@ Contract of each method. The fake and the real adapter obey the same text, and `
 
 - `ensure_profile`: imports the profile when its ID is absent and returns `Imported`. A present profile with identical content gives `Unchanged`. A present profile with different content is replaced through `UpdateProviderProfiles` (`openshell.proto:366`), with the resource version that `GetProviderProfile` returned in the same call, and gives `Updated`. That RPC rejects a zero version, so an update is optimistic: a change between the read and the update gives `FailedPrecondition` and writes nothing, and the next launch converges. Idempotent.
 - `put_provider`: returns the `ProviderWriteEffect` of the write, and the same effect inside `ProviderWriteError` when it fails after or around a write: `NoWrite` when nothing was written (a missing profile, a failed state lookup, or a create that failed with an outcome the gateway proves was not applied), `Created` when this call's `CreateProvider` succeeded, `Existing` when the provider was already there (an update, or a create that lost a race to `AlreadyExists` and then updated), and `Unknown` when a create failed with an outcome `GatewayError::outcome_unknown` cannot rule out. A refresh-configuration failure after the write keeps `Created` or `Existing`. A caller removes a provider only after `Created`. It creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
+- `create_provider_if_absent`: creates the provider only when it is absent and never updates, deletes or reconfigures an existing one. A provider that is present at the state check, or that a peer creates before the create call (`AlreadyExists`), is `PeerExists` and nothing is written, so the credentials and refresh configuration the peer holds stay as they are. An absent provider is created with its refresh configuration and is `Created`. A failed create is classified like `put_provider` (`NoWrite` when the gateway proves it was not applied, `Unknown` otherwise). The account rollback uses it to republish a provider it deleted, so a rollback never overwrites a provider it did not delete. Every implementor writes the method: there is no default.
 - `create_sandbox`: creates with the image tag, labels, the `JACKIN_LAUNCH_ID` environment, providers, policy, and the main process with a kept PTY and restart policy never. It returns when the call returns, not when `Ready` (P0.2). A second create with the same name returns `AlreadyExists`. Names and label values are validated by types, so the gateway never sees an invalid one, and the fake rejects an invalid one the same way the gateway does.
 - `find_sandboxes`: `Labels` lists every matching sandbox across all pages, and `managed()` returns only sandboxes that carry the jackin label set. `Name` returns zero or one result. A missing sandbox is an empty list, not an error. A view carries `Provisioning::Failed` when the gateway reports a failed provisioning.
 - `sandbox_detail`: the view, the attached OpenShell providers, and the effective policy as a `PolicyDocument`.
@@ -1878,16 +1881,16 @@ impl Session {
     pub async fn launch(&self, plan: LaunchPlan, events: LaunchEvents, cancel: CancellationToken) -> Result<LaunchOutcome, LaunchFailure>;
 
     pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError>;
-    pub async fn open_shell(&self, request: ShellRequest) -> Result<TerminalSession, AttachError>;
+    pub async fn open_shell(&self, request: ShellRequest, cancel: &CancellationToken) -> Result<TerminalSession, AttachError>;
     pub async fn restart_agent(&self, sandbox: &SandboxName, events: LaunchEvents, cancel: CancellationToken) -> Result<AttachTarget, RestartError>;
 
-    pub async fn list(&self) -> Result<SandboxListing, LifecycleError>;
-    pub async fn inspect(&self, sandbox: &SandboxName) -> Result<InspectView, LifecycleError>;
+    pub async fn list(&self, cancel: &CancellationToken) -> Result<SandboxListing, LifecycleError>;
+    pub async fn inspect(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<InspectView, LifecycleError>;
     pub async fn power(&self, sandbox: &SandboxName, action: PowerAction) -> Result<SandboxSummary, LifecycleError>;
 
-    pub async fn work_state(&self, config: &Config, sandbox: &SandboxName) -> WorkState;
+    pub async fn work_state(&self, config: &Config, sandbox: &SandboxName, cancel: &CancellationToken) -> WorkState;
     pub async fn export(&self, config: &Config, sandbox: &SandboxName, cancel: CancellationToken) -> Result<ExportReport, ExportError>;
-    pub async fn purge(&self, config: &Config, sandbox: &SandboxName, mode: PurgeMode) -> Result<PurgeOutcome, PurgeError>;
+    pub async fn purge(&self, config: &Config, sandbox: &SandboxName, mode: PurgeMode, cancel: &CancellationToken) -> Result<PurgeOutcome, PurgeError>;
 
     pub async fn sync_account(&self, account: &Account, cancel: &CancellationToken) -> Result<AccountSync, AccountError>;
     pub async fn forget_account(&self, account: &Account, cancel: &CancellationToken) -> Result<(), AccountError>;
@@ -2228,11 +2231,13 @@ pub struct ShellRequest { pub sandbox: SandboxName, pub size: TermSize }
 pub enum AttachError {
     Gateway(GatewayError),
     NotFound(SandboxName),
+    NotManaged(SandboxName),
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     EnvFile { sandbox: SandboxName, problem: EnvFileProblem },
 }
 pub enum RestartError {
     Gateway(GatewayError),
+    NotManaged(SandboxName),
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     AlreadyRunning { sandbox: SandboxName, attempt: AttemptId },
     AttemptsExhausted { sandbox: SandboxName },
@@ -2263,7 +2268,7 @@ pub struct ExportReport {
     pub detached: Option<ExportedDetached>,
     pub worktrees: Vec<ExportedWorktree>,
 }
-pub enum UnknownReason { NotRunning(Phase), WorkspaceUnknown(WorkspaceName), NoRepository, InspectionFailed }
+pub enum UnknownReason { NotRunning(Phase), WorkspaceUnknown(WorkspaceName), NoRepository, InspectionFailed, Cancelled }
 pub struct Unexported {
     pub uncommitted: usize,
     pub branches: Vec<BranchName>,
@@ -2319,6 +2324,10 @@ pub enum BundleRefusal {
 pub enum EntryKind { Blob, Tree, Commit, Tag, DeltaStream, DeltaBase, DeltaResult }
 pub enum PurgeError {
     WorkNotExported { sandbox: SandboxName, state: Box<WorkState> },
+    Replaced { sandbox: SandboxName },
+    NotManaged { sandbox: SandboxName },                                   // the name belongs to a sandbox that is not jackin's; never "already gone"
+    DeleteUnconfirmed { sandbox: SandboxName, cause: Box<GatewayError> },  // a delete with an unknown outcome that a bounded follow-up lookup could not settle
+    Cancelled { sandbox: SandboxName },                                    // the token was cancelled before the delete request was sent
     Gateway(GatewayError),
 }
 pub struct SandboxListing { pub sandboxes: Vec<SandboxSummary>, pub unreadable: Vec<UnreadableSandbox> }
@@ -2327,6 +2336,7 @@ pub enum LifecycleError {
     Gateway(GatewayError),
     Labels { sandbox: SandboxName, source: LabelError },
     NotFound(SandboxName),
+    NotManaged(SandboxName),
     PowerTimeout { sandbox: SandboxName, wanted: Phase, after: Duration },
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     Profile(PolicyError),
@@ -2976,6 +2986,7 @@ pub struct AppEnv {
     pub cache_dir: HostPath,
     pub env: EnvSnapshot,
     pub cancel: CancellationToken,
+    pub abandon: CancellationToken,
 }
 
 #[async_trait]
@@ -3207,7 +3218,7 @@ impl ExitClass {
 
 Every field of the argument structs has `#[arg(help = ...)]` text and no doc comment (D17); the block shows the attributes on `LoadArgs` only. A field of type `bool` is a `--long` flag and `Option` is optional; `name`, `sandbox`, `path`, and `account` are positional, except `--name` of `account add` and `gateway add`'s `name`, which follow the DESIGN table. `BindArgs` has a required, exclusive clap group over `--role` and `--workspace`, and `scope` turns the pair into the enum (`CommandError::Argument` when clap let neither or both through, which the group makes unreachable). `RoleSourceArg` parses an existing path as `Path` and anything else as a Git URL. `CredentialArg` parses `env:NAME`, an `op://` reference, or `file:PATH`.
 
-`ExitClass::code` is 0 for `Ok`, 1 for `Failure`, 2 for `Usage`, 3 for `Refused`, and 130 for `Cancelled`. `class` is an exhaustive match. `Refused` is `PurgeError::WorkNotExported`, `PlanError::EnvNeeded` (a missing value without a terminal), and `RestartError::AlreadyRunning`. `Usage` is `CommandError::Argument`, and clap's own usage errors also exit 2. `Cancelled` is `CommandError::Cancelled` (a cancelled launch, end of input at a prompt, a cancel during attach or shell, a cancel during discovery or connection), `ImageError::Cancelled` (`build`), `ExportError::Cancelled` (`export`), and `RestartError::Gateway(GatewayError::Cancelled)` (`attach --restart`). The session turns every failure that happens while the token is cancelled into `LaunchOutcome::Cancelled`, so `load` needs no class for a failed launch. `doctor` exits `Cancelled` when the token is cancelled as its checks end, and prints no report. Every other error is `Failure`. `main` cancels the token on the first Ctrl-C and returns 130 at once on the second. While attach or shell holds the terminal in raw mode, Ctrl-C is a byte for the remote process and not a signal.
+`ExitClass::code` is 0 for `Ok`, 1 for `Failure`, 2 for `Usage`, 3 for `Refused`, and 130 for `Cancelled`. `class` is an exhaustive match. `Refused` is `PurgeError::WorkNotExported`, `PurgeError::Replaced`, `NotManaged` of any sandbox error (`PurgeError`, `AttachError`, `RestartError`, `ExportError`, `LifecycleError`: the name belongs to a sandbox that is not jackin's), `PlanError::EnvNeeded` (a missing value without a terminal), and `RestartError::AlreadyRunning`. `Usage` is `CommandError::Argument`, and clap's own usage errors also exit 2. `Cancelled` is `CommandError::Cancelled` (a cancelled launch, end of input at a prompt, a cancel during attach or shell, a cancel during discovery or connection), `ImageError::Cancelled` (`build`), `ExportError::Cancelled` (`export`), and `RestartError::Gateway(GatewayError::Cancelled)` (`attach --restart`). The session turns every failure that happens while the token is cancelled into `LaunchOutcome::Cancelled`, so `load` needs no class for a failed launch. `doctor` exits `Cancelled` when the token is cancelled as its checks end, and prints no report. Every other error is `Failure`. `PurgeError::Cancelled` and a `WorkspaceGuardError::Listing` of a cancelled listing are `Cancelled` too; `PurgeError::DeleteUnconfirmed` is `Failure`. `Signals::interrupted(self, cancel, abandon)` never returns: the first signal cancels `cancel`, the second cancels `abandon`, and `jackin::run` drops the running command when `abandon` fires, prints `interrupted again; stopped without waiting for the command to finish, so its outcome is not confirmed` followed by what the command recorded as possibly unsettled (a load: the launch ID, the planned sandbox name and the `--launch-id` repeat hint; a purge, a start or stop, an account edit: a hedged line about the request; any other command: `jackin ls shows the current state of the sandboxes`), never an argument or environment value, and returns 130. A command that finished before the second signal prints no such report. While attach or shell holds the terminal in raw mode, Ctrl-C is a byte for the remote process and not a signal.
 
 The stderr form of every failure is `error:` followed by the message and its cause chain, printed once. A launch failure prints the lowercase step name, the launch ID, the cause, and, when a sandbox remains, `sandbox <name> remains; retry with: jackin load --launch-id <id>`. A hook failure prints the lowercase hook name, the exit code, and the output as `TerminalText`.
 
