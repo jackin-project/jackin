@@ -110,6 +110,13 @@ pub(super) enum Direction {
     Upload,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Hiding {
+    Visible,
+    FromLabelQueries,
+    FromEveryQuery,
+}
+
 #[derive(Debug)]
 pub(super) struct Registry {
     pub(super) sandboxes: BTreeMap<SandboxName, Arc<Cell>>,
@@ -130,14 +137,16 @@ pub(super) struct Registry {
     pub(super) provision_polls: u32,
     pub(super) failing_creates: u32,
     pub(super) supervisor: SupervisorModel,
-    pub(super) hidden_until_conflict: bool,
+    pub(super) hiding: Hiding,
     pub(super) start_ignored: bool,
     pub(super) serving: bool,
     pub(super) version: String,
     pub(super) host_home: Option<PathBuf>,
     pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
     pub(super) put_fails_after_write: Option<GatewayError>,
+    pub(super) put_outcome_unknown: Option<GatewayError>,
     pub(super) delete_fails_after_write: Option<GatewayError>,
+    pub(super) lost_responses: Vec<(GatewayOp, GatewayError)>,
     pub(super) calls: HashMap<GatewayOp, u32>,
 }
 
@@ -162,14 +171,16 @@ impl Registry {
             provision_polls: 0,
             failing_creates: 0,
             supervisor: SupervisorModel::Cooperative,
-            hidden_until_conflict: false,
+            hiding: Hiding::Visible,
             start_ignored: false,
             serving: true,
             version: "0.1.7".to_owned(),
             host_home: None,
             host_edits: Vec::new(),
             put_fails_after_write: None,
+            put_outcome_unknown: None,
             delete_fails_after_write: None,
+            lost_responses: Vec::new(),
             calls: HashMap::new(),
         }
     }
@@ -237,6 +248,13 @@ impl Registry {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn lose_response(&mut self, op: GatewayOp) -> Result<(), GatewayError> {
+        match self.lost_responses.iter().position(|(lost, _)| *lost == op) {
+            Some(index) => Err(self.lost_responses.remove(index).1),
+            None => Ok(()),
+        }
     }
 
     fn count_down(&mut self, op: GatewayOp) -> Result<(), GatewayError> {

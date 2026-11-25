@@ -11,8 +11,8 @@ use jackin_core::{
 use jackin_openshell::{
     Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, PowerAction, ProfileSync,
     ProgramOutcome, ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState,
-    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalRequest,
-    TerminalSession,
+    ProviderWriteEffect, ProviderWriteError, SandboxCreate, SandboxDetail, SandboxFile,
+    SandboxQuery, SandboxView, TerminalRequest, TerminalSession,
 };
 use jackin_testkit::FakeGateway;
 use serde_json::Value;
@@ -125,6 +125,8 @@ impl ScenarioGateway {
                 },
             })
             .await
+            .map(drop)
+            .map_err(|error| error.into_parts().0)
     }
 
     pub(crate) async fn put_static_provider(
@@ -158,6 +160,8 @@ impl ScenarioGateway {
                 },
             })
             .await
+            .map(drop)
+            .map_err(|error| error.into_parts().0)
     }
 
     pub(crate) fn add_sandbox(
@@ -321,7 +325,10 @@ impl Gateway for ScenarioGateway {
         self.fake.provider_state(name).await
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.fake.put_provider(spec).await
     }
 

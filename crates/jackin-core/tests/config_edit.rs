@@ -522,6 +522,7 @@ fn label(error: &ConfigError) -> String {
                 .join(",")
         ),
         ConfigError::Fs(_) => "fs".to_owned(),
+        ConfigError::Cancelled => "cancelled".to_owned(),
     }
 }
 

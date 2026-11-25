@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
+use tokio_util::sync::CancellationToken;
+
 use jackin_core::{
     DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
     LinkProblem, RegularFile, RegularFileProblem, RepoPath,
@@ -49,6 +51,7 @@ pub struct WorkingFs {
     inner: Arc<dyn FileSystem>,
     clock: Arc<FakeClock>,
     fault: Mutex<Option<FsFault>>,
+    cancel: Mutex<Option<(FsFault, CancellationToken)>>,
     parked: Mutex<Option<Parked>>,
     reads: Mutex<std::collections::BTreeMap<String, usize>>,
 }
@@ -59,6 +62,7 @@ impl WorkingFs {
             inner,
             clock: Arc::clone(clock),
             fault: Mutex::new(None),
+            cancel: Mutex::new(None),
             parked: Mutex::new(None),
             reads: Mutex::new(std::collections::BTreeMap::new()),
         }
@@ -107,6 +111,27 @@ impl WorkingFs {
         if let Some(mut hold) = parked {
             hold.arrived.store(true, Ordering::SeqCst);
             drop(hold.open.wait_for(|open| *open).await);
+        }
+    }
+
+    pub fn cancel_next(&self, fault: FsFault, token: &CancellationToken) {
+        *self.cancel.lock().unwrap_or_else(PoisonError::into_inner) = Some((fault, token.clone()));
+    }
+
+    async fn cancelling(&self, operation: FsFault) {
+        let armed = {
+            let mut armed = self.cancel.lock().unwrap_or_else(PoisonError::into_inner);
+            match armed.take() {
+                Some((fault, token)) if fault == operation => Some(token),
+                other => {
+                    *armed = other;
+                    None
+                }
+            }
+        };
+        if let Some(token) = armed {
+            token.cancel();
+            tokio::task::yield_now().await;
         }
     }
 
@@ -185,6 +210,7 @@ impl FileSystem for WorkingFs {
         if let Some(error) = self.failed(FsFault::WriteNew, path) {
             return Err(error);
         }
+        self.cancelling(FsFault::WriteNew).await;
         self.inner.write_new(path, bytes, mode).await
     }
 
@@ -193,6 +219,7 @@ impl FileSystem for WorkingFs {
         if let Some(error) = self.failed(FsFault::Rename, to) {
             return Err(error);
         }
+        self.cancelling(FsFault::Rename).await;
         self.inner.rename(from, to).await
     }
 
@@ -216,6 +243,7 @@ impl FileSystem for WorkingFs {
         if let Some(error) = self.failed(FsFault::SyncDir, dir) {
             return Err(error);
         }
+        self.cancelling(FsFault::SyncDir).await;
         self.inner.sync_dir(dir).await
     }
 

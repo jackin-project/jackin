@@ -67,15 +67,23 @@ async fn host_login_source(
         jackin_core::Provider::Claude => {
             jackin_session::read_claude_host_login(&app.deps.host, &path, &app.cancel)
                 .await
-                .map_err(|_| {
-                    CommandError::Argument("no claude host login is available".to_owned())
+                .map_err(|error| match error {
+                    cancelled @ jackin_session::CredentialError::Cancelled { .. } => {
+                        CommandError::Cancelled(cancelled.to_string())
+                    }
+                    _ => CommandError::Argument("no claude host login is available".to_owned()),
                 })?;
         }
         jackin_core::Provider::Antigravity => {
             jackin_session::read_antigravity_host_login(&app.deps.host, &app.cancel)
                 .await
-                .map_err(|_| {
-                    CommandError::Argument("no antigravity host login is available".to_owned())
+                .map_err(|error| match error {
+                    cancelled @ jackin_session::CredentialError::Cancelled { .. } => {
+                        CommandError::Cancelled(cancelled.to_string())
+                    }
+                    _ => {
+                        CommandError::Argument("no antigravity host login is available".to_owned())
+                    }
                 })?;
         }
         jackin_core::Provider::Minimax => {
@@ -248,11 +256,11 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
     .await?
     {
         AccountPlan::Offline(plan) => {
-            plan.apply().await?;
+            plan.apply(&app.cancel).await?;
         }
         AccountPlan::Gateway(plan) => {
             let gateways = connect(app, &plan).await?;
-            plan.apply(&gateways).await?;
+            plan.apply(&gateways, &app.cancel).await?;
         }
     }
     Ok(())
@@ -268,11 +276,11 @@ async fn connect(app: &App, plan: &GatewayPlan) -> Result<Gateways, CommandError
 async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
     match plan_account_edits(&app.desk(), edits, &app.cancel).await? {
         AccountPlan::Offline(plan) => {
-            plan.apply().await?;
+            plan.apply(&app.cancel).await?;
         }
         AccountPlan::Gateway(plan) => {
             let gateways = connect(app, &plan).await?;
-            plan.apply(&gateways).await?;
+            plan.apply(&gateways, &app.cancel).await?;
         }
     }
     Ok(())
@@ -302,7 +310,10 @@ async fn default(app: &App, args: &AccountDefaultArgs) -> Result<(), CommandErro
     if let Some(provider) = &args.clear {
         let provider = parse_provider(provider)?;
         app.store
-            .edit(vec![ConfigEdit::ClearDefaultAccount { provider }])
+            .edit(
+                vec![ConfigEdit::ClearDefaultAccount { provider }],
+                &app.cancel,
+            )
             .await?;
         return Ok(());
     }
@@ -310,7 +321,7 @@ async fn default(app: &App, args: &AccountDefaultArgs) -> Result<(), CommandErro
         CommandError::Argument("pass an account name or --clear PROVIDER".to_owned())
     })?;
     app.store
-        .edit(vec![ConfigEdit::SetDefaultAccount { account }])
+        .edit(vec![ConfigEdit::SetDefaultAccount { account }], &app.cancel)
         .await?;
     Ok(())
 }
@@ -327,6 +338,6 @@ async fn bind(app: &App, args: &BindArgs) -> Result<(), CommandError> {
             account: args.account.clone(),
         },
     };
-    app.store.edit(vec![edit]).await?;
+    app.store.edit(vec![edit], &app.cancel).await?;
     Ok(())
 }

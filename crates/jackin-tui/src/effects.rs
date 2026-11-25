@@ -192,7 +192,9 @@ impl Inputs {
         if edits.is_empty() {
             return Ok((config.clone(), None));
         }
-        Ok(self.save_result(self.config.edit(edits).await).await?)
+        Ok(self
+            .save_result(self.config.edit(edits, &self.cancel).await)
+            .await?)
     }
 
     async fn snapshot_of(&self, config: &Config) -> Box<Snapshot> {
@@ -353,7 +355,7 @@ impl Inputs {
         let (saved, warning) = self
             .save_result(
                 self.config
-                    .edit(vec![ConfigEdit::RemoveWorkspace(name)])
+                    .edit(vec![ConfigEdit::RemoveWorkspace(name)], &self.cancel)
                     .await,
             )
             .await?;
@@ -466,10 +468,12 @@ impl Inputs {
             .await
             .map_err(|error| Refused::Text(text(&error)))?;
         match plan {
-            AccountPlan::Offline(plan) => Ok(self.save_result(plan.apply().await).await?),
+            AccountPlan::Offline(plan) => {
+                Ok(self.save_result(plan.apply(&self.cancel).await).await?)
+            }
             AccountPlan::Gateway(plan) => {
                 let gateways = self.gateways(plan.config(), plan.scope()).await?;
-                match plan.apply(&gateways).await {
+                match plan.apply(&gateways, &self.cancel).await {
                     Ok(config) => Ok((config, None)),
                     Err(jackin_session::AccountEditError::Config(error)) if error.committed() => {
                         Ok(self.save_result(Err(error)).await?)
@@ -828,7 +832,9 @@ impl Inputs {
                 },
                 None => ConfigEdit::UnbindRoleAccount { role: name, agent },
             };
-            let (saved, warning) = self.save_result(self.config.edit(vec![edit]).await).await?;
+            let (saved, warning) = self
+                .save_result(self.config.edit(vec![edit], &self.cancel).await)
+                .await?;
             Ok::<_, Refused>(self.save_success(&saved, warning).await)
         }
         .await;
@@ -847,7 +853,11 @@ impl Inputs {
         let result = async {
             let name = RoleName::parse(role).map_err(PersistError::from)?;
             let (saved, warning) = self
-                .save_result(self.config.edit(vec![ConfigEdit::RemoveRole(name)]).await)
+                .save_result(
+                    self.config
+                        .edit(vec![ConfigEdit::RemoveRole(name)], &self.cancel)
+                        .await,
+                )
                 .await?;
             Ok::<_, Refused>(self.save_success(&saved, warning).await)
         }
@@ -894,10 +904,13 @@ impl Inputs {
         let (saved, warning) = self
             .save_result(
                 self.config
-                    .edit(vec![ConfigEdit::AddRole {
-                        name: name.clone(),
-                        source,
-                    }])
+                    .edit(
+                        vec![ConfigEdit::AddRole {
+                            name: name.clone(),
+                            source,
+                        }],
+                        &self.cancel,
+                    )
                     .await,
             )
             .await?;

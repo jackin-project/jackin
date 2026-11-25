@@ -468,8 +468,11 @@ async fn muse_host_login_account_plans_no_gateway_sync() -> TestResult {
         )
         .await?;
         assert!(!plan.needs_gateway());
-        plan.apply(&jackin_session::Gateways::single(world.session.clone()))
-            .await?;
+        plan.apply(
+            &jackin_session::Gateways::single(world.session.clone()),
+            &CancellationToken::new(),
+        )
+        .await?;
         assert!(world.gateway.providers().is_empty());
         Ok(())
     })
@@ -1022,10 +1025,64 @@ async fn claude_and_antigravity_host_login_accounts_plan_no_gateway_sync() -> Te
             )
             .await?;
             assert!(!plan.needs_gateway());
-            plan.apply(&jackin_session::Gateways::single(world.session.clone()))
-                .await?;
+            plan.apply(
+                &jackin_session::Gateways::single(world.session.clone()),
+                &CancellationToken::new(),
+            )
+            .await?;
             assert!(world.gateway.providers().is_empty(), "{tuple_id}");
         }
+        Ok(())
+    })
+    .await
+}
+
+async fn cancelled_read(
+    world: &World,
+    account: &Account,
+    agent: Agent,
+) -> Result<AccountError, Box<dyn std::error::Error>> {
+    let token = CancellationToken::new();
+    let canceller = async {
+        while security_seen(world).is_empty() {
+            tokio::task::yield_now().await;
+        }
+        token.cancel();
+    };
+    let (result, ()) = tokio::join!(
+        world.session.sync_account(account, agent, &token),
+        canceller
+    );
+    Ok(result.err().ok_or("a cancelled keychain read succeeded")?)
+}
+
+#[tokio::test]
+async fn a_cancel_during_a_keychain_read_is_a_cancel_not_a_missing_credential() -> TestResult {
+    guard(async {
+        let (world, account, _dir) = muse_world("keychain", true).await?;
+        world.runner.scripted().expect(
+            ScriptedProgram::Security,
+            &SECURITY_ARGS,
+            ProcessReply::until_cancelled(Vec::new()),
+        );
+        let error = cancelled_read(&world, &account, Agent::MuseCode).await?;
+        assert!(error.is_cancelled(), "muse: {error:?}");
+        assert!(world.gateway.providers().is_empty());
+
+        let world = World::builder().build()?;
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join(".credentials.json");
+        write_file(&file, "{not json").await?;
+        let account = host_login_account("claudekey", Provider::Claude, &HostPath::parse(&file)?)?;
+        register(&world, &account).await?;
+        world.runner.scripted().expect(
+            ScriptedProgram::Security,
+            &CLAUDE_KEYCHAIN_ARGS,
+            ProcessReply::until_cancelled(Vec::new()),
+        );
+        let error = cancelled_read(&world, &account, Agent::ClaudeCode).await?;
+        assert!(error.is_cancelled(), "claude: {error:?}");
+        assert!(world.gateway.providers().is_empty());
         Ok(())
     })
     .await

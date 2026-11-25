@@ -16,6 +16,7 @@ use jackin_session::{
     DEFAULT_EXPORT_TOTAL_BYTES, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
 };
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 use crate::engine::FakeEngine;
 use crate::fixtures::FixtureError;
@@ -89,6 +90,10 @@ impl World {
         self.working_fs.fail_next(fault);
     }
 
+    pub fn cancel_fs(&self, fault: FsFault, token: &CancellationToken) {
+        self.working_fs.cancel_next(fault, token);
+    }
+
     pub fn desk(&self) -> AccountDesk {
         self.desk_over(self.config.clone())
     }
@@ -158,7 +163,7 @@ impl World {
             })
             .collect();
         edits.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &CancellationToken::new()).await?;
         Ok(())
     }
 
@@ -170,7 +175,7 @@ impl World {
                 workspace: workspace.clone(),
             })
             .collect();
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &CancellationToken::new()).await?;
         Ok(())
     }
 
@@ -242,7 +247,7 @@ impl World {
                 value: Some(value.clone()),
             });
         }
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &CancellationToken::new()).await?;
         Ok(())
     }
 }

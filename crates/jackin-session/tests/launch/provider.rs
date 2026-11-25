@@ -3,6 +3,7 @@
 
 use jackin_core::{ProfileId, ProviderName};
 use jackin_session::{AccountError, LaunchError, LaunchStep};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{TestResult, builder, failure, guard, launch_rig, ready};
 
@@ -69,7 +70,7 @@ async fn a_wrong_provider_secondary_refuses_the_public_launch_path_without_effec
                         var: jackin_core::EnvName::parse("KIMI_TEST_PLACEHOLDER")?,
                     },
                 )?),
-            ])
+            ], &CancellationToken::new())
             .await?;
         rig.config = rig.world.config.load().await?;
         let instances = jackin_core::AgentInstances::new(vec![
@@ -89,7 +90,7 @@ async fn a_wrong_provider_secondary_refuses_the_public_launch_path_without_effec
         let error = rig
             .run(
                 rig.request(1)?.instances(instances),
-                tokio_util::sync::CancellationToken::new(),
+                CancellationToken::new(),
             )
             .await
             .err()

@@ -172,13 +172,19 @@ impl CommandError {
             | CommandError::Purge(
                 PurgeError::WorkNotExported { .. } | PurgeError::Replaced { .. },
             ) => ExitClass::Refused,
+            CommandError::Config(error) if error.cancelled() => ExitClass::Cancelled,
+            CommandError::Account(error) if error.is_cancelled() => ExitClass::Cancelled,
+            CommandError::WorkspaceInUse(WorkspaceGuardError::Lock(LockError::Cancelled)) => {
+                ExitClass::Cancelled
+            }
             CommandError::Cancelled(_)
             | CommandError::Usage(UsageError::Cancelled)
             | CommandError::Role(RoleError::Cancelled)
-            | CommandError::Lifecycle(LifecycleError::Cancelled)
+            | CommandError::Lifecycle(
+                LifecycleError::Cancelled | LifecycleError::PowerCancelled { .. },
+            )
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
-            | CommandError::Account(AccountError::Lock(LockError::Cancelled))
             | CommandError::Console(ConsoleError::Cancelled)
             | CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
@@ -223,8 +229,9 @@ impl CommandError {
 
 #[cfg(test)]
 mod tests {
+    use jackin_core::{AccountName, GatewayName, Phase, SandboxName};
     use jackin_openshell::GatewayOp;
-    use jackin_session::AttachError;
+    use jackin_session::{AttachError, CredentialError};
 
     use super::*;
 
@@ -235,5 +242,56 @@ mod tests {
             group: None,
         }));
         assert_eq!(error.class(), ExitClass::Cancelled);
+    }
+
+    #[test]
+    fn a_config_edit_cancelled_before_its_commit_classifies_as_cancelled() {
+        for error in [
+            CommandError::Config(ConfigError::Cancelled),
+            CommandError::Account(AccountError::Config(ConfigError::Cancelled)),
+        ] {
+            assert_eq!(error.class(), ExitClass::Cancelled, "{error:?}");
+        }
+        let refused = CommandError::Config(ConfigError::NoGateway);
+        assert_eq!(refused.class(), ExitClass::Failure);
+    }
+
+    #[test]
+    fn nested_workspace_account_and_power_cancels_classify_as_cancelled()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for error in [
+            CommandError::WorkspaceInUse(WorkspaceGuardError::Lock(LockError::Cancelled)),
+            CommandError::Account(AccountError::Credential(CredentialError::Cancelled {
+                group: None,
+            })),
+            CommandError::Account(AccountError::Lock(LockError::Cancelled)),
+            CommandError::Lifecycle(LifecycleError::Cancelled),
+            CommandError::Lifecycle(LifecycleError::PowerCancelled {
+                sandbox: SandboxName::parse("jackin-sandbox-a1b2")?,
+                wanted: Phase::Ready,
+            }),
+        ] {
+            assert_eq!(error.class(), ExitClass::Cancelled, "{error:?}");
+        }
+        let missing = CommandError::Account(AccountError::Credential(
+            CredentialError::KeychainLoginMissing,
+        ));
+        assert_eq!(missing.class(), ExitClass::Failure);
+        Ok(())
+    }
+
+    #[test]
+    fn a_cancelled_account_edit_whose_rollback_failed_is_a_failure_not_a_cancel()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let account = AccountName::parse("work")?;
+        let gateway = GatewayName::parse("fake-gateway")?;
+        let error = CommandError::Accounts(AccountEditError::RollbackFailed {
+            account: account.clone(),
+            gateway,
+            original: Box::new(AccountEditError::Config(ConfigError::Cancelled)),
+            rollback: Box::new(AccountError::MissingCredential { account }),
+        });
+        assert_eq!(error.class(), ExitClass::Failure);
+        Ok(())
     }
 }

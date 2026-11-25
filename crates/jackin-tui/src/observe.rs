@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::console::ConsoleLimits;
 use crate::doctor::{self, DoctorCell};
-use crate::fleet::{Fleet, ObservedSandbox, WorkCache, read_fleet};
+use crate::fleet::{Fleet, ObservedSandbox, read_fleet};
 use crate::ids::IdTable;
 use crate::onepassword::OpSnapshot;
 use crate::origin::OriginCache;
@@ -87,7 +87,6 @@ pub(crate) struct Inputs {
     pub(crate) home: String,
     pub(crate) config_path: String,
     pub(crate) limits: ConsoleLimits,
-    work: WorkCache,
     pub(crate) ids: Mutex<IdTable>,
     pub(crate) docs: Mutex<DocCache>,
     fleet: Mutex<Fleet>,
@@ -178,7 +177,6 @@ impl Inputs {
             home,
             config_path,
             limits,
-            work: WorkCache::default(),
             ids: Mutex::new(IdTable::new()),
             docs: Mutex::new(DocCache::new()),
             fleet: Mutex::new(Fleet::default()),
@@ -209,7 +207,10 @@ impl Inputs {
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
         let _turn = self.refresh_gate.lock().await;
         let config = self.reloaded().await?;
-        let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
+        let Some(fleet) = read_fleet(&self.sessions, &config, self.limits, &self.cancel).await
+        else {
+            return Ok(self.current(&config).await);
+        };
         Ok(self.observation(&config, fleet).await)
     }
 

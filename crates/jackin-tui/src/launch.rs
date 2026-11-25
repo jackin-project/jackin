@@ -27,9 +27,9 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError, Session, StepResult,
-    WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events, lookup_workspace,
-    plan_launch,
+    LineDelivery, PlanError, Prompting, RestoreCandidate, RestoreFinding, RoleError, Session,
+    StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events,
+    lookup_workspace, plan_launch,
 };
 use termrock::widgets::steps::StepState;
 use thiserror::Error;
@@ -358,10 +358,13 @@ async fn resolve(
                         .save_result(
                             inputs
                                 .config
-                                .edit(vec![ConfigEdit::AddWorkspace {
-                                    name: name.clone(),
-                                    workspace: workspace.clone(),
-                                }])
+                                .edit(
+                                    vec![ConfigEdit::AddWorkspace {
+                                        name: name.clone(),
+                                        workspace: workspace.clone(),
+                                    }],
+                                    &inputs.cancel,
+                                )
                                 .await,
                         )
                         .await?;
@@ -676,8 +679,21 @@ impl Run {
         gateway: &GatewayName,
         left: RestoreCandidate,
     ) {
-        let Some(sandbox) = left.sandbox else {
-            return;
+        let sandbox = match left.finding {
+            RestoreFinding::Observed(sandbox)
+            | RestoreFinding::Unconfirmed {
+                last_observed: Some(sandbox),
+                ..
+            } => sandbox,
+            RestoreFinding::Absent { .. } => return,
+            RestoreFinding::Ambiguous(_)
+            | RestoreFinding::Unconfirmed {
+                last_observed: None,
+                ..
+            } => {
+                self.backend.refresh();
+                return;
+            }
         };
         match self
             .record(session, config, gateway, &sandbox, &Origins::new())

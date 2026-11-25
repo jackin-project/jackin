@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use jackin_core::{HostPath, LabelSelector, LaunchId, Phase};
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayOp, InputMode, Missing, PowerAction, Provisioning, SandboxQuery,
-    SandboxView, TransferOp,
+    Gateway, GatewayError, GatewayOp, InputMode, Missing, PowerAction, ProviderWriteEffect,
+    Provisioning, SandboxQuery, SandboxView, TransferOp,
 };
 use jackin_testkit::{Fault, ProgramScript};
 use tokio_util::sync::CancellationToken;
@@ -309,6 +309,186 @@ async fn start_ignored_accepts_the_start_and_leaves_the_sandbox_stopped() -> Tes
             assert_eq!(observe(&fake, &name).await?.phase, Phase::Stopped);
         }
         assert_eq!(handle.phase(), Phase::Stopped);
+        Ok(())
+    })
+    .await
+}
+
+fn lost() -> GatewayError {
+    GatewayError::Protocol {
+        message: "the response was lost".to_owned(),
+    }
+}
+
+#[tokio::test]
+async fn lose_response_applies_the_operation_then_fails_once_for_each_operation() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::Create,
+            error: lost(),
+        });
+        let spec = spec(sh("sleep 3600")?)?;
+        assert!(matches!(
+            fake.create_sandbox(&spec).await,
+            Err(GatewayError::Protocol { .. })
+        ));
+        assert_eq!(fake.sandboxes().len(), 1);
+        assert!(matches!(
+            fake.create_sandbox(&spec).await,
+            Err(GatewayError::AlreadyExists { .. })
+        ));
+        let name = spec.name().clone();
+        observe(&fake, &name).await?;
+
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::WriteFile,
+            error: lost(),
+        });
+        write(&fake, &name, "/sandbox/lost.txt", "kept")
+            .await
+            .err()
+            .ok_or("the lost write reported success")?;
+        assert_eq!(
+            read(&fake, &name, "/sandbox/lost.txt").await?,
+            Some(b"kept".to_vec())
+        );
+        write(&fake, &name, "/sandbox/lost.txt", "again").await?;
+
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::Power,
+            error: lost(),
+        });
+        assert!(matches!(
+            fake.set_power(&name, PowerAction::Stop).await,
+            Err(GatewayError::Protocol { .. })
+        ));
+        assert_eq!(observe(&fake, &name).await?.phase, Phase::Stopped);
+
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::Delete,
+            error: lost(),
+        });
+        assert!(matches!(
+            fake.delete_sandbox(&name).await,
+            Err(GatewayError::Protocol { .. })
+        ));
+        assert!(fake.sandboxes().is_empty());
+        fake.delete_sandbox(&name).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn hide_everywhere_hides_label_and_name_queries_until_a_create_conflict() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let launch = LaunchId::generate()?;
+        let sandbox = spec_with(&launch, IMAGE, Vec::new(), sh("sleep 3600")?)?;
+        fake.create_sandbox(&sandbox).await?;
+        let by_label = SandboxQuery::Labels(LabelSelector::launch(&launch));
+        let by_name = SandboxQuery::Name(sandbox.name().clone());
+        fake.inject(Fault::HideEverywhereUntilCreateConflict);
+        for _ in 0..3 {
+            assert!(fake.find_sandboxes(&by_label).await?.is_empty());
+            assert!(fake.find_sandboxes(&by_name).await?.is_empty());
+        }
+        assert!(matches!(
+            fake.create_sandbox(&sandbox).await,
+            Err(GatewayError::AlreadyExists { .. })
+        ));
+        assert_eq!(fake.find_sandboxes(&by_label).await?.len(), 1);
+        assert_eq!(fake.find_sandboxes(&by_name).await?.len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn put_provider_reports_what_it_wrote_and_the_injected_outcomes() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let profile = jackin_openshell::ProviderProfile::parse(
+            &jackin_core::Agent::Codex
+                .spec()
+                .codex
+                .openshell
+                .chatgpt_profile,
+        )?;
+        fake.ensure_profile(&profile).await?;
+        let login =
+            |key: &str| -> Result<jackin_openshell::ProviderSpec, Box<dyn std::error::Error>> {
+                Ok(jackin_openshell::ProviderSpec {
+                    name: jackin_core::ProviderName::parse("jackin-work-codex")?,
+                    profile: profile.id.clone(),
+                    keys: jackin_core::Agent::Codex.spec().codex.openshell.keys,
+                    material: jackin_openshell::ProviderMaterial::StaticKey {
+                        key: jackin_core::Secret::new(key.to_owned()),
+                    },
+                })
+            };
+        assert_eq!(
+            fake.put_provider(&login("one")?).await?,
+            ProviderWriteEffect::Created
+        );
+        assert_eq!(
+            fake.put_provider(&login("two")?).await?,
+            ProviderWriteEffect::Existing
+        );
+
+        fake.inject(Fault::PutProviderFailsAfterWrite { error: lost() });
+        let after = fake
+            .put_provider(&login("three")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(after.effect(), ProviderWriteEffect::Existing);
+
+        fake.inject(Fault::PutProviderOutcomeUnknown { error: lost() });
+        let unknown = fake
+            .put_provider(&login("four")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(unknown.effect(), ProviderWriteEffect::Unknown);
+
+        fake.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: unreachable(),
+        });
+        let held = fake
+            .put_provider(&login("five")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(held.effect(), ProviderWriteEffect::Existing);
+
+        fake.delete_provider(&jackin_core::ProviderName::parse("jackin-work-codex")?)
+            .await?;
+        fake.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: unreachable(),
+        });
+        let lost = fake
+            .put_provider(&login("six")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(lost.effect(), ProviderWriteEffect::Unknown);
+
+        fake.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::PermissionDenied {
+                what: "the provider".to_owned(),
+            },
+        });
+        let refused = fake
+            .put_provider(&login("seven")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(refused.effect(), ProviderWriteEffect::NoWrite);
         Ok(())
     })
     .await
