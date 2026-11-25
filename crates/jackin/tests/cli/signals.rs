@@ -9,6 +9,7 @@ use jackin_testkit::{TestResult, guard};
 use tokio_util::sync::CancellationToken;
 
 const WAIT: Duration = Duration::from_secs(5);
+const SETTLE: Duration = Duration::from_millis(100);
 
 fn send(signal: &str) -> TestResult {
     let status = Command::new("/bin/kill")
@@ -21,25 +22,37 @@ fn send(signal: &str) -> TestResult {
     }
 }
 
-async fn first_cancels_second_forces_exit(first: &str, second: &str) -> TestResult {
+async fn first_cancels_second_abandons(first: &str, second: &str) -> TestResult {
     let signals = Signals::install()?;
     let cancel = CancellationToken::new();
-    let run = signals.interrupted(&cancel);
+    let abandon = CancellationToken::new();
+    let run = signals.interrupted(&cancel, &abandon);
     tokio::pin!(run);
 
     send(first)?;
-    let cancelled = tokio::select! {
+    tokio::select! {
         biased;
-        cancelled = tokio::time::timeout(WAIT, cancel.cancelled()) => cancelled.is_ok(),
-        () = &mut run => return Err(format!("{first} ended the wait without a cancel").into()),
-    };
-    assert!(cancelled, "{first} did not cancel the run");
+        cancelled = tokio::time::timeout(WAIT, cancel.cancelled()) => {
+            assert!(cancelled.is_ok(), "{first} did not cancel the run");
+        }
+        never = &mut run => match never {},
+    }
+    assert!(
+        !abandon.is_cancelled(),
+        "{first} abandoned the run on its own"
+    );
 
     send(second)?;
-    let forced = tokio::time::timeout(WAIT, &mut run).await;
+    tokio::select! {
+        biased;
+        abandoned = tokio::time::timeout(WAIT, abandon.cancelled()) => {
+            assert!(abandoned.is_ok(), "{second} did not abandon the run after {first}");
+        }
+        never = &mut run => match never {},
+    }
     assert!(
-        forced.is_ok(),
-        "{second} did not force the exit after {first}"
+        tokio::time::timeout(SETTLE, &mut run).await.is_err(),
+        "the signal task must stay pending after the second signal"
     );
     Ok(())
 }
@@ -57,7 +70,7 @@ fn real_signals_are_handled_one_scenario_at_a_time() -> TestResult {
                 ("HUP", "HUP"),
                 ("HUP", "TERM"),
             ] {
-                first_cancels_second_forces_exit(first, second).await?;
+                first_cancels_second_abandons(first, second).await?;
             }
             Ok(())
         }))

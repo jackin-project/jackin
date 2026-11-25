@@ -108,6 +108,14 @@ fn export_error(error: &ExportError) -> String {
     }
 }
 
+pub(crate) fn abandoned(unsettled: Option<String>) -> String {
+    let detail = unsettled
+        .unwrap_or_else(|| "jackin ls shows the current state of the sandboxes".to_owned());
+    format!(
+        "interrupted again; stopped without waiting for the command to finish, so its outcome is not confirmed\n{detail}"
+    )
+}
+
 pub(crate) fn report(error: &CommandError) -> String {
     let body = match error {
         CommandError::Cancelled(text) => return text.clone(),

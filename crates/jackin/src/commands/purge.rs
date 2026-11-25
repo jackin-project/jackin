@@ -15,6 +15,10 @@ pub(crate) async fn run(app: &mut App, args: PurgeArgs) -> Result<(), CommandErr
     } else {
         PurgeMode::Guarded
     };
+    app.unsettled(format!(
+        "sandbox {}: its delete may have been requested; jackin ls shows whether it still exists",
+        args.sandbox
+    ));
     match session
         .purge(&config, &args.sandbox, mode, &app.cancel)
         .await?

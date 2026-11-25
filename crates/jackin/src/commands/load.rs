@@ -276,6 +276,10 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     let plan = plan(app, &config, &role, &request, &mut values).await?;
     let launch = plan.launch_id().clone();
     let session = app.session(&config).await?;
+    app.unsettled(format!(
+        "launch {launch}: sandbox {} may exist; repeat the same jackin load command with --launch-id {launch}",
+        plan.draft().name()
+    ));
     let (events, mut feed) = launch_events(LineDelivery::Reliable);
     let cancel = app.cancel.clone();
     let show = async {
