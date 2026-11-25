@@ -764,7 +764,9 @@ async fn a_credential_view_is_refused_instead_of_run() -> TestResult {
              INSERT INTO real VALUES (1, 'zai', 'api_key', '{\"key\":\"SECRET_TOKEN_OMP\"}');
              CREATE VIEW auth_credentials AS SELECT * FROM real;",
             "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'zai' AS provider, 'api_key' AS credential_type, '{\"key\":\"SECRET_TOKEN_OMP\"}' AS data;",
-            "CREATE VIEW auth_credentials AS SELECT DISTINCT a.column1 AS id, 'zai' AS provider, 'api_key' AS credential_type, 'x' AS data FROM (VALUES (1),(2),(3)) a, (VALUES (1),(2),(3)) b;",
+            "CREATE VIEW auth_credentials AS SELECT DISTINCT a.column1 AS id, 'zai' AS provider, 'api_key' AS credential_type, '{\"key\":\"SECRET_TOKEN_OMP\"}' AS data FROM (VALUES (1),(2),(3)) a, (VALUES (1),(2),(3)) b;",
+            "CREATE VIRTUAL TABLE auth_credentials USING fts3(id, provider, credential_type, data);
+             INSERT INTO auth_credentials VALUES (1, 'zai', 'api_key', '{\"key\":\"SECRET_TOKEN_OMP\"}');",
         ] {
             let started = std::time::Instant::now();
             let outcome = schema_report(schema).await?;

@@ -337,7 +337,7 @@ fn read_below(
         Ok(parent) => parent,
         Err(problem) => return Ok(Err(problem)),
     };
-    let leaf = match open_below(&dir, name, OFlags::NONBLOCK, true)? {
+    let leaf = match open_below(&dir, name, OFlags::NONBLOCK | OFlags::NOCTTY, true)? {
         Ok(leaf) => leaf,
         Err(problem) => return Ok(Err(problem)),
     };

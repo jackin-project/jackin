@@ -1158,3 +1158,44 @@ async fn a_credential_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unr
     })
     .await
 }
+
+#[tokio::test]
+async fn a_credential_view_or_virtual_table_is_refused_instead_of_run() -> TestResult {
+    guard(async {
+        let value = credential(TOKEN, EXPIRES, None).replace('\'', "''");
+        let columns = "id, integration_id, label, value, active, time_created, time_updated";
+        for schema in [
+            format!(
+                "CREATE VIEW credential AS SELECT 'cred_1' AS id, 'opencode' AS integration_id, 'x' AS label, '{value}' AS value, 1 AS active, 1 AS time_created, 1 AS time_updated;"
+            ),
+            format!(
+                "CREATE VIRTUAL TABLE credential USING fts3({columns});
+                 INSERT INTO credential ({columns}) VALUES ('cred_1', 'opencode', 'x', '{value}', 1, 1, 1);"
+            ),
+        ] {
+            let directory = tempfile::tempdir()?;
+            let connection = Connection::open(directory.path().join("opencode.db"))?;
+            connection.execute_batch(&schema)?;
+            drop(connection);
+            let harness = UsageHarness::new().await?;
+            let account = account(
+                "opencode",
+                Provider::Opencode,
+                CredentialSource::File {
+                    path: host_path_of(&directory.path().join("opencode.db")),
+                },
+            );
+            let outcome = harness.report_cached(&account, directory.path()).await?;
+            assert!(
+                matches!(
+                    unavailable(&outcome),
+                    UnavailableReason::Provider(message)
+                        if message == "the OpenCode store could not be read"
+                ),
+                "{outcome:?}"
+            );
+        }
+        Ok(())
+    })
+    .await
+}

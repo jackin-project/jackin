@@ -261,7 +261,7 @@ fn omp_policy(context: rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Aut
 fn is_plain_table(connection: &rusqlite::Connection, name: &str) -> bool {
     connection
         .query_row(
-            "SELECT type, sql FROM sqlite_schema WHERE name = ?1",
+            "SELECT type, sql FROM sqlite_schema WHERE name = ?1 COLLATE NOCASE",
             [name],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
         )
