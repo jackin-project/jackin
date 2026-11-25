@@ -42,7 +42,7 @@ const KEYWORDS_BEFORE_ARRAY: [&str; 13] = [
     "match",
 ];
 
-const NON_PATTERN_KEYWORDS: [&str; 6] = ["for", "struct", "impl", "enum", "trait", "type"];
+const NON_PATTERN_KEYWORDS: [&str; 7] = ["for", "struct", "impl", "enum", "trait", "type", "union"];
 
 const SILENCING_ATTRIBUTES: [&str; 2] = ["allow", "expect"];
 
@@ -467,6 +467,8 @@ fn declares_variant(tokens: &[Token], index: usize) -> bool {
             if depth == 0 {
                 return tokens[back.saturating_sub(6)..back]
                     .iter()
+                    .rev()
+                    .take_while(|t| !t.is_punct('}') && !t.is_punct(';') && !t.is_punct('|'))
                     .any(|t| t.is_ident("enum"));
             }
             depth -= 1;

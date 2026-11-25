@@ -437,6 +437,8 @@ fn destructuring_a_buffer_fails() -> TestResult {
          fn own(d: u8) { let crate::model::Buffer { value, .. } = d; }\n\
          fn local(d: u8) { let crate::buffer::Buffer { value, .. } = d; }\n\
          enum View { Buffer { value: usize } }\n\
+         union Buffer { content: usize }\n\
+         fn closure(buf: Buffer) { let _ = { enum E {} || { let Buffer { content, .. } = buf; } }; }\n\
          use crate::buffer::Buffer as Local;\n\
          fn localised(d: Local) { let Local { value, .. } = d; }\n\
          fn s(d: Domain) { let Domain { value, .. } = d; }\n\
@@ -458,7 +460,8 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 43, "destructures"),
             ("C1", 44, "destructures"),
             ("C1", 46, "destructures"),
-            ("C1", 58, "destructures"),
+            ("C1", 54, "destructures"),
+            ("C1", 60, "destructures"),
         ],
     )
 }

@@ -438,12 +438,22 @@ pub(crate) fn module_names<'a>(
     names
 }
 
-pub(crate) fn root_aliases<'a>(tokens: &'a [Token], roots: &[&str]) -> Vec<&'a str> {
-    tokens
-        .iter()
-        .enumerate()
-        .filter(|(_, token)| roots.iter().any(|root| token.is_ident(root)))
-        .filter(|(index, _)| tokens.get(index + 1).is_some_and(|t| t.is_ident("as")))
-        .filter_map(|(index, _)| tokens.get(index + 2).and_then(Token::ident))
-        .collect()
+pub(crate) fn root_aliases<'a>(tokens: &'a [Token], roots: &'a [&'a str]) -> Vec<&'a str> {
+    let mut names: Vec<&str> = roots.to_vec();
+    loop {
+        let known = names.len();
+        for (index, token) in tokens.iter().enumerate() {
+            if names.iter().any(|name| token.is_ident(name))
+                && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
+                && use_tree_path(tokens, index).is_empty()
+                && let Some(alias) = tokens.get(index + 2).and_then(Token::ident)
+                && !names.contains(&alias)
+            {
+                names.push(alias);
+            }
+        }
+        if names.len() == known {
+            return names.split_off(roots.len());
+        }
+    }
 }

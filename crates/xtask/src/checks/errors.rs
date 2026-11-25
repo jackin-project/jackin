@@ -179,7 +179,7 @@ fn is_qualified_display(
         return open >= 3 && named(&arguments[open - 3]);
     }
     let mut level = 0usize;
-    let mut receiver = None;
+    let mut receiver: Vec<&Token> = Vec::new();
     for token in &arguments[open + 1..qualifier] {
         if token.is_punct('<') {
             level += 1;
@@ -190,11 +190,16 @@ fn is_qualified_display(
                 break;
             }
             if token.ident().is_some() {
-                receiver = Some(token);
+                receiver.push(token);
             }
         }
     }
-    receiver.is_some_and(named)
+    let rooted = receiver.len() < 2
+        || receiver
+            .first()
+            .and_then(|first| first.ident())
+            .is_some_and(|first| ["std", "core"].contains(&first) || modules.contains(&first));
+    rooted && receiver.last().copied().is_some_and(named)
 }
 
 fn is_path_separator(arguments: &[Token], index: usize) -> bool {
