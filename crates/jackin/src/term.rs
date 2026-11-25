@@ -218,7 +218,7 @@ pub(crate) async fn shell(
     request: ShellRequest,
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
-    let mut remote = Remote::Shell(session.open_shell(request).await?);
+    let mut remote = Remote::Shell(session.open_shell(request, &app.cancel).await?);
     let ended = pump(app, &mut remote, &sandbox).await?;
     if ended.interrupted {
         return Err(CommandError::Cancelled(format!(

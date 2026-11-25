@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::convert::Infallible;
 use std::io;
 use std::task::{Context, Poll, Waker};
 
@@ -38,13 +39,17 @@ impl Signals {
         }
     }
 
-    pub async fn interrupted(mut self, cancel: &CancellationToken) {
+    pub async fn interrupted(
+        mut self,
+        cancel: &CancellationToken,
+        abandon: &CancellationToken,
+    ) -> Infallible {
         if self.next().await.is_some() {
             cancel.cancel();
             if self.next().await.is_some() {
-                return;
+                abandon.cancel();
             }
         }
-        std::future::pending::<()>().await;
+        std::future::pending().await
     }
 }

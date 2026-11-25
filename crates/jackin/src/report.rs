@@ -5,6 +5,7 @@ use jackin_core::WorkspaceName;
 use jackin_session::{
     AttachError, ExportError, LaunchFailure, LaunchNextStep, LifecycleError, PlanError, PurgeError,
     RestartError, env_file_problem, error_chain, hook_failure, main_process_ended, sandbox_missing,
+    sandbox_unmanaged,
 };
 
 use crate::error::CommandError;
@@ -46,6 +47,7 @@ fn plan_error(error: &PlanError) -> String {
 fn attach_error(error: &AttachError) -> String {
     match error {
         AttachError::NotFound(sandbox) => sandbox_missing(sandbox),
+        AttachError::NotManaged(sandbox) => sandbox_unmanaged(sandbox),
         AttachError::MainProcessEnded { sandbox, phase } => main_process_ended(sandbox, *phase),
         AttachError::EnvFile { sandbox, problem } => env_file_problem(sandbox, problem),
         AttachError::Gateway(error) => error_chain(error),
@@ -54,6 +56,7 @@ fn attach_error(error: &AttachError) -> String {
 
 fn restart_error(error: &RestartError) -> String {
     match error {
+        RestartError::NotManaged(sandbox) => sandbox_unmanaged(sandbox),
         RestartError::MainProcessEnded { sandbox, phase } => main_process_ended(sandbox, *phase),
         RestartError::AlreadyRunning { sandbox, attempt } => format!(
             "Codex in sandbox {sandbox} is already running as attempt {attempt}; attach without --restart"
@@ -71,6 +74,7 @@ fn restart_error(error: &RestartError) -> String {
 fn lifecycle_error(error: &LifecycleError) -> String {
     match error {
         LifecycleError::NotFound(sandbox) => sandbox_missing(sandbox),
+        LifecycleError::NotManaged(sandbox) => sandbox_unmanaged(sandbox),
         LifecycleError::MainProcessEnded { sandbox, phase } => main_process_ended(sandbox, *phase),
         other => error_chain(other),
     }
@@ -84,6 +88,10 @@ fn purge_error(error: &PurgeError) -> String {
         PurgeError::Replaced { sandbox } => format!(
             "sandbox {sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted; run jackin purge {sandbox} again"
         ),
+        PurgeError::NotManaged { sandbox } => sandbox_unmanaged(sandbox),
+        other @ (PurgeError::DeleteUnconfirmed { .. } | PurgeError::Cancelled { .. }) => {
+            other.to_string()
+        }
         PurgeError::Gateway(error) => error_chain(error),
     }
 }
@@ -91,12 +99,23 @@ fn purge_error(error: &PurgeError) -> String {
 fn export_error(error: &ExportError) -> String {
     match error {
         ExportError::NotFound(sandbox) => sandbox_missing(sandbox),
+        ExportError::NotManaged(sandbox) => sandbox_unmanaged(sandbox),
         ExportError::NotRunning { sandbox, phase } => {
             format!("sandbox {sandbox} is not running ({phase}); start it before exporting")
         }
         ExportError::WorkspaceUnknown(workspace) => workspace_unknown(workspace),
         other => error_chain(other),
     }
+}
+
+pub(crate) fn abandoned(unsettled: Option<String>) -> String {
+    let detail = unsettled.unwrap_or_else(|| {
+        "what it had started may or may not be complete; check the state it changes (jackin ls lists the sandboxes)"
+            .to_owned()
+    });
+    format!(
+        "interrupted again; stopped without waiting for the command to finish, so its outcome is not confirmed\n{detail}"
+    )
 }
 
 pub(crate) fn report(error: &CommandError) -> String {

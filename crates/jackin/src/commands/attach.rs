@@ -26,6 +26,10 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
         }
         (true, None) => {
             let (events, mut feed) = launch_events(LineDelivery::Reliable);
+            app.unsettled(format!(
+                "sandbox {}: the agent restart may be partly done; jackin ls shows the sandbox's state",
+                args.sandbox
+            ));
             let cancel = app.cancel.clone();
             let show = async {
                 while let Some(event) = feed.recv().await {
@@ -34,6 +38,7 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
             };
             let (restarted, ()) =
                 tokio::join!(session.restart_agent(&args.sandbox, events, cancel), show);
+            app.settled();
             AttachRequest::owner(restarted?, size)
         }
         (false, agent) => AttachRequest {

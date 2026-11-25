@@ -117,10 +117,18 @@ async fn inspect_of_a_missing_or_unmanaged_sandbox_fails_with_empty_stdout() -> 
             .insert_unmanaged(&ghost, Labels::from_pairs([])?, Phase::Ready)?;
         let harness = Harness::new(&rig.world);
         harness.write_config(&rig.config.render())?;
-        for name in ["jackin-absent-0009", ghost.as_str()] {
-            let ran = harness.run(&["inspect", name, "--json"]).await?;
-            failed(&ran, ExitClass::Failure, &[name])?;
-        }
+        let absent = harness
+            .run(&["inspect", "jackin-absent-0009", "--json"])
+            .await?;
+        failed(&absent, ExitClass::Failure, &["jackin-absent-0009"])?;
+        assert!(absent.stderr.contains("was not found"), "{}", absent.stderr);
+        let foreign = harness.run(&["inspect", ghost.as_str(), "--json"]).await?;
+        failed(&foreign, ExitClass::Refused, &[ghost.as_str()])?;
+        assert!(
+            foreign.stderr.contains("not a jackin sandbox"),
+            "{}",
+            foreign.stderr
+        );
         Ok(())
     })
     .await
