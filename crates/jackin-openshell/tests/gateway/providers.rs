@@ -953,6 +953,7 @@ async fn a_failed_create_if_absent_never_prints_the_secrets_it_was_given() {
     assert_no_secret(&error.to_string());
     assert_no_secret(&format!("{error:?}"));
 
+    env.server.state().faults.clear();
     env.server.state().faults.insert(
         "configure_provider_refresh",
         Fault::Status(
@@ -960,7 +961,6 @@ async fn a_failed_create_if_absent_never_prints_the_secrets_it_was_given() {
             format!("refresh failed for {ACCESS} and {REFRESH}"),
         ),
     );
-    env.server.state().providers.clear();
     let after_create = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
         .await
         .unwrap_err();
