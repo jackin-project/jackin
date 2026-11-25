@@ -28,7 +28,7 @@ pub struct Deps {
     pub connect: Arc<dyn GatewayConnector>,
     pub limits: LaunchLimits,
     pub usage_endpoints: ProviderEndpoints,
-    pub usage_vault: Option<Arc<dyn jackin_usage::accounts::CredentialVault>>,
+    pub usage_vault: Arc<dyn jackin_usage::accounts::CredentialVault>,
     pub console: Arc<dyn ConsoleHost>,
 }
 

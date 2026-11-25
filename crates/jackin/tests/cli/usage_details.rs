@@ -115,11 +115,16 @@ impl CredentialVault for Offline {
 async fn daily_details_report_exact_amounts_optional_failures_and_no_private_fields() -> TestResult
 {
     guard(async {
-        let world=World::builder().build()?;
-        let cli=Harness::new(&world);
-        let path=cli.config_path.as_path().parent().ok_or("config dir")?.join(DATABASE_PATH);
-        let mut db=AccountRegistry::with_vault(&path,Arc::new(Offline))?;
-        let data=json!({
+        let world = World::builder().build()?;
+        let cli = Harness::new(&world);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config dir")?
+            .join(DATABASE_PATH);
+        let mut db = AccountRegistry::with_vault(&path, Arc::new(Offline))?;
+        let data = json!({
             "access_token":"PRIVATE-TOKEN", "nextGrantId":"PRIVATE-GRANT", "is_available":true,
             "daily":{"consumption":{"start":"2026-11-01","end":"2026-11-22","rows":[{
                 "currency":"CNY","name":"MiMo fixture","date":"2026-11-22","resource_type":"model",
@@ -129,30 +134,70 @@ async fn daily_details_report_exact_amounts_optional_failures_and_no_private_fie
             "resources":{"CNY/cash":{"kind":"balance","unit":"minor_currency","currency":"CNY","exponent":2,"available":0},
                 "daily/consumption":{"kind":"history","unit":"records","label":"Daily consumption","amount":1,"details":["2026-11-01 to 2026-11-22 UTC","2026-11-22 · MiMo fixture 0.000001 CNY · 2 requests · 11 tokens"]}}
         });
-        db.add_with_snapshot(UsageProvider::Mimo,"Daily",&CandidateIdentity::api_key(&jackin_core::Secret::new("test-only".into())),&SecretBytes::new(vec![1]),world.clock.now().0-900,&data)?;
-        let id=db.add(UsageProvider::Claude,"Awaiting usage",&CandidateIdentity::OAuth(None),&SecretBytes::new(vec![1]))?;
-        let pending=cli.run(&["usage","details","--account",&id.to_string(),"--json"]).await?;
-        assert_eq!(pending.exit,ExitClass::NoUsageSnapshot);
-        let record:Value=serde_json::from_str(&pending.stdout)?;
+        db.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
+            UsageProvider::Mimo,
+            "Daily",
+            &CandidateIdentity::api_key(&jackin_core::Secret::new("test-only".into())),
+            &SecretBytes::new(vec![1]),
+            (world.clock.now().0 - 900, &data),
+        )?;
+        let id = db.add(
+            &jackin_core::CriticalWrite::begin(),
+            UsageProvider::Claude,
+            "Awaiting usage",
+            &CandidateIdentity::OAuth(None),
+            &SecretBytes::new(vec![1]),
+        )?;
+        let pending = cli
+            .run(&["usage", "details", "--account", &id.to_string(), "--json"])
+            .await?;
+        assert_eq!(pending.exit, ExitClass::NoUsageSnapshot);
+        let record: Value = serde_json::from_str(&pending.stdout)?;
         assert!(record["accounts"][0]["usage"].is_null());
-        let text=cli.run(&["usage","details"]).await?;
+        let text = cli.run(&["usage", "details"]).await?;
         text.ok()?;
         assert!(!text.stdout.contains('\x1b'));
-        assert!(!text.stdout.contains("PRIVATE-") && !text.stdout.contains("attemptedAt"),"{}", text.stdout);
-        assert!(text.stdout.contains("Daily usage    1 record · 2026-11-01 to 2026-11-22 UTC") && text.stdout.contains("2026-11-22 · MiMo fixture 0.000001 CNY"),"{}", text.stdout);
-        assert!(text.stdout.contains("Cash           0 CNY") && text.stdout.contains("not fetched yet"),"{}", text.stdout);
-        let report=cli.run(&["usage","details","--json"]).await?;
+        assert!(
+            !text.stdout.contains("PRIVATE-") && !text.stdout.contains("attemptedAt"),
+            "{}",
+            text.stdout
+        );
+        assert!(
+            text.stdout
+                .contains("Daily usage    1 record · 2026-11-01 to 2026-11-22 UTC")
+                && text
+                    .stdout
+                    .contains("2026-11-22 · MiMo fixture 0.000001 CNY"),
+            "{}",
+            text.stdout
+        );
+        assert!(
+            text.stdout.contains("Cash           0 CNY") && text.stdout.contains("not fetched yet"),
+            "{}",
+            text.stdout
+        );
+        let report = cli.run(&["usage", "details", "--json"]).await?;
         report.ok()?;
-        assert!(report.stdout.contains("0.000001 CNY") && report.stdout.contains("Daily history unavailable"),"{}", report.stdout);
+        assert!(
+            report.stdout.contains("0.000001 CNY")
+                && report.stdout.contains("Daily history unavailable"),
+            "{}",
+            report.stdout
+        );
         assert!(!report.stdout.contains("PRIVATE-") && !report.stdout.contains("attemptedAt"));
-        let data:Value=serde_json::from_str(&report.stdout)?;
-        let a=&data["accounts"][0];
-        assert_eq!(a["stale"],true);
-        assert_eq!(a["usage"]["resources"]["CNY/cash"]["available"],0);
-        assert_eq!(a["usage"]["daily"]["consumption"]["rows"][0]["input_cache_hit_amount"],1);
-        assert_eq!(a["usage"]["daily"]["bills"],json!({"unavailable":true}));
+        let data: Value = serde_json::from_str(&report.stdout)?;
+        let a = &data["accounts"][0];
+        assert_eq!(a["stale"], true);
+        assert_eq!(a["usage"]["resources"]["CNY/cash"]["available"], 0);
+        assert_eq!(
+            a["usage"]["daily"]["consumption"]["rows"][0]["input_cache_hit_amount"],
+            1
+        );
+        assert_eq!(a["usage"]["daily"]["bills"], json!({"unavailable":true}));
         Ok(())
-    }).await
+    })
+    .await
 }
 
 #[tokio::test]

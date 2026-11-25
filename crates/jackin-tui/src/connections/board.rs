@@ -548,12 +548,12 @@ pub(super) fn load(
         edit,
         BoardEdit::DefaultTab | BoardEdit::Read | BoardEdit::Refresh(_) | BoardEdit::Proxy(_)
     ) {
-        match AccountRegistry::open_read_only(service.database())? {
+        match service.open_read_only_registry()? {
             Some(db) => db,
-            None => AccountRegistry::open(service.database())?,
+            None => service.open_registry()?,
         }
     } else {
-        let mut db = AccountRegistry::open(service.database())?;
+        let mut db = service.open_registry()?;
         apply(&mut db, edit)?;
         db
     };
@@ -590,7 +590,11 @@ pub(super) fn load(
         }
     }
     let attention = attention(&view, &accounts);
-    if priority && data.shows_clear_row && data.summary != Summary::AllClear {
+    if priority
+        && data.shows_clear_row
+        && data.summary != Summary::AllClear
+        && display::attention_summary(&view).is_none()
+    {
         notices.push(display::ALL_CLEAR.into());
     }
     let settings = BoardSettings {
@@ -628,12 +632,18 @@ pub(super) fn load(
     Ok(UsageBoard {
         providers,
         priority,
-        summary: if priority && rows.is_empty() && data.summary == Summary::Listed {
+        summary: if !priority {
+            if rows.is_empty() {
+                data.summary.to_string()
+            } else {
+                display::board_summary(&view)
+            }
+        } else if let Some(summary) = display::attention_summary(&view) {
+            summary
+        } else if rows.is_empty() && data.summary == Summary::Listed {
             Summary::AllClear.to_string()
-        } else if priority || rows.is_empty() {
-            data.summary.to_string()
         } else {
-            display::board_summary(&view)
+            data.summary.to_string()
         },
         notices,
         attention,

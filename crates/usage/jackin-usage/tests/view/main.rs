@@ -34,8 +34,11 @@ impl Seeded {
     }
 
     pub(crate) fn registry(&self) -> Result<AccountRegistry> {
-        AccountRegistry::open_read_only(&self.dir.path().join(DATABASE_PATH))?
-            .ok_or_else(|| "the usage registry is missing".into())
+        AccountRegistry::open_read_only_with_vault(
+            &self.dir.path().join(DATABASE_PATH),
+            jackin_testkit::MemoryVault::shared(),
+        )?
+        .ok_or_else(|| "the usage registry is missing".into())
     }
 
     pub(crate) fn view(&self, filter: &ViewFilter, now: Timestamp) -> Result<UsageView> {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use jackin_console::screens::Go;
 use jackin_core::{Clock, Secret, SecretBytes};
-use jackin_testkit::TestResult;
+use jackin_testkit::{MemoryVault, TestResult};
 use jackin_usage::accounts::{
     self, AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
 };
@@ -102,12 +102,12 @@ pub(super) async fn journey(
         CandidateIdentity::OAuth(Some("synthetic".into()))
     };
     db.add_with_snapshot(
+        &jackin_core::CriticalWrite::begin(),
         provider,
         &label,
         &identity,
         &SecretBytes::new(vec![1]),
-        lab.rig.world.clock.now().0,
-        &snapshot,
+        (lab.rig.world.clock.now().0, &snapshot),
     )?;
     lab.console
         .console()
@@ -138,12 +138,10 @@ pub(super) async fn journey(
     assert!(overview.contains("All Usage"), "{overview}");
     let fake = Arc::clone(&lab.rig.world.clock);
     let clock: Arc<dyn Clock> = fake;
+    let endpoints = lab.rig.world.usage.get().await?.endpoints();
+    let vault: Arc<dyn CredentialVault> = Arc::<MemoryVault>::clone(&lab.rig.world.vault);
     let total = jackin_tui::read_usage_board(
-        &jackin_usage::onboarding::OwnedLogin::new(
-            path.clone(),
-            jackin_usage::ProviderEndpoints::real(),
-            clock,
-        ),
+        &jackin_usage::onboarding::OwnedLogin::new(path.clone(), endpoints, clock, vault),
         false,
     )?
     .rows

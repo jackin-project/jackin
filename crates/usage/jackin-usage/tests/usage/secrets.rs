@@ -9,8 +9,7 @@ use jackin_testkit::{
     FakeClock, FsOp, MemFs, Method, ProcessReply, Route, ScriptedProcessRunner, ScriptedProgram,
 };
 use jackin_usage::{
-    HostUsage, ProviderEndpoints, Refresh, UnavailableReason, UsageDeps, UsageError, UsageOutcome,
-    UsageReport,
+    HostUsage, Refresh, UnavailableReason, UsageDeps, UsageError, UsageOutcome, UsageReport,
 };
 
 use crate::providers::openrouter_serve;
@@ -166,7 +165,7 @@ async fn errors_and_the_dependency_bundle_hold_no_secret() -> TestResult {
             fs,
             runner,
             env: EnvSnapshot::from_pairs([("KEY".to_owned(), "SECRET_TOKEN_ENV".to_owned())]),
-            endpoints: ProviderEndpoints::real(),
+            endpoints: jackin_testkit::closed_endpoints(),
             home: host_path("/home/work"),
             state_dir: host_path("/state/usage"),
         };

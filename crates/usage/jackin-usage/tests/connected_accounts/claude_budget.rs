@@ -25,8 +25,8 @@ async fn a_verified_mirrored_claude_login_shares_its_durable_request_window() ->
             path.clone(),
             server.endpoints(),
             Arc::<FakeClock>::clone(&clock),
+            Arc::<Vault>::clone(&vault),
         )
-        .with_vault(Arc::<Vault>::clone(&vault))
     };
     let p = Provider::Claude;
     let cancel = CancellationToken::new();
@@ -61,6 +61,7 @@ async fn a_verified_mirrored_claude_login_shares_its_durable_request_window() ->
         "org",
     ))?);
     let id = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "direct",
         &CandidateIdentity::OAuth(Some("member/org".into())),

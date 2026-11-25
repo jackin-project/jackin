@@ -110,6 +110,7 @@ tuiscotti = { git = "https://github.com/tailrocks/tuiscotti", rev = "92ef2d9ee08
 tonic = { version = "0.14.9", features = ["tls-aws-lc"] }
 tonic-types = "0.14.9"
 unicode-normalization = { version = "0.1.26", default-features = false, features = ["std"] }
+unicode-width = { version = "0.2.3", default-features = false }
 zeroize = { version = "1.9.1", features = ["derive"] }
 
 [workspace.lints.rust]
