@@ -432,6 +432,8 @@ fn destructuring_a_buffer_fails() -> TestResult {
          type Grid = ratatui::buffer::Buffer;\n\
          fn p(b: Grid) { let Grid { content, .. } = b; }\n\
          use crate::model::Buffer as Domain;\n\
+         use crate::{buffer::Helper, model::Buffer as Mixed};\n\
+         fn mixed(d: Mixed) { let Mixed { value, .. } = d; }\n\
          fn s(d: Domain) { let Domain { value, .. } = d; }\n\
          type Outer = Inner;\n\
          type Inner = ratatui::buffer::Buffer;\n\
@@ -451,7 +453,7 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 43, "destructures"),
             ("C1", 44, "destructures"),
             ("C1", 46, "destructures"),
-            ("C1", 51, "destructures"),
+            ("C1", 53, "destructures"),
         ],
     )
 }

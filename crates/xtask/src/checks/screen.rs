@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Tok, Token, lex_rust};
+use crate::lex::{Tok, Token, lex_rust, use_tree_path};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -452,11 +452,7 @@ fn buffer_names(tokens: &[Token]) -> Vec<&str> {
 }
 
 fn imported_through(tokens: &[Token], index: usize, module: &str) -> bool {
-    tokens[..index]
-        .iter()
-        .rev()
-        .take_while(|t| !t.is_punct(';'))
-        .any(|t| t.is_ident(module))
+    use_tree_path(tokens, index).contains(&module)
 }
 
 fn alias_of_known(right: &[Token], module: &str, names: &[&str]) -> bool {

@@ -306,3 +306,43 @@ impl Lexer {
         }
     }
 }
+
+pub(crate) fn use_tree_path(tokens: &[Token], item: usize) -> Vec<&str> {
+    let mut segments = Vec::new();
+    let mut at = item;
+    loop {
+        while at >= 3
+            && tokens[at - 1].is_punct(':')
+            && tokens[at - 2].is_punct(':')
+            && let Some(name) = tokens[at - 3].ident()
+        {
+            segments.push(name);
+            at -= 3;
+        }
+        if at >= 2 && tokens[at - 1].is_punct(':') && tokens[at - 2].is_punct(':') {
+            at -= 2;
+        }
+        let mut depth = 0usize;
+        let mut open = None;
+        let mut back = at;
+        while back > 0 {
+            back -= 1;
+            let token = &tokens[back];
+            if token.is_punct('}') {
+                depth += 1;
+            } else if token.is_punct('{') {
+                if depth == 0 {
+                    open = Some(back);
+                    break;
+                }
+                depth -= 1;
+            } else if depth == 0 && (token.is_punct(';') || token.is_ident("use")) {
+                break;
+            }
+        }
+        match open {
+            Some(open) => at = open,
+            None => return segments,
+        }
+    }
+}

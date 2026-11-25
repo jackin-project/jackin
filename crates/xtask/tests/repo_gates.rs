@@ -1965,6 +1965,7 @@ mod error_paths {
         let source = text(&[
             "use std::path::Path as P;",
             "use crate::sanitized::Path as Safe;",
+            "use crate::{path::Helper, sanitized::Path as Mixed};",
             "type Q = std::path::Path;",
             "type R = S;",
             "type S = Q;",
@@ -1994,6 +1995,8 @@ mod error_paths {
             "    L(Label),",
             "    #[error(\"generic ufcs {}\", <Renderer<Path>>::display(.0))]",
             "    M(Label),",
+            "    #[error(\"own type {}\", Mixed::display(.0))]",
+            "    Z(Label),",
             "    #[error(\"own type {}\", Safe::display(.0))]",
             "    O(Label),",
             "    #[error(\"chained {}\", R::display(.0.as_path()))] // p_chained",
