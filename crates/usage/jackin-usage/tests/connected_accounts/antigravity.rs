@@ -466,3 +466,35 @@ async fn direct_sign_in_cannot_convert_a_status_line_row_to_another_google_accou
     assert!(!registry.is_statusline(id)?);
     Ok(())
 }
+
+#[tokio::test]
+async fn an_amount_only_status_line_bucket_shows_the_amount_without_a_percent() -> Result<()> {
+    use jackin_usage::dashboard::{Dashboard, DashboardMemory};
+
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let (service, vault) = offline(&path, clock);
+    let email = "amount@example.com";
+    let pending = begin(&service, email, None, &CancellationToken::new()).await?;
+    let input = json!({"product":"antigravity","email":email,"quota":{"gemini-5h":{"remaining_amount":42}}});
+    assert!(receive_antigravity_statusline(
+        &path,
+        &serde_json::to_vec(&input)?,
+        now,
+        MemoryVault::shared(),
+    )?);
+    let id = pending.await??;
+    let registry = AccountRegistry::with_vault(&path, Arc::clone(&vault))?;
+    let board = Dashboard::load(&registry, &mut DashboardMemory::default(), now)?;
+    let row = board
+        .all
+        .iter()
+        .find(|row| row.account == Some(id))
+        .ok_or("missing row")?;
+    assert_eq!(row.metric_label, "Gemini 5h");
+    assert_eq!(row.value, "42 count");
+    assert!(!row.value.contains('%'));
+    Ok(())
+}
