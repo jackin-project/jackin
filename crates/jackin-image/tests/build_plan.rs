@@ -31,7 +31,7 @@ const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
 const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
-const ARG_NAMES: [&str; 24] = [
+const ARG_NAMES: [&str; 25] = [
     "AGENT_ARCHIVE_MEMBERS",
     "AGENT_BINARY",
     "AGENT_BIN_DIR",
@@ -46,6 +46,7 @@ const ARG_NAMES: [&str; 24] = [
     "AGENT_URL_ARM64",
     "AGENT_VERSION",
     "AGENT_VERSION_OUTPUT",
+    "READ_WRITE_PATHS",
     "DOCKER_LAYER",
     "DOCKER_CLI_VERSION",
     "DOCKER_BUILDX_VERSION",
@@ -57,7 +58,7 @@ const ARG_NAMES: [&str; 24] = [
     "DOCKER_COMPOSE_SHA256_ARM64",
     "DOCKER_COMPOSE_SHA256_AMD64",
 ];
-const CODEX_ARGS: [&str; 14] = [
+const CODEX_ARGS: [&str; 15] = [
     "AGENT_ARCHIVE_MEMBERS",
     "AGENT_BINARY",
     "AGENT_BIN_DIR",
@@ -72,6 +73,7 @@ const CODEX_ARGS: [&str; 14] = [
     "AGENT_URL_ARM64",
     "AGENT_VERSION",
     "AGENT_VERSION_OUTPUT",
+    "READ_WRITE_PATHS",
 ];
 const FLAG_PREFIXES: [&str; 9] = [
     "--builder=",
@@ -122,7 +124,7 @@ fn base() -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
-        read_write: Vec::new(),
+        read_write: vec![SandboxPath::from_static("/tmp")],
         rebuild: Rebuild::No,
     })
 }
@@ -208,9 +210,9 @@ fn check_stages(request: &ImageRequest) -> TestResult {
     ));
     assert_eq!(tokens(&derived_rest)?, sorted(derived), "derived {label}");
     let want_args = if request.docker == DockerLayer::Client {
-        24
+        25
     } else {
-        14
+        15
     };
     assert_eq!(build_args.len(), want_args, "derived build args {label}");
     let all = [&construct.args, &built.role.args, &built.derived.args];
@@ -1617,7 +1619,14 @@ fn read_write_argument(paths: &[&str]) -> Result<Option<String>, Box<dyn Error>>
 
 #[test]
 fn the_policy_read_write_paths_reach_the_derived_build_as_one_sorted_argument() -> TestResult {
-    assert_eq!(read_write_argument(&[])?, None);
+    assert!(matches!(
+        ImagePlan::new(&request_with(&[])?),
+        Err(ImageError::NoReadWritePaths)
+    ));
+    assert!(matches!(
+        ImageKey::derive(&request_with(&[])?, &construct_id()?),
+        Err(ImageError::NoReadWritePaths)
+    ));
     assert_eq!(
         read_write_argument(&["/tmp", "/sandbox"])?.as_deref(),
         Some("/sandbox\n/tmp")
@@ -1698,7 +1707,7 @@ fn a_changed_policy_changes_the_image_key_and_a_reordered_one_does_not() -> Test
         Ok(ImageKey::derive(&request_with(paths)?, &construct)?)
     };
     let tags: BTreeSet<String> = [
-        tag(&[])?,
+        tag(&["/tmp"])?,
         tag(&["/sandbox"])?,
         tag(&["/sandbox", "/tmp"])?,
         tag(&["/sandbox", "/data"])?,
@@ -1710,7 +1719,7 @@ fn a_changed_policy_changes_the_image_key_and_a_reordered_one_does_not() -> Test
     assert_eq!(tag(&["/sandbox", "/sandbox"])?, tag(&["/sandbox"])?);
     assert_eq!(key(&["/tmp", "/sandbox"])?, key(&["/sandbox", "/tmp"])?);
     assert_ne!(key(&["/sandbox"])?, key(&["/sandbox", "/tmp"])?);
-    assert_ne!(key(&[])?, key(&["/sandbox"])?);
+    assert_ne!(key(&["/tmp"])?, key(&["/sandbox"])?);
     let plan = ImagePlan::new(&request_with(&["/sandbox", "/tmp"])?)?;
     assert_eq!(
         plan.final_builds(&construct).key,
@@ -1837,17 +1846,22 @@ fn the_scan_stage_hands_each_policy_path_to_the_scan_as_exactly_one_argument() -
     Ok(())
 }
 
+fn policy_of_joined_length(filler: usize) -> Vec<String> {
+    let mut paths: Vec<String> = (0..32)
+        .map(|index| format!("/{index:04}{}", "a".repeat(4084)))
+        .collect();
+    paths.push(format!("/z{}", "a".repeat(filler - 2)));
+    paths
+}
+
 #[test]
 fn the_read_write_paths_of_a_policy_never_outgrow_one_build_argument() -> TestResult {
-    let distinct = |count: usize| -> Vec<String> {
-        (0..count)
-            .map(|index| format!("/{index:04}{}", "a".repeat(4084)))
-            .collect()
-    };
-    let fits = distinct(31);
+    let prefix = "--build-arg=READ_WRITE_PATHS=".len();
+    let fits = policy_of_joined_length(162);
     let fits: Vec<&str> = fits.iter().map(String::as_str).collect();
-    assert!(read_write_argument(&fits)?.is_some());
-    let over = distinct(33);
+    let value = read_write_argument(&fits)?.ok_or("no argument")?;
+    assert_eq!(prefix + value.len() + 1, 131_072);
+    let over = policy_of_joined_length(163);
     let over: Vec<&str> = over.iter().map(String::as_str).collect();
     assert!(matches!(
         ImagePlan::new(&request_with(&over)?),
@@ -1864,6 +1878,14 @@ fn a_read_write_path_the_scan_cannot_stat_below_its_root_is_refused_at_planning(
         ImagePlan::new(&request),
         Err(ImageError::ReadWritePath { .. })
     ));
+    let run = scan_run(derived_text()?)?;
+    let mounted = run
+        .split("target=")
+        .nth(1)
+        .and_then(|rest| rest.split(',').next())
+        .ok_or("no bind target")?;
+    assert_eq!(mounted, "/image");
+    assert_eq!(4095 - mounted.len(), 4089);
     let longest = format!("/{}", "a".repeat(4088));
     assert_eq!(
         read_write_argument(&[&longest])?.as_deref(),

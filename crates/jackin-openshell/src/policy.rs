@@ -17,6 +17,8 @@ use crate::error::{ClosedPolicyError, PolicyError};
 mod yaml;
 
 const PROXY_BASELINE_READ_WRITE: [&str; 2] = ["/tmp", "/dev/null"];
+pub const PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT: &str =
+    "5d25211b25a8fc887e8d5c606d57d6ab22f1d76c";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyDocument {

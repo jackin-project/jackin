@@ -72,7 +72,10 @@ fn options() -> Result<Options, Box<dyn Error>> {
         work_dir: state_work_dir()?,
         rebuild: Rebuild::No,
         calls: 2,
-        read_write: Vec::new(),
+        read_write: vec![
+            SandboxPath::from_static("/dev/null"),
+            SandboxPath::from_static("/tmp"),
+        ],
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {

@@ -33,7 +33,7 @@ fn request(agent: Agent) -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
-        read_write: Vec::new(),
+        read_write: vec![SandboxPath::from_static("/tmp")],
         rebuild: Rebuild::No,
     })
 }

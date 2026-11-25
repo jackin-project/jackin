@@ -81,10 +81,15 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
 
 const SCAN_ROOT_PATH_BYTES: usize = 4095;
 const SCAN_ROOT: &str = "/image";
-const READ_WRITE_PATH_MAX_BYTES: usize = SCAN_ROOT_PATH_BYTES - SCAN_ROOT.len();
-const READ_WRITE_ARGUMENT_MAX_BYTES: usize = 131_072 - "READ_WRITE_PATHS=".len() - 1;
+pub(crate) const READ_WRITE_PATH_MAX_BYTES: usize = SCAN_ROOT_PATH_BYTES - SCAN_ROOT.len();
+const ARGUMENT_STRING_MAX_BYTES: usize = 131_072;
+const READ_WRITE_ARGUMENT_MAX_BYTES: usize =
+    ARGUMENT_STRING_MAX_BYTES - "--build-arg=READ_WRITE_PATHS=".len() - 1;
 
-fn read_write_argument(paths: &[SandboxPath]) -> Result<Option<String>, ImageError> {
+fn read_write_argument(paths: &[SandboxPath]) -> Result<String, ImageError> {
+    if paths.is_empty() {
+        return Err(ImageError::NoReadWritePaths);
+    }
     let mut sorted: Vec<&str> = paths.iter().map(SandboxPath::as_str).collect();
     sorted.sort_unstable();
     sorted.dedup();
@@ -104,7 +109,7 @@ fn read_write_argument(paths: &[SandboxPath]) -> Result<Option<String>, ImageErr
             limit: READ_WRITE_ARGUMENT_MAX_BYTES,
         });
     }
-    Ok((!sorted.is_empty()).then(|| build_arg("READ_WRITE_PATHS", &joined)))
+    Ok(build_arg("READ_WRITE_PATHS", &joined))
 }
 
 pub(crate) fn derived_arguments_multi(
@@ -119,7 +124,7 @@ pub(crate) fn derived_arguments_multi(
         sorted.push(Agent::Codex);
     }
     let mut args = derived_arguments_prefixed(sorted[0], docker, "AGENT")?;
-    args.extend(read_write_argument(read_write)?);
+    args.push(read_write_argument(read_write)?);
     if sorted.len() == 1 {
         return Ok(args);
     }

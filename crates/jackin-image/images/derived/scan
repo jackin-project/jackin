@@ -342,6 +342,7 @@ case $sandbox_owner in
     *:*) ;;
     *) usage ;;
 esac
+[ -n "$read_write" ] || usage
 [ "$#" -ge 2 ] || usage
 uid=${owner%%:*}
 gid=${owner#*:}

@@ -108,7 +108,7 @@ fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
-        read_write: Vec::new(),
+        read_write: vec![jackin_core::SandboxPath::from_static("/tmp")],
         rebuild: Rebuild::No,
     };
     let id = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
@@ -256,6 +256,8 @@ impl Fixture {
             format!("{}:{}", self.uid, self.gid),
             "--sandbox-owner".to_owned(),
             format!("{}:{}", self.uid, self.gid),
+            "--read-write".to_owned(),
+            "/dev/null".to_owned(),
         ]
     }
 
@@ -1788,6 +1790,20 @@ fn scan_refuses_a_read_write_path_it_cannot_stat_below_its_root_instead_of_calli
             "{length}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_run_that_names_no_read_write_path() -> TestResult {
+    let fx = Fixture::new()?;
+    let mut args = fx.arguments();
+    let at = args
+        .iter()
+        .position(|arg| arg == "--read-write")
+        .ok_or("no read_write flag")?;
+    args.drain(at..at + 2);
+    assert_eq!(fx.run(&args)?.code, Some(64));
+    assert!(fx.scan()?.ok);
     Ok(())
 }
 

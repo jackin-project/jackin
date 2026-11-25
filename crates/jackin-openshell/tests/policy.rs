@@ -12,7 +12,8 @@ use std::num::NonZeroU16;
 use jackin_core::{Compatibility, ProviderName, SandboxPath};
 use jackin_openshell::{
     AuthoredPolicy, ClosedPolicy, ClosedPolicyError, ClosureViolation, EndpointProtocol,
-    HostPattern, NetworkRule, PolicyDocument, PolicyError, RuleKey, TlsMode,
+    HostPattern, NetworkRule, PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT, PolicyDocument,
+    PolicyError, RuleKey, TlsMode,
 };
 use openshell_core::host_pattern::host_matches;
 use openshell_policy::{
@@ -1283,14 +1284,12 @@ fn the_effective_read_write_paths_add_the_baseline_the_gateway_grants_to_every_p
     assert_eq!(listed, ["/dev/null", "/sandbox", "/tmp"]);
 }
 
-const BASELINE_READ_FROM_OPENSHELL_COMMIT: &str = "5d25211b25a8fc887e8d5c606d57d6ab22f1d76c";
-
 #[test]
 fn the_proxy_baseline_was_read_from_the_pinned_openshell_commit() {
     let pinned = Compatibility::pinned().unwrap().openshell_commit;
     assert_eq!(
-        pinned, BASELINE_READ_FROM_OPENSHELL_COMMIT,
-        "OpenShell was bumped: read PROXY_BASELINE_READ_WRITE in crates/openshell-supervisor/src/lib.rs of the new commit, update PROXY_BASELINE_READ_WRITE in crates/jackin-openshell/src/policy.rs if it differs, then update this commit"
+        pinned, PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT,
+        "OpenShell was bumped: read PROXY_BASELINE_READ_WRITE in crates/openshell-supervisor/src/lib.rs of the new commit, update PROXY_BASELINE_READ_WRITE in crates/jackin-openshell/src/policy.rs if it differs, then update PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT"
     );
 }
 
