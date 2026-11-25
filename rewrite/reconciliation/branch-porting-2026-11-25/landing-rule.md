@@ -34,7 +34,7 @@ Never use `--effort xhigh` or `--effort max` anywhere. Use high at most.
 
 ## MERGE COMMAND (user directive, overrides `gh pr merge`)
 Merge ONLY with the tailrocks pr-merge script, always passing `--accept-risk` (the user's standing authorization for the high-risk-path check):
-  M=/Users/donbeave/.claude/plugins/cache/tailrocks/tailrocks-repository-skills/0.5.1/skills/tailrocks-pr-merge/scripts/merge.ts
-  bun run $M merge <pr> --repo jackin-project/jackin --git-dir /Users/donbeave/Projects/jackin-project/jackin --accept-risk          # plan, exits 4
-  bun run $M merge <pr> --repo jackin-project/jackin --git-dir /Users/donbeave/Projects/jackin-project/jackin --accept-risk --confirm <pr>
+  M=<claude-plugins>/tailrocks/tailrocks-repository-skills/0.5.1/skills/tailrocks-pr-merge/scripts/merge.ts
+  bun run $M merge <pr> --repo jackin-project/jackin --git-dir <workspace>/jackin --accept-risk          # plan, exits 4
+  bun run $M merge <pr> --repo jackin-project/jackin --git-dir <workspace>/jackin --accept-risk --confirm <pr>
 Exit 0 = merged. 10 = waiting/queued: then run `bun run $M watch <pr> --repo jackin-project/jackin --confirm <pr>` once. 20 = blocked: fix the blockers it prints (threads, checks, sync), then retry. 3 = refused for a reason other than risk: report it. Never use `gh pr merge` again, and never use --admin.
