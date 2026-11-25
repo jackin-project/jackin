@@ -1,0 +1,40 @@
+  jackin❯    File   Go   Help                                    Accounts › Overview  inside the sandbox  no instances  
+                                                                                                                        
+ ╭─ Accounts ─ 14 usage · 1 execution ─╮ │  Overview                                           14 usage · 1 execution   
+ │ ▎   Overview                        │ │  ─────────────────────────────────────────────────────────────────────────   
+ │     Usage accounts                  │ │  Usage accounts                                                14 accounts   
+ │       Claude · work@example.com     │ │  Select Usage accounts to browse connected identities.                       
+ │       Claude · work2@example.com    │ │                                                                              
+ │       ChatGPT / Codex · work@exam…  │ │  Execution health   blocked · 1 failed · 1 identity unresolved               
+ │       ChatGPT / Codex · home@exam…  │ │  Execution registry 1 account · 1 enabled · 1 provider                       
+ │       Muse · work@example.com       │ │  Sources            1 registered · 0 discovered · 1Password available        
+ │       Grok Account                  │ │                                                                              
+ │       Kimi Code                     │ │  Comparable execution windows     identical provider, window and unit only   
+ │       Z.ai Account                  │ │  No execution accounts share a comparable provider window.                   
+ │       MiniMax Token Plan            │ │                                                                              
+ │       MiMo Token Plan               │ │  Execution warnings                                                          
+ │       Antigravity #a0000013 · per…  │ │  No warnings                                                                 
+ │       Antigravity #a0000014 · per…  │ │                                                                              
+ │       OpenCode · work@example.com   │ │  Execution identity                                                          
+ │       OpenRouter Account            │ │  Z.AI · work · local folder · none — not an authenticated account            
+ │     Execution accounts              │ │                                                                              
+ │     Claude                          │ │                                                                              
+ │     Codex                           │ │                                                                              
+ │     Amp                             │ │                                                                              
+ │     Grok                            │ │                                                                              
+ │   ▾ Z.AI                        !   │ │                                                                              
+ │       work                      !   │ │                                                                              
+ │     Kimi                            │ │                                                                              
+ │     MiniMax                         │ │                                                                              
+ │     OpenCode                        │ │                                                                              
+ │     Unsupported                     │ │                                                                              
+ │     + Add execution account…        │ │                                                                              
+ │                                     │ │                                                                              
+ │                                     │ │                                                                              
+ │                                     │ │                                                                              
+ │                                     │ │                                                                              
+ │                                     │ │                                                                              
+ │                                     │ │  Refresh execution    All usage    Add usage account…    Usage accounts…     
+ ╰─────────────────────────────────────╯ │                                                                              
+                                                                                                                        
+ Enter Details  r Refresh execution  n Add usage account  N Usage accounts  a Execution account…  / Filter  Esc Back  … 

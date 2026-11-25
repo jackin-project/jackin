@@ -41,6 +41,17 @@ impl AccountRegistry {
                 ConnectionError::Duplicate
             });
         }
+        if replace.is_none() {
+            let direct: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts
+                 WHERE provider='antigravity' AND kind='oauth' AND lower(identity)=lower(?1))",
+                [email],
+                |row| row.get(0),
+            )?;
+            if direct {
+                return Err(ConnectionError::DuplicateDirect);
+            }
+        }
         let inserted = tx.execute(
             "INSERT INTO antigravity_enrollments(ticket,email,expires)
              VALUES (?1,?2,?3) ON CONFLICT(email) DO NOTHING",

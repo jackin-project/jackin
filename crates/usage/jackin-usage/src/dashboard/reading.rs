@@ -291,7 +291,7 @@ fn scaled_integer(field: &Value, exponent: u32) -> Option<String> {
     ))
 }
 
-fn decode(id: &str, v: &Value) -> Option<Measure> {
+pub(super) fn decode(id: &str, v: &Value) -> Option<Measure> {
     let kind = v["kind"].as_str()?;
     let mut unit = v
         .get("currency")

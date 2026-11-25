@@ -70,6 +70,14 @@ fn wipe(bytes: Vec<u8>) {
     drop(SecretBytes::new(bytes));
 }
 
+fn check_pair(access: &EngineAccess, cert: &[u8], key: &[u8]) -> Result<(), LaunchError> {
+    EngineCert::check_pair(cert, key).map_err(|found| LaunchError::EngineCert {
+        file: found.file,
+        directory: access.engine.client_certs.clone(),
+        problem: found.problem,
+    })
+}
+
 pub(super) async fn bind(
     fs: &dyn FileSystem,
     docker: &DockerCapability,
@@ -83,9 +91,18 @@ pub(super) async fn bind(
         directory: access.engine.client_certs.clone(),
         problem,
     })?;
-    for cert in [EngineCert::Cert, EngineCert::Key] {
-        wipe(read(fs, access, cert).await?);
-    }
+    let cert = read(fs, access, EngineCert::Cert).await?;
+    let key = match read(fs, access, EngineCert::Key).await {
+        Ok(key) => key,
+        Err(error) => {
+            wipe(cert);
+            return Err(error);
+        }
+    };
+    let paired = check_pair(access, &cert, &key);
+    wipe(cert);
+    wipe(key);
+    paired?;
     Ok(Bound::Engine {
         port: access.engine.port,
         ca: fingerprint,
@@ -128,6 +145,7 @@ pub(super) async fn read_set(
     let confirmed = async {
         unchanged(fs, access, EngineCert::Cert, &cert).await?;
         unchanged(fs, access, EngineCert::Key, &key).await?;
+        check_pair(access, &cert, &key)?;
         read(fs, access, EngineCert::Ca).await
     }
     .await;

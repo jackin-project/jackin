@@ -2767,6 +2767,7 @@ dependencies = [
  "getrandom 0.4.3",
  "jackin-testkit",
  "rustix",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2776,6 +2777,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 1.2.0+spec-1.1.0",
+ "x509-parser",
  "zeroize",
 ]
 
@@ -2861,6 +2863,7 @@ name = "jackin-testkit"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "clap",
  "jackin-console",
  "jackin-core",
@@ -2871,6 +2874,7 @@ dependencies = [
  "jackin-usage",
  "portable-pty",
  "ratatui",
+ "rcgen",
  "rusqlite",
  "serde_json",
  "tempfile",

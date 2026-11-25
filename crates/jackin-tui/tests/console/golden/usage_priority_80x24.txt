@@ -1,0 +1,24 @@
+  jackin❯    File   Go   Help          …  Usage › Overview  inside the sandbox  
+                                                                                
+ ╭─ Priority ──────────────────────────────────────────────────── 4 readings ─╮ 
+ │   All Usage    Providers    Refresh    Attention…    Details               │ 
+ │  Reading                                                          Value    │ 
+ │  ▎› FAILING · personal@example.com #a0000014 … failed · fetched 1d 5h ago  │ 
+ │     NEAR LIMIT · work@example.com · Muse         stale · 99% used · 5d 8h  │ 
+ │     NEAR LIMIT · personal@example.com · … stale · dup · >99% used · 1d 7h  │ 
+ │     DUPLICATE · personal@example.com · Antigra… duplicate · 2 connections  │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ │    FAILING · personal@example.com #a0000014                  Antigravity   │ 
+ │    ─────────────────────────────────────────────────────────────────────   │ 
+ │    Refresh                                    failed · fetched 1d 5h ago   │ 
+ │                                                                            │ 
+ │                                                                            │ 
+ ╰────────────────────────────────────────────────────────────────────────────╯ 
+                                                                                
+ p Priority  → Full text  a All Usage  ↑↓ Move  Enter Open  Esc Back  …         

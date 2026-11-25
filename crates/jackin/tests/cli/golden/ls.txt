@@ -1,0 +1,19 @@
+PROVIDER                 ACCOUNT               PLAN                 STATUS         FLAGS
+Claude                   work@example.com      Ultra                stale 13h 57m
+Claude                   work2@example.com     Ultra                stale 13h 57m
+ChatGPT / Codex          work@example.com      Pro 200              stale 13h 57m
+ChatGPT / Codex          home@example.com      Pro 200              stale 13h 57m
+Muse                     work@example.com      Muse Code Max Usage  stale 13h 57m
+Grok                     Grok Account          SuperGrok Heavy      stale 13h 57m
+Kimi                     Kimi Code             -                    stale 13h 57m
+Z.AI                     Z.ai Account          GLM Coding Max       stale 13h 57m
+MiniMax                  MiniMax Token Plan    -                    stale 13h 57m
+MiMo                     MiMo Token Plan       max                  stale 13h 57m
+Antigravity (Google AI)  personal@example.com  Google AI Ultra      stale 1d 7h    duplicate
+Antigravity (Google AI)  personal@example.com  Google AI Ultra      failing 1d 5h  duplicate
+OpenCode                 work@example.com      Go Plus              stale 13h 57m
+OpenRouter               OpenRouter Account    Pay-as-you-go        stale 13h 57m
+
+14 accounts · 11 providers · 1 failing · 1 duplicate · all stale
+! Antigravity (Google AI): personal@example.com is connected twice.
+  IDs: jackin account usage ls --wide · remove one: jackin account usage rm <id>
