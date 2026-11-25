@@ -132,7 +132,7 @@ fn is_display_call(arguments: &[Token], index: usize) -> bool {
 }
 
 fn path_names(tokens: &[Token]) -> Vec<&str> {
-    alias_names(tokens, "Path", "path")
+    alias_names(tokens, "Path", "path", &["std", "core"])
 }
 
 fn is_qualified_display(

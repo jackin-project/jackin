@@ -422,7 +422,7 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
 }
 
 fn buffer_names(tokens: &[Token]) -> Vec<&str> {
-    alias_names(tokens, "Buffer", "buffer")
+    alias_names(tokens, "Buffer", "buffer", &["ratatui"])
 }
 
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
@@ -436,6 +436,7 @@ fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
                 && tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
                 && opens_fields(tokens, index + 2)
                 && is_ratatui_path(tokens, *index)
+                && !declares_variant(tokens, *index)
                 && !is_type_position(tokens, *index)
                 && !tests.iter().any(|range| range.contains(index))
         })
@@ -455,6 +456,23 @@ fn is_ratatui_path(tokens: &[Token], index: usize) -> bool {
         return true;
     }
     leading_segment(tokens, index) == Some("ratatui")
+}
+
+fn declares_variant(tokens: &[Token], index: usize) -> bool {
+    let mut depth = 0usize;
+    for back in (0..index).rev() {
+        if tokens[back].is_punct('}') {
+            depth += 1;
+        } else if tokens[back].is_punct('{') {
+            if depth == 0 {
+                return tokens[back.saturating_sub(6)..back]
+                    .iter()
+                    .any(|t| t.is_ident("enum"));
+            }
+            depth -= 1;
+        }
+    }
+    false
 }
 
 fn opens_fields(tokens: &[Token], start: usize) -> bool {

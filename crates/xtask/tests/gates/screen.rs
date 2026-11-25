@@ -436,6 +436,9 @@ fn destructuring_a_buffer_fails() -> TestResult {
          fn mixed(d: Mixed) { let Mixed { value, .. } = d; }\n\
          fn own(d: u8) { let crate::model::Buffer { value, .. } = d; }\n\
          fn local(d: u8) { let crate::buffer::Buffer { value, .. } = d; }\n\
+         enum View { Buffer { value: usize } }\n\
+         use crate::buffer::Buffer as Local;\n\
+         fn localised(d: Local) { let Local { value, .. } = d; }\n\
          fn s(d: Domain) { let Domain { value, .. } = d; }\n\
          type Outer = Inner;\n\
          type Inner = ratatui::buffer::Buffer;\n\
@@ -455,7 +458,7 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 43, "destructures"),
             ("C1", 44, "destructures"),
             ("C1", 46, "destructures"),
-            ("C1", 55, "destructures"),
+            ("C1", 58, "destructures"),
         ],
     )
 }

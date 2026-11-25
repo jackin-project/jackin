@@ -347,17 +347,22 @@ pub(crate) fn use_tree_path(tokens: &[Token], item: usize) -> Vec<&str> {
     }
 }
 
-pub(crate) fn alias_names<'a>(tokens: &'a [Token], target: &'a str, module: &str) -> Vec<&'a str> {
+pub(crate) fn alias_names<'a>(
+    tokens: &'a [Token],
+    target: &'a str,
+    module: &str,
+    roots: &[&str],
+) -> Vec<&'a str> {
     let mut names = vec![target];
     loop {
         let known = names.len();
         for (index, token) in tokens.iter().enumerate() {
             let imported = token.is_ident(target)
                 && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
-                && use_tree_path(tokens, index).contains(&module);
+                && rooted_in(&use_tree_path(tokens, index), module, roots);
             let aliased = token.is_ident("type")
                 && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-                && alias_of_known(&tokens[index + 3..], module, &names);
+                && alias_of_known(&tokens[index + 3..], module, roots, &names);
             let alias = if imported {
                 tokens.get(index + 2).and_then(Token::ident)
             } else if aliased {
@@ -377,14 +382,19 @@ pub(crate) fn alias_names<'a>(tokens: &'a [Token], target: &'a str, module: &str
     }
 }
 
-fn alias_of_known(right: &[Token], module: &str, names: &[&str]) -> bool {
+fn rooted_in(path: &[&str], module: &str, roots: &[&str]) -> bool {
+    path.contains(&module) && path.last().is_some_and(|first| roots.contains(first))
+}
+
+fn alias_of_known(right: &[Token], module: &str, roots: &[&str], names: &[&str]) -> bool {
     let path: Vec<&str> = right
         .iter()
         .take_while(|t| !t.is_punct(';'))
         .filter_map(Token::ident)
         .collect();
     path.last().is_some_and(|last| names.contains(last))
-        && (path.len() == 1 || path.contains(&module))
+        && (path.len() == 1
+            || (path.contains(&module) && path.first().is_some_and(|first| roots.contains(first))))
 }
 
 pub(crate) fn leading_segment(tokens: &[Token], item: usize) -> Option<&str> {
@@ -408,13 +418,10 @@ pub(crate) fn module_names<'a>(
 ) -> Vec<&'a str> {
     let mut names = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
-        if !token.is_ident(module) {
-            continue;
-        }
-        let rooted = use_tree_path(tokens, index)
-            .iter()
-            .any(|segment| roots.contains(segment));
-        if !rooted {
+        let path = use_tree_path(tokens, index);
+        let named = token.is_ident(module)
+            || (token.is_ident("self") && path.first().is_some_and(|name| *name == module));
+        if !named || !path.last().is_some_and(|first| roots.contains(first)) {
             continue;
         }
         if tokens.get(index + 1).is_some_and(|t| t.is_ident("as"))
