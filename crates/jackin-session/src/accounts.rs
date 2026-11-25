@@ -265,13 +265,24 @@ impl Effects {
         self.forget.is_empty() && self.publish.is_empty()
     }
 
-    fn needs_every_gateway(&self) -> bool {
-        !self.forget.is_empty()
+    fn scope(&self) -> GatewayScope {
+        if !self.forget.is_empty()
             || self
                 .publish
                 .iter()
                 .any(|publish| publish.previous.is_some())
+        {
+            GatewayScope::Every
+        } else {
+            GatewayScope::Home
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GatewayScope {
+    Home,
+    Every,
 }
 
 fn touched(edit: &ConfigEdit) -> Option<&AccountName> {
@@ -547,12 +558,19 @@ fn on_gateway(gateway: &GatewayName, error: AccountError) -> AccountEditError {
     }
 }
 
-fn check_gateways(config: &Config, gateways: &Gateways) -> Result<(), AccountError> {
+fn check_gateways(
+    config: &Config,
+    gateways: &Gateways,
+    scope: GatewayScope,
+) -> Result<(), AccountError> {
     let connected = gateways.names();
     if let Some(gone) = connected.iter().find(|name| config.gateway(name).is_none()) {
         return Err(AccountError::GatewayRemoved {
             gateway: (*gone).clone(),
         });
+    }
+    if scope == GatewayScope::Home {
+        return Ok(());
     }
     match config
         .gateways()
@@ -594,6 +612,24 @@ impl GatewayPlan {
         &self.locked.config
     }
 
+    pub fn scope(&self) -> GatewayScope {
+        self.effects.scope()
+    }
+
+    pub async fn connect(
+        &self,
+        home: Session,
+        connector: &dyn GatewayConnector,
+        cancel: &CancellationToken,
+    ) -> Result<Gateways, ConnectError> {
+        match self.scope() {
+            GatewayScope::Home => Ok(Gateways::single(home)),
+            GatewayScope::Every => {
+                Gateways::with_peers(home, &self.locked.config, connector, cancel).await
+            }
+        }
+    }
+
     pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
         let GatewayPlan {
             locked,
@@ -601,14 +637,13 @@ impl GatewayPlan {
             effects,
             agents,
         } = self;
-        check_gateways(&locked.config, gateways)?;
+        let scope = effects.scope();
+        check_gateways(&locked.config, gateways, scope)?;
         let store = &locked.desk.store;
         check_gateway_entries(&locked.config, &store.load().await?)?;
-        let home = gateways.home();
-        let sessions = if effects.needs_every_gateway() {
-            gateways.every().map_err(AccountEditError::Unreachable)?
-        } else {
-            vec![home]
+        let sessions = match scope {
+            GatewayScope::Every => gateways.every().map_err(AccountEditError::Unreachable)?,
+            GatewayScope::Home => vec![gateways.home()],
         };
         let mut journal = Vec::new();
         let written = async {

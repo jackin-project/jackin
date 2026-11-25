@@ -623,6 +623,386 @@ async fn a_removal_reaches_a_gateway_that_was_added_after_the_console_opened() -
     .await
 }
 
+async fn with_unreached_peer(
+    lab: &mut Lab,
+) -> Result<(Arc<ScriptedConnector>, GatewayName, Arc<FakeGateway>), Box<dyn std::error::Error>> {
+    let name = GatewayName::parse("late")?;
+    let peer = Arc::new(FakeGateway::new(
+        name.clone(),
+        OpenShellWorkspace::parse("default")?,
+    ));
+    let entry = lab
+        .config()
+        .await?
+        .gateways()
+        .next()
+        .map(|(_, entry)| entry.clone())
+        .ok_or("entry")?;
+    let home: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
+    let other: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&peer);
+    let connector = Arc::new(
+        ScriptedConnector::new()
+            .gateway(home, Vec::new())
+            .gateway(other, Vec::new()),
+    );
+    lab.console = ConsoleRig::builder(&lab.rig.world)
+        .connector(connector_over(
+            &lab.rig.world,
+            Arc::<ScriptedConnector>::clone(&connector),
+        ))
+        .build()
+        .await?;
+    lab.console.skip_intro();
+    lab.edit(vec![ConfigEdit::AddGateway {
+        name: name.clone(),
+        entry,
+    }])
+    .await?;
+    Ok((connector, name, peer))
+}
+
+fn added_login(registry: &mut jackin_console::domain::account::AccountRegistry, lab: &Lab) {
+    registry.accounts.push(Account::registered(
+        UNSAVED_ID,
+        "newlogin",
+        Provider::OpenAi,
+        CredentialSource::LocalFolder {
+            path: lab.rig.home.as_path().display().to_string(),
+            detected: DetectedKind::CodexAuthJson,
+        },
+    ));
+}
+
+#[tokio::test]
+async fn a_new_account_does_not_dial_a_peer_the_console_has_not_reached() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (connector, name, peer) = with_unreached_peer(&mut lab).await?;
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        added_login(&mut registry, &lab);
+        lab.perform(Effect::SaveAccounts {
+            ticket: 1,
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        assert!(lab.config().await?.account(&account("newlogin")?).is_some());
+        assert!(
+            lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
+        assert!(!peer.providers().contains(&provider_of("newlogin")?));
+        assert_eq!(connector.calls(&name), 0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_add_with_a_removal_forgets_the_provider_on_a_peer_the_console_has_not_reached()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        second_login(&lab).await?;
+        lab.reopen().await?;
+        let (_connector, _name, peer) = with_unreached_peer(&mut lab).await?;
+        let login = lab
+            .config()
+            .await?
+            .account(&account("second")?)
+            .cloned()
+            .ok_or("second")?;
+        let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&peer);
+        session_over(&lab.rig.world, port)
+            .sync_account(&login, Agent::Codex, &CancellationToken::new())
+            .await?;
+        assert!(peer.providers().contains(&provider_of("second")?));
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        remove_second(&mut registry);
+        added_login(&mut registry, &lab);
+        lab.perform(Effect::SaveAccounts {
+            ticket: 1,
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        let config = lab.config().await?;
+        assert!(config.account(&account("newlogin")?).is_some());
+        assert!(config.account(&account("second")?).is_none());
+        assert!(!peer.providers().contains(&provider_of("second")?));
+        Ok(())
+    })
+    .await
+}
+
+#[derive(Debug)]
+struct EntryConnector {
+    fallback: Arc<dyn Gateway>,
+    by_builder: std::sync::Mutex<std::collections::BTreeMap<String, Arc<dyn Gateway>>>,
+    behavior: std::sync::Mutex<Dial>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Dial {
+    Serve,
+    Refuse,
+    Stall,
+}
+
+impl EntryConnector {
+    fn new(fallback: Arc<dyn Gateway>) -> EntryConnector {
+        EntryConnector {
+            fallback,
+            by_builder: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            behavior: std::sync::Mutex::new(Dial::Serve),
+        }
+    }
+
+    fn serve(&self, builder: &str, gateway: Arc<dyn Gateway>) {
+        if let Ok(mut held) = self.by_builder.lock() {
+            held.insert(builder.to_owned(), gateway);
+        }
+    }
+
+    fn behave(&self, behavior: Dial) {
+        if let Ok(mut held) = self.behavior.lock() {
+            *held = behavior;
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl jackin_session::GatewayConnector for EntryConnector {
+    async fn connect(
+        &self,
+        _name: &GatewayName,
+        entry: &jackin_core::GatewayEntry,
+        _cancel: &CancellationToken,
+    ) -> Result<Arc<dyn Gateway>, jackin_session::ConnectError> {
+        let behavior = self.behavior.lock().map_or(Dial::Serve, |held| *held);
+        match behavior {
+            Dial::Serve => {}
+            Dial::Stall => std::future::pending().await,
+            Dial::Refuse => {
+                return Err(jackin_session::ConnectError::Gateway(
+                    jackin_openshell::GatewayError::Unreachable {
+                        endpoint: "moved".to_owned(),
+                        message: "refused".to_owned(),
+                    },
+                ));
+            }
+        }
+        let chosen = self
+            .by_builder
+            .lock()
+            .ok()
+            .and_then(|held| held.get(entry.builder.as_str()).cloned());
+        Ok(chosen.unwrap_or_else(|| Arc::clone(&self.fallback)))
+    }
+}
+
+fn moved_entry(builder: &str) -> Result<jackin_core::GatewayEntry, Box<dyn std::error::Error>> {
+    jackin_core::Config::parse(&format!(
+        "[gateways.moved]\nopenshell_workspace = \"default\"\nbuilder = \"{builder}\"\nplatform = \"linux/arm64\"\n"
+    ))?
+    .gateway(&GatewayName::parse("moved")?)
+    .cloned()
+    .ok_or_else(|| "moved".into())
+}
+
+async fn console_over(lab: &mut Lab, connector: &Arc<EntryConnector>) -> TestResult {
+    lab.console = ConsoleRig::builder(&lab.rig.world)
+        .deadline(Duration::from_millis(300))
+        .connector(connector_over(
+            &lab.rig.world,
+            Arc::<EntryConnector>::clone(connector),
+        ))
+        .build()
+        .await?;
+    lab.console.skip_intro();
+    Ok(())
+}
+
+async fn move_the_home_entry(
+    lab: &mut Lab,
+    behavior: Dial,
+) -> Result<(GatewayName, Arc<FakeGateway>), Box<dyn std::error::Error>> {
+    let home = lab
+        .config()
+        .await?
+        .gateways()
+        .next()
+        .map(|(name, _)| name.clone())
+        .ok_or("home gateway")?;
+    let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
+    let connector = Arc::new(EntryConnector::new(port));
+    let relocated = Arc::new(FakeGateway::new(
+        home.clone(),
+        OpenShellWorkspace::parse("default")?,
+    ));
+    let served: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&relocated);
+    connector.serve("moved", served);
+    console_over(lab, &connector).await?;
+    connector.behave(behavior);
+    lab.edit(vec![
+        ConfigEdit::SetDefaultGateway(None),
+        ConfigEdit::RemoveGateway(home.clone()),
+        ConfigEdit::AddGateway {
+            name: home.clone(),
+            entry: moved_entry("moved")?,
+        },
+        ConfigEdit::SetDefaultGateway(Some(home.clone())),
+    ])
+    .await?;
+    Ok((home, relocated))
+}
+
+async fn save_the_new_login(lab: &mut Lab) -> TestResult {
+    let base = lab.world().accounts.clone();
+    let mut registry = base.clone();
+    added_login(&mut registry, lab);
+    lab.perform(Effect::SaveAccounts {
+        ticket: 1,
+        base: Box::new(base),
+        registry: Box::new(registry),
+    })
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_new_account_publishes_through_a_home_gateway_dialed_with_the_current_entry() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (_home, relocated) = move_the_home_entry(&mut lab, Dial::Serve).await?;
+        save_the_new_login(&mut lab).await?;
+        assert!(lab.config().await?.account(&account("newlogin")?).is_some());
+        assert!(relocated.providers().contains(&provider_of("newlogin")?));
+        assert!(
+            !lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_home_gateway_that_refuses_its_moved_entry_blocks_the_save_and_publishes_nothing()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let before = lab.config().await?;
+        let (_home, relocated) = move_the_home_entry(&mut lab, Dial::Refuse).await?;
+        save_the_new_login(&mut lab).await?;
+        let config = lab.config().await?;
+        assert!(config.account(&account("newlogin")?).is_none());
+        assert!(!relocated.providers().contains(&provider_of("newlogin")?));
+        assert!(
+            !lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
+        assert_eq!(config.accounts().count(), before.accounts().count());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_home_gateway_that_stalls_on_its_moved_entry_blocks_the_save_within_the_connect_deadline()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let before = lab.config().await?;
+        let (_home, relocated) = move_the_home_entry(&mut lab, Dial::Stall).await?;
+        tokio::time::pause();
+        let started = tokio::time::Instant::now();
+        save_the_new_login(&mut lab).await?;
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "the save waited {:?} for a stalled dial with a 300ms deadline",
+            started.elapsed()
+        );
+        let config = lab.config().await?;
+        assert!(config.account(&account("newlogin")?).is_none());
+        assert!(!relocated.providers().contains(&provider_of("newlogin")?));
+        assert_eq!(config.accounts().count(), before.accounts().count());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_removal_reaches_the_current_entry_of_a_peer_that_moved_after_it_was_reached()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        second_login(&lab).await?;
+        lab.reopen().await?;
+        let login = lab
+            .config()
+            .await?
+            .account(&account("second")?)
+            .cloned()
+            .ok_or("second")?;
+        let name = GatewayName::parse("late")?;
+        let workspace = OpenShellWorkspace::parse("default")?;
+        let old_peer = Arc::new(FakeGateway::new(name.clone(), workspace.clone()));
+        let new_peer = Arc::new(FakeGateway::new(name.clone(), workspace));
+        let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
+        let connector = Arc::new(EntryConnector::new(port));
+        let old: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&old_peer);
+        let new: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&new_peer);
+        connector.serve("early", Arc::clone(&old));
+        connector.serve("later", Arc::clone(&new));
+        lab.edit(vec![ConfigEdit::AddGateway {
+            name: name.clone(),
+            entry: moved_entry("early")?,
+        }])
+        .await?;
+        console_over(&mut lab, &connector).await?;
+        for peer in [old, new] {
+            session_over(&lab.rig.world, peer)
+                .sync_account(&login, Agent::Codex, &CancellationToken::new())
+                .await?;
+        }
+        lab.edit(vec![
+            ConfigEdit::RemoveGateway(name.clone()),
+            ConfigEdit::AddGateway {
+                name: name.clone(),
+                entry: moved_entry("later")?,
+            },
+        ])
+        .await?;
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        remove_second(&mut registry);
+        lab.perform(Effect::SaveAccounts {
+            ticket: 1,
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        assert!(lab.config().await?.account(&account("second")?).is_none());
+        assert!(!new_peer.providers().contains(&provider_of("second")?));
+        assert!(old_peer.providers().contains(&provider_of("second")?));
+        Ok(())
+    })
+    .await
+}
+
 #[tokio::test]
 async fn an_add_publishes_nothing_when_the_home_gateway_left_the_config() -> TestResult {
     guard(async {

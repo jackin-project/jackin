@@ -11,7 +11,8 @@ use futures::future::join_all;
 use jackin_core::{Config, ConfigError, GatewayEntry, GatewayName};
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::{
-    ConnectError, GatewayAccess, GatewayConnector, Gateways, Session, UnreachableGateway,
+    ConnectError, GatewayAccess, GatewayConnector, GatewayScope, Gateways, Session,
+    UnreachableGateway,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -215,14 +216,6 @@ pub struct SessionSet {
     state: Mutex<State>,
 }
 
-fn built_matches(
-    built: &BTreeMap<GatewayName, GatewayEntry>,
-    config: &Config,
-    name: &GatewayName,
-) -> bool {
-    built.get(name) == config.gateway(name)
-}
-
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -289,7 +282,7 @@ impl SessionSet {
             let mut guard = locked(&self.state);
             let State { slots, built, .. } = &mut *guard;
             slots.retain(|name, _| {
-                config.gateway(name).is_some() && built_matches(built, config, name)
+                config.gateway(name).is_some() && built.get(name) == config.gateway(name)
             });
             built.retain(|name, _| slots.contains_key(name));
             config
@@ -346,47 +339,88 @@ impl SessionSet {
             .collect()
     }
 
+    async fn redial(
+        &self,
+        name: &GatewayName,
+        entry: &GatewayEntry,
+        previous: Option<GatewayEntry>,
+        connector: &dyn SessionConnector,
+        deadline: Duration,
+        cancel: &CancellationToken,
+    ) -> Result<Session, GatewayError> {
+        let session = match within(deadline, connector.connect(name, entry, cancel)).await {
+            Some(Ok(session)) => session,
+            Some(Err(error)) => return Err(error),
+            None => {
+                return Err(GatewayError::Unreachable {
+                    endpoint: name.to_string(),
+                    message: TimedOut(Waited(deadline)).to_string(),
+                });
+            }
+        };
+        let mut state = locked(&self.state);
+        if state.built.get(name) == previous.as_ref() {
+            state
+                .slots
+                .insert(name.clone(), Slot::Up(Box::new(session.clone())));
+            state.built.insert(name.clone(), entry.clone());
+        }
+        Ok(session)
+    }
+
     pub(crate) async fn home(
         &self,
         config: &Config,
+        scope: GatewayScope,
         connector: &dyn SessionConnector,
+        deadline: Duration,
         cancel: &CancellationToken,
     ) -> Home {
-        let (default, home, known) = {
+        let (default, cached, stale) = {
             let state = locked(&self.state);
             let Some(default) = state.default.name().cloned() else {
                 return Home::NotChosen;
             };
-            let stale = |name: &GatewayName| {
-                config.gateway(name).is_some() && !built_matches(&state.built, config, name)
-            };
-            let home = match state.slots.get(&default) {
+            let cached = match state.slots.get(&default) {
                 None => return Home::NotChosen,
-                Some(_) if stale(&default) => None,
                 Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
-                Some(Slot::Up(session)) => Some(Session::clone(session)),
+                Some(Slot::Up(session)) => Session::clone(session),
             };
-            let known: BTreeMap<GatewayName, Reached> = state
+            let built = state.built.get(&default).cloned();
+            let stale = config
+                .gateway(&default)
+                .filter(|entry| built.as_ref() != Some(*entry))
+                .map(|entry| (entry.clone(), built));
+            (default, cached, stale)
+        };
+        let home = match stale {
+            None => cached,
+            Some((entry, previous)) => {
+                match self
+                    .redial(&default, &entry, previous, connector, deadline, cancel)
+                    .await
+                {
+                    Ok(session) => session,
+                    Err(error) => return Home::Down(Arc::new(error)),
+                }
+            }
+        };
+        if scope == GatewayScope::Home {
+            return Home::Ready(Box::new(Gateways::single(home)));
+        }
+        let known: BTreeMap<GatewayName, (Reached, Option<GatewayEntry>)> = {
+            let state = locked(&self.state);
+            state
                 .slots
                 .iter()
-                .filter(|(name, _)| !stale(name))
                 .map(|(name, slot)| {
                     let reached = match slot {
                         Slot::Up(session) => Reached::Up(session.clone()),
                         Slot::Down(error) => Reached::Down(Arc::clone(error)),
                     };
-                    (name.clone(), reached)
+                    (name.clone(), (reached, state.built.get(name).cloned()))
                 })
-                .collect();
-            (default, home, known)
-        };
-        let home = match (home, config.gateway(&default)) {
-            (Some(home), _) => home,
-            (None, Some(entry)) => match self.redial(&default, entry, connector, cancel).await {
-                Ok(session) => session,
-                Err(error) => return Home::Down(error),
-            },
-            (None, None) => return Home::NotChosen,
+                .collect()
         };
         let unreachable = |name: &GatewayName, error: &GatewayError| {
             UnreachableGateway::new(
@@ -400,8 +434,14 @@ impl SessionSet {
         let mut peers = Vec::new();
         for (name, entry) in config.gateways().filter(|(name, _)| **name != default) {
             peers.push(match known.get(name) {
-                Some(Reached::Up(session)) => Ok(Session::clone(session)),
-                Some(Reached::Down(error)) => Err(unreachable(name, error)),
+                Some((Reached::Up(session), built)) if built.as_ref() == Some(entry) => {
+                    Ok(Session::clone(session))
+                }
+                Some((Reached::Up(_), built)) => self
+                    .redial(name, entry, built.clone(), connector, deadline, cancel)
+                    .await
+                    .map_err(|error| unreachable(name, &error)),
+                Some((Reached::Down(error), _)) => Err(unreachable(name, error)),
                 None => connector
                     .connect(name, entry, cancel)
                     .await
@@ -409,33 +449,6 @@ impl SessionSet {
             });
         }
         Home::Ready(Box::new(Gateways::assemble(home, peers)))
-    }
-
-    async fn redial(
-        &self,
-        name: &GatewayName,
-        entry: &GatewayEntry,
-        connector: &dyn SessionConnector,
-        cancel: &CancellationToken,
-    ) -> Result<Session, Arc<GatewayError>> {
-        let outcome = connector.connect(name, entry, cancel).await;
-        let mut state = locked(&self.state);
-        state.built.insert(name.clone(), entry.clone());
-        match outcome {
-            Ok(session) => {
-                state
-                    .slots
-                    .insert(name.clone(), Slot::Up(Box::new(session.clone())));
-                Ok(session)
-            }
-            Err(error) => {
-                let error = Arc::new(error);
-                state
-                    .slots
-                    .insert(name.clone(), Slot::Down(Arc::clone(&error)));
-                Err(error)
-            }
-        }
     }
 
     pub(crate) fn access(&self, name: &GatewayName) -> Access {

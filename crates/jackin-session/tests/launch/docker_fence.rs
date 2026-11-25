@@ -14,7 +14,8 @@ use jackin_session::{
     plan_launch,
 };
 use jackin_testkit::{
-    BuildEffect, ENGINE_PORT, EngineMoment, Fault, HostEdit, Outcome, Rig, Trigger, launch_id,
+    BuildEffect, ENGINE_PORT, EngineCertificateSet, EngineMoment, Fault, HostEdit, Outcome, Rig,
+    Trigger, launch_id,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -241,16 +242,18 @@ async fn a_retry_after_rotating_only_the_client_certificate_and_key_continues() 
         let rig = docker_rig(false, true, Engine::WithCerts).await?;
         ready(rig.launch_observed(1).await?)?;
         let labels = rig.handle(1).await?.labels();
-        let fresh_cert = "-----BEGIN CERTIFICATE-----\nRlJFU0hDRVJURlJFU0hDRVJURlJFU0g=\n-----END CERTIFICATE-----\n";
-        let fresh_key = "-----BEGIN PRIVATE KEY-----\nRlJFU0hLRVlGUkVTSEtFWUZSRVNIS0U=\n-----END PRIVATE KEY-----\n";
-        rewrite(&rig, EngineCert::Cert, fresh_cert)?;
-        rewrite(&rig, EngineCert::Key, fresh_key)?;
+        let fresh = EngineCertificateSet::generate()?;
+        rewrite(&rig, EngineCert::Cert, &fresh.cert)?;
+        rewrite(&rig, EngineCert::Key, &fresh.key)?;
         ready(retry(&rig, &rig.config, Rebuild::No).await?)?;
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         let handle = rig.handle(1).await?;
         assert_eq!(handle.labels(), labels);
         let files = docker_files(&handle);
-        for (cert, text) in [(EngineCert::Cert, fresh_cert), (EngineCert::Key, fresh_key)] {
+        for (cert, text) in [
+            (EngineCert::Cert, &fresh.cert),
+            (EngineCert::Key, &fresh.key),
+        ] {
             assert_eq!(
                 files.get(&cert.sandbox_path()).map(Vec::as_slice),
                 Some(text.as_bytes()),

@@ -12,6 +12,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+base64 = { workspace = true }
 clap = { workspace = true }
 jackin-console = { workspace = true, features = ["demo"] }
 jackin-core = { workspace = true }
@@ -23,6 +24,7 @@ jackin-usage = { workspace = true }
 termrock = { workspace = true, features = ["cli"] }
 portable-pty = { workspace = true }
 ratatui = { workspace = true }
+rcgen = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
