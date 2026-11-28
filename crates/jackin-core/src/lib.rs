@@ -18,6 +18,7 @@ mod model_selection;
 mod paths;
 mod phase;
 mod platform;
+mod preflight;
 mod provider;
 mod secret;
 mod sqlite_capture;

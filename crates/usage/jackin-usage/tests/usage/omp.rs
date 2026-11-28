@@ -717,9 +717,7 @@ const HANG: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provi
      WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r WHERE x < 400000) INSERT INTO auth_credentials (id, provider, data) SELECT x, 'zai', 'x' FROM r;
      ALTER TABLE auth_credentials ADD COLUMN credential_type TEXT AS (CASE WHEN length(hex(zeroblob(60000 + id % 2))) > 0 THEN 'never' END);";
 
-async fn schema_report(
-    schema: &str,
-) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+async fn schema_fixture(schema: &str) -> Result<Omp, Box<dyn std::error::Error>> {
     let omp = started(&[]).await?;
     let directory = omp.directory.path().join(".omp").join("agent");
     std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
@@ -727,7 +725,16 @@ async fn schema_report(
     let connection = Connection::open(directory.join("agent.db"))?;
     connection.execute_batch(schema)?;
     drop(connection);
-    let finished = tokio::time::timeout(Duration::from_secs(30), omp.report()).await;
+    Ok(omp)
+}
+
+const SCHEMA_REPORT_TIMEOUT: Duration = Duration::from_secs(30);
+
+async fn schema_report(
+    schema: &str,
+) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+    let omp = schema_fixture(schema).await?;
+    let finished = tokio::time::timeout(SCHEMA_REPORT_TIMEOUT, omp.report()).await;
     finished.map_err(|_| "the report did not finish")?
 }
 
@@ -740,19 +747,24 @@ fn is_unreadable(outcome: &jackin_usage::UsageOutcome) -> bool {
 
 #[tokio::test]
 async fn a_credential_query_that_never_finishes_is_given_up_on_and_frees_its_place() -> TestResult {
-    guard(async {
-        for _ in 0..3 {
-            let outcome = schema_report(HANG).await?;
-            assert!(is_unreadable(&outcome), "{outcome:?}");
-        }
-        let again = started(&[(1, &key_json(KEY))]).await?;
-        let outcome = tokio::time::timeout(Duration::from_secs(10), again.report())
+    let setup_timeout = Duration::from_secs(10);
+    for attempt in 1..=3 {
+        let omp = tokio::time::timeout(setup_timeout, schema_fixture(HANG))
             .await
-            .map_err(|_| "the worker of an abandoned query still holds its place")??;
-        assert_eq!(windows_of(&outcome).len(), 2);
-        Ok(())
-    })
-    .await
+            .map_err(|_| format!("the fixture for attempt {attempt} did not finish"))??;
+        let outcome = tokio::time::timeout(SCHEMA_REPORT_TIMEOUT, omp.report())
+            .await
+            .map_err(|_| format!("the report for attempt {attempt} did not finish"))??;
+        assert!(is_unreadable(&outcome), "attempt {attempt}: {outcome:?}");
+    }
+    let again = tokio::time::timeout(setup_timeout, started(&[(1, &key_json(KEY))]))
+        .await
+        .map_err(|_| "the recovery fixture did not finish")??;
+    let outcome = tokio::time::timeout(Duration::from_secs(10), again.report())
+        .await
+        .map_err(|_| "the worker of an abandoned query still holds its place")??;
+    assert_eq!(windows_of(&outcome).len(), 2);
+    Ok(())
 }
 
 #[tokio::test]
@@ -828,6 +840,62 @@ async fn a_credential_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unr
             ),
             "{outcome:?}"
         );
+        Ok(())
+    })
+    .await
+}
+
+const REAL_TABLE: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, credential_type TEXT NOT NULL, data TEXT NOT NULL);";
+const SORTING_TABLE: &str =
+    "CREATE TABLE auth_credentials (id INTEGER, provider TEXT, credential_type TEXT, data TEXT);";
+
+fn omp_rows(table: &str, rows: &[(i64, String)]) -> String {
+    let mut sql = table.to_owned();
+    for (id, data) in rows {
+        sql.push_str(&format!(
+            "INSERT INTO auth_credentials (id, provider, credential_type, data) VALUES ({id}, 'zai', 'api_key', '{}');",
+            data.replace('\'', "''")
+        ));
+    }
+    sql
+}
+
+#[tokio::test]
+async fn an_oversized_row_the_selection_skips_does_not_hide_the_selected_credential() -> TestResult
+{
+    guard(async {
+        for (name, table) in [("real", REAL_TABLE), ("sorting", SORTING_TABLE)] {
+            for stale in [100_000_usize, 200_000, 4_000_000] {
+                let rows = [(1, "x".repeat(stale)), (2, key_json(KEY))];
+                let outcome = schema_report(&omp_rows(table, &rows)).await?;
+                assert_eq!(
+                    windows_of(&outcome).len(),
+                    2,
+                    "{name} schema, {stale} bytes: {outcome:?}"
+                );
+            }
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_oversized_selected_row_is_refused_and_never_replaced_by_an_older_one() -> TestResult {
+    guard(async {
+        for (name, table) in [("real", REAL_TABLE), ("sorting", SORTING_TABLE)] {
+            for newest in [64 * 1024 + 1, 100_000, 200_000] {
+                let rows = [
+                    (1, key_json("SECRET_TOKEN_OMP_STALE")),
+                    (2, "x".repeat(newest)),
+                ];
+                let outcome = schema_report(&omp_rows(table, &rows)).await?;
+                assert!(
+                    is_unreadable(&outcome),
+                    "{name} schema, {newest} bytes: {outcome:?}"
+                );
+            }
+        }
         Ok(())
     })
     .await

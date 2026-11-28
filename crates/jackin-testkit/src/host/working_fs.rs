@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use jackin_core::{
-    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
+    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, Hold, HostPath,
     LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 
@@ -94,9 +94,27 @@ impl FileSystem for WorkingFs {
         self.inner.stat_following(path).await
     }
 
+    async fn stat_following_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<FileKind>, FsError> {
+        let _working = self.clock.working();
+        self.inner.stat_following_holding(path, hold).await
+    }
+
     async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
         let _working = self.clock.working();
         self.inner.canonicalize(path).await
+    }
+
+    async fn canonicalize_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<HostPath>, FsError> {
+        let _working = self.clock.working();
+        self.inner.canonicalize_holding(path, hold).await
     }
 
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
@@ -184,6 +202,19 @@ impl FileSystem for WorkingFs {
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let _working = self.clock.working();
         self.inner.read_regular(root, file, max_bytes).await
+    }
+
+    async fn read_regular_holding(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+        hold: Hold,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let _working = self.clock.working();
+        self.inner
+            .read_regular_holding(root, file, max_bytes, hold)
+            .await
     }
 
     async fn read_link(

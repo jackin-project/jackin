@@ -63,7 +63,9 @@ fn rejects_unusable_readings_and_preserves_omitted_values() -> Result<(), Box<dy
     payload["product"] = json!("antigravity");
     for quota in [
         json!({}),
-        json!({"gemini-weekly":{"remaining_amount":5}}),
+        json!({"gemini-weekly":{"remaining_amount":-1}}),
+        json!({"gemini-weekly":{"remaining_amount":"5"}}),
+        json!({"gemini-weekly":{"remaining_amount":5,"disabled":true}}),
         json!({"gemini-weekly":{"remaining_fraction":0.5,"disabled":"false"}}),
     ] {
         payload["quota"] = quota;
@@ -107,5 +109,33 @@ fn rejects_unusable_readings_and_preserves_omitted_values() -> Result<(), Box<dy
     parse(&payload)
         .err()
         .ok_or("expected invalid reading to fail")?;
+    Ok(())
+}
+
+#[test]
+fn an_amount_only_bucket_keeps_its_amount_without_inventing_a_percent() -> Result<(), Box<dyn Error>>
+{
+    let payload = json!({
+        "product": "antigravity", "email": "a@example.test",
+        "quota": {
+            "gemini-5h":{"remaining_amount":42,"reset_in_seconds":60},
+            "gemini-weekly":{"remaining_amount":7.5,"remaining_fraction":0.25},
+            "3p-5h":{"remaining_amount":0}
+        }
+    });
+    let reading =
+        antigravity_statusline(&serde_json::to_vec(&payload)?, 100)?.ok_or("missing reading")?;
+    let resources = &reading.snapshot["resources"];
+    let amount = &resources["gemini-5h"];
+    assert_eq!(amount["remaining"], 42.0);
+    assert_eq!(amount["unit"], "count");
+    assert_eq!(amount["window_seconds"], 18000);
+    assert_eq!(amount["resets_at"], 160);
+    assert!(amount.get("remaining_fraction").is_none());
+    assert_eq!(resources["3p-5h"]["remaining"], 0.0);
+    let both = &resources["gemini-weekly"];
+    assert_eq!(both["remaining_fraction"], 0.25);
+    assert_eq!(both["unit"], "percent");
+    assert!(both.get("remaining").is_none());
     Ok(())
 }

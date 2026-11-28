@@ -310,7 +310,8 @@
               "manifest": null,
               "features": [
                 "sync",
-                "macros"
+                "macros",
+                "test-util"
               ]
             }
           ],
@@ -3230,7 +3231,7 @@
   },
   "manifests": {
     "Cargo.toml": "8d12116f1cfce78af8b27f0589c78378f8f033e23f33205c78932082679958c6",
-    "crates/jackin-core/Cargo.toml": "485d7bc295ce4a1b789683bfea6edf87118862aed0bff4599595dbc490be6ff6",
+    "crates/jackin-core/Cargo.toml": "04c029db8cc2ff115fa862c51d6362514737c8fb906dd6554d19e1b1ffc09fb3",
     "crates/jackin-image/Cargo.toml": "9b97498a682f4cb9550f4019c4839a2c3a5ff99c142235d9e34edab30cb062f3",
     "crates/jackin-openshell/Cargo.toml": "6f0bc40a09df45272e0697b20345ed999e8f0118abc80a860c9fd57adfc7a4f3",
     "crates/jackin-session/Cargo.toml": "2783ffb32252ef139168a7e7809ba27e6513215af117001804295545663130cc",

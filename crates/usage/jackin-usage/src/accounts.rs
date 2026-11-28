@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod antigravity;
+pub(crate) use antigravity::EnrollmentTarget;
 mod claims;
 pub(crate) mod claude_budget;
 pub mod hubs;

@@ -108,9 +108,6 @@ pub enum LoginPrompt {
         masked: bool,
         reply: oneshot::Sender<Secret>,
     },
-    Callback {
-        url: Url,
-    },
     Key {
         url: &'static str,
         reply: oneshot::Sender<Secret>,
@@ -133,7 +130,6 @@ impl fmt::Debug for LoginPrompt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Field { .. } => "Field",
-            Self::Callback { .. } => "Callback",
             Self::Key { .. } => "Key",
             Self::Browser { .. } => "Browser",
             Self::Device { .. } => "Device",
@@ -286,12 +282,20 @@ impl OwnedLogin {
         &self,
         id: Uuid,
     ) -> Result<(CredentialVersion, SecretBytes), LoginError> {
-        tokio::time::timeout(
-            self.store_wait,
-            self.with_registry(move |db| db.credential(id)),
-        )
-        .await
-        .map_err(|_| LoginError::CredentialStoreTimeout)?
+        let service = self.clone();
+        self.run_credential_read(move || service.open_registry()?.credential(id))
+            .await
+    }
+
+    async fn run_credential_read<T: Send + 'static>(
+        &self,
+        operation: impl FnOnce() -> Result<T, ConnectionError> + Send + 'static,
+    ) -> Result<T, LoginError> {
+        tokio::time::timeout(self.store_wait, tokio::task::spawn_blocking(operation))
+            .await
+            .map_err(|_| LoginError::CredentialStoreTimeout)?
+            .map_err(|_| LoginError::Worker)?
+            .map_err(Into::into)
     }
 
     async fn rotate(

@@ -188,3 +188,133 @@ async fn a_credential_file_follows_the_operator_link_and_refuses_everything_but_
     }
     Ok(())
 }
+
+mod bounded {
+    use std::io::ErrorKind;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use jackin_core::{
+        CaptureLimits, CaptureProblem, CredentialFileProblem, FileMode, FileSystem, FsError,
+        HostPath, SQLITE_MAGIC, capture, read_credential_file,
+    };
+    use jackin_testkit::MemFs;
+
+    use super::TestResult;
+
+    const OUTER: Duration = Duration::from_secs(120);
+
+    fn at(name: &str) -> Result<HostPath, Box<dyn std::error::Error>> {
+        Ok(HostPath::parse(&std::path::Path::new("/store").join(name))?)
+    }
+
+    async fn fixture(files: &[(&str, &[u8])]) -> Result<MemFs, Box<dyn std::error::Error>> {
+        let fs = MemFs::new();
+        fs.create_dir_all(&at("")?).await?;
+        for (name, bytes) in files {
+            fs.write_new(&at(name)?, bytes, FileMode(0o600)).await?;
+        }
+        Ok(fs)
+    }
+
+    fn timed_out(result: &Result<Result<Vec<u8>, CredentialFileProblem>, FsError>) -> bool {
+        matches!(
+            result,
+            Err(FsError::Io {
+                kind: ErrorKind::TimedOut,
+                ..
+            })
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_credential_read_that_never_returns_is_given_up_at_the_deadline() -> TestResult {
+        let fs = fixture(&[("auth.json", b"token")]).await?;
+        let probe = fs.stall_reads_of("auth.json");
+        let path = at("auth.json")?;
+        let result = tokio::time::timeout(OUTER, read_credential_file(&fs, &path))
+            .await
+            .map_err(|_| "the read outlived every deadline")?;
+        assert!(timed_out(&result), "{result:?}");
+        assert_eq!(probe.entered(), 1);
+        assert_eq!(probe.abandoned(), 1);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_credential_path_that_never_resolves_is_given_up_at_the_deadline() -> TestResult {
+        let fs = fixture(&[("auth.json", b"token")]).await?;
+        let probe = fs.stall_canonicalize_of("auth.json");
+        let path = at("auth.json")?;
+        let result = tokio::time::timeout(OUTER, read_credential_file(&fs, &path))
+            .await
+            .map_err(|_| "the lookup outlived every deadline")?;
+        assert!(timed_out(&result), "{result:?}");
+        assert_eq!(probe.entered(), 1);
+        assert_eq!(probe.abandoned(), 1);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_credential_read_that_the_caller_drops_leaves_no_read_behind() -> TestResult {
+        let fs = Arc::new(fixture(&[("auth.json", b"token")]).await?);
+        let probe = fs.stall_reads_of("auth.json");
+        let running = tokio::spawn({
+            let fs = Arc::clone(&fs);
+            async move {
+                read_credential_file(&*fs, &at("auth.json").expect("a path"))
+                    .await
+                    .map(drop)
+            }
+        });
+        for _ in 0..50 {
+            if probe.entered() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(probe.entered(), 1);
+        assert_eq!(probe.abandoned(), 0);
+        running.abort();
+        drop(running.await);
+        assert_eq!(probe.abandoned(), 1);
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reads_that_outlive_their_caller_keep_their_place_and_starve_the_next_probe()
+    -> TestResult {
+        let fs = fixture(&[("auth.json", b"token"), ("agent.db", &database())]).await?;
+        let stranded = fs.strand_reads_after("auth.json", 0);
+        let path = at("auth.json")?;
+        for attempt in 0..4 {
+            let read = tokio::time::timeout(OUTER, read_credential_file(&fs, &path))
+                .await
+                .map_err(|_| "a read outlived every deadline")?;
+            assert!(timed_out(&read), "read {attempt}: {read:?}");
+            assert_eq!(stranded.entered(), attempt + 1);
+        }
+        let fifth = tokio::time::timeout(OUTER, read_credential_file(&fs, &path))
+            .await
+            .map_err(|_| "the fifth read waited for ever")?;
+        assert!(timed_out(&fifth), "{fifth:?}");
+        assert_eq!(stranded.entered(), 4, "a fifth blocking call was started");
+        let limits = CaptureLimits {
+            database_bytes: 4096,
+            log_bytes: 1024,
+            image_bytes: 8192,
+            deadline: Duration::from_secs(5),
+        };
+        let starved = tokio::time::timeout(OUTER, capture(&fs, &at("agent.db")?, limits))
+            .await
+            .map_err(|_| "the capture waited for ever")?;
+        assert_eq!(starved.err(), Some(CaptureProblem::TimedOut));
+        Ok(())
+    }
+
+    fn database() -> Vec<u8> {
+        let mut bytes = SQLITE_MAGIC.to_vec();
+        bytes.resize(512, 0);
+        bytes
+    }
+}

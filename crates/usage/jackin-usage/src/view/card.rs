@@ -237,6 +237,23 @@ fn note_block(note: &Note, view: &UsageView, ctx: Ctx) -> Vec<Line> {
 
 pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
     match note {
+        Note::RemainingQuota {
+            label,
+            amount,
+            resets_at,
+            rolled_over,
+            ..
+        } => {
+            let mut parts = vec![if *rolled_over {
+                format!("{amount} left at fetch")
+            } else {
+                format!("{amount} left")
+            }];
+            if resets_at.is_some() {
+                parts.push(reset_phrase(*resets_at, view, true));
+            }
+            (label.clone(), parts)
+        }
         Note::Balance {
             label,
             amount,
