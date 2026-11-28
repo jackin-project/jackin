@@ -596,7 +596,8 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20           !content.is_empty()\n\
          \x20       });\n\
          \x20       {\n\
-         \x20           use ::core::matches;\n\
+         \x20           #[cfg(any())] use crate::model as core;\n\
+         \x20           use core::matches;\n\
          \x20           let _ = matches!(self, Self { content, .. });\n\
          \x20       }\n\
          \x20       macro_rules! matches { ($($tokens:tt)*) => { false }; }\n\
@@ -627,10 +628,10 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
         &[
             ("C1", 6, "destructures"),
             ("C1", 14, "destructures"),
-            ("C1", 20, "destructures"),
-            ("C1", 24, "destructures"),
-            ("C1", 35, "destructures"),
-            ("C1", 45, "destructures"),
+            ("C1", 21, "destructures"),
+            ("C1", 25, "destructures"),
+            ("C1", 36, "destructures"),
+            ("C1", 46, "destructures"),
         ],
     )
 }
@@ -638,7 +639,7 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
 #[test]
 fn out_of_line_buffer_reexports_preserve_provenance() -> TestResult {
     let workspace = tui("mod bridge;\n\
-         #[macro_use] mod model;\n\
+         #[allow(dead_code)] #[macro_use] mod model;\n\
          mod relay;\n\
          mod r#mod;\n\
          fn check(a: bridge::Buffer, b: model::Buffer, c: relay::Buffer, d: r#mod::Buffer) {\n\
