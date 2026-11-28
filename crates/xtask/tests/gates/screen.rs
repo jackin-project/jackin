@@ -179,12 +179,14 @@ fn standard_matches_guard_preserves_field_provenance() -> TestResult {
 fn builtin_include_reports_unchecked_source() -> TestResult {
     let workspace = tui("fn load() {\n\
         include!(\"fragment.inc\");\n\
-        include!(\"fragment.rs\");\n\
+        ::core::include!(\"fragment.rs\");\n\
         let _ = include_str!(\"fragment.inc\");\n\
         let _ = include_bytes!(\"fragment.inc\");\n\
         }\n\
         fn shadow() { macro_rules! include { ($t:tt) => { () } } include!(\"fragment.inc\"); }\n\
-        fn inert() { ::core::stringify!(include!(\"fragment.inc\")); }\n")?;
+        fn inert() { ::core::stringify!(include!(\"fragment.inc\")); }\n\
+        fn disabled() { #[cfg(any())] ::core::include!(\"fragment.rs\"); }\n\
+        fn guard() { let _ = matches!((), _ if { macro_rules! include { ($t:tt) => { () } } include!(\"fragment.inc\"); true }); }\n")?;
     workspace.write(
         "crates/jackin-tui/src/fragment.inc",
         "const FIRST_ITEM: u8 = 0;\n",
