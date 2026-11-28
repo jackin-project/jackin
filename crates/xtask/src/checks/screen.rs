@@ -1014,6 +1014,7 @@ enum ScopePosition {
 enum MatchesMacro {
     Prelude,
     Absolute,
+    Relative(usize),
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -1078,16 +1079,19 @@ fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
         return Some(MatchesMacro::Prelude);
     }
     let root = name.checked_sub(3)?;
-    if !matches!(tokens[root].ident(), Some("core" | "std"))
-        || !is_path_separator(tokens, root.wrapping_sub(2))
-        || tokens.get(root.wrapping_sub(3)).is_some_and(|token| {
-            token.ident().is_some()
-                && !KEYWORDS_BEFORE_PATH
-                    .iter()
-                    .chain(&["if", "while", "match", "break", "yield"])
-                    .any(|keyword| token.is_keyword(keyword))
-        })
-    {
+    if !matches!(tokens[root].ident(), Some("core" | "std")) {
+        return None;
+    }
+    if !is_path_separator(tokens, root.wrapping_sub(2)) {
+        return Some(MatchesMacro::Relative(root));
+    }
+    if tokens.get(root.wrapping_sub(3)).is_some_and(|token| {
+        token.ident().is_some()
+            && !KEYWORDS_BEFORE_PATH
+                .iter()
+                .chain(&["if", "while", "match", "break", "yield"])
+                .any(|keyword| token.is_keyword(keyword))
+    }) {
         return None;
     }
     Some(MatchesMacro::Absolute)
@@ -1536,7 +1540,7 @@ impl<'a> TypeScopes<'a> {
                     && !macro_item_disabled(tokens, index - 1);
                 if scope_state.self_receiver.is_some()
                     && let Some(kind) = matches_macro(tokens, index)
-                    && (matches!(kind, MatchesMacro::Absolute) || !scope_state.matches_textual)
+                    && (!matches!(kind, MatchesMacro::Prelude) || !scope_state.matches_textual)
                     && file.group_ends[open].is_some()
                 {
                     mark_matches_pattern(
@@ -1984,15 +1988,17 @@ impl<'a> TypeScopes<'a> {
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         let tokens = &self.files[source].tokens;
+        let rust_scope = matches!(
+            self.sources[source].enclosing[index],
+            Some(ScopePosition::Rust(_))
+        );
         Ok(match self.binding_at(source, index, work)? {
             Some(TypeBinding::RatatuiBuffer) => true,
-            Some(TypeBinding::Nominal)
-                if matches!(
-                    self.sources[source].enclosing[index],
-                    Some(ScopePosition::Rust(_))
-                ) =>
+            Some(TypeBinding::Nominal) if rust_scope => false,
+            Some(TypeBinding::Alias(alias))
+                if rust_scope && self.alias_is_ratatui_buffer(source, alias, None, work)? =>
             {
-                false
+                true
             }
             _ => {
                 tokens[index].is_ident("Buffer")
@@ -2016,6 +2022,15 @@ impl<'a> TypeScopes<'a> {
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Prelude))
                 if self.matches_prelude_visible(scope, work)? =>
             {
+                scope
+            }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Relative(root))) => {
+                let Some(name) = self.files[source].tokens[root].ident() else {
+                    return Ok(false);
+                };
+                if !self.matches_standard_root_visible(scope, name, work)? {
+                    return Ok(false);
+                }
                 scope
             }
             _ => return Ok(false),
