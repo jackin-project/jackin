@@ -1177,3 +1177,84 @@ fn conditional_nominal_proof_respects_outer_alias_parameters() -> TestResult {
         &[("C1", 8, "conditional")],
     )
 }
+
+#[test]
+fn generic_alias_self_in_standard_matches_keeps_receiver_scope() -> TestResult {
+    expect(
+        "type Identity<T> = T;\n\
+         trait Inspect { fn inspect(&self) -> bool; }\n\
+         impl Inspect for ratatui::buffer::Buffer {\n\
+         \x20   fn inspect(&self) -> bool {\n\
+         \x20       let _ = ::core::matches!(self, Identity::<Self> { content, .. } if !content.is_empty());\n\
+         \x20       let _ = stringify!(Identity::<Self> { content, .. });\n\
+         \x20       matches!(self, Identity::<Self> { content, .. })\n\
+         \x20   }\n\
+         }\n",
+        &[("C1", 5, "destructures"), ("C1", 7, "destructures")],
+    )
+}
+
+#[test]
+fn imported_named_enum_variants_preserve_nominal_provenance() -> TestResult {
+    expect(
+        "mod model { pub enum View { Buffer { value: u8 } } }\n\
+         use model::View::Buffer;\n\
+         fn inspect(local: model::View, actual: ratatui::buffer::Buffer) {\n\
+         \x20   let Buffer { value } = local;\n\
+         \x20   let ratatui::buffer::Buffer { content, .. } = actual;\n\
+         }\n",
+        &[("C1", 5, "destructures")],
+    )
+}
+
+#[test]
+fn nfc_equivalent_identifiers_preserve_type_provenance() -> TestResult {
+    expect(
+        "mod café { pub use ratatui::buffer::Buffer; }\n\
+         mod cafe\u{301}two { pub use ratatui::buffer::Buffer; }\n\
+         mod domain { pub struct Buffer { pub value: u8 } }\n\
+         fn inspect(a: café::Buffer, b: cafe\u{301}two::Buffer, c: domain::Buffer) {\n\
+         \x20   let cafe\u{301}::Buffer { content, .. } = a;\n\
+         \x20   let cafétwo::Buffer { content, .. } = b;\n\
+         \x20   let domain::Buffer { value } = c;\n\
+         }\n\
+         mod r#écran { pub struct Buffer { pub value: u8 } }\n\
+         fn raw(v: r#écran::Buffer) { let r#e\u{301}cran::Buffer { value } = v; }\n",
+        &[("C1", 5, "destructures"), ("C1", 6, "destructures")],
+    )
+}
+
+#[test]
+fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
+    let workspace = Workspace::empty()?;
+    workspace.write("Cargo.toml", &workspace_manifest(&["jackin-tui"], &[]))?;
+    workspace.write(
+        "crates/jackin-tui/Cargo.toml",
+        &member_manifest("jackin-tui", "[[bin]]\nname = \"custom\"\npath = \"src/custom.rs\"\n[[bin]]\nname = \"unicode\"\npath = \"src/cafe\u{301}.rs\"\n"),
+    )?;
+    workspace.write(LIB, "mod bridge { pub struct Buffer { pub content: Vec<u8> } }\nmod shared;\n")?;
+    workspace.write("crates/jackin-tui/src/main.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nmod shared;\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    workspace.write("crates/jackin-tui/src/bin/flat.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    workspace.write("crates/jackin-tui/src/bin/folder/main.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    workspace.write("crates/jackin-tui/src/custom.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    workspace.write("crates/jackin-tui/src/cafe\u{301}.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    workspace.write("crates/jackin-tui/src/shared.rs", "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    workspace.write("crates/jackin-tui/src/orphan.rs", "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    let violations = ScreenCheck::with_allowed(&[]).run(&workspace.repo()?);
+    let actual: Vec<_> = violations.iter().map(|violation| (violation.path.as_deref(), violation.line, violation.message.as_str())).collect();
+    let expected = [
+        (Path::new("crates/jackin-tui/src/bin/flat.rs"), 2),
+        (Path::new("crates/jackin-tui/src/bin/folder/main.rs"), 2),
+        (Path::new("crates/jackin-tui/src/cafe\u{301}.rs"), 2),
+        (Path::new("crates/jackin-tui/src/custom.rs"), 2),
+        (Path::new("crates/jackin-tui/src/main.rs"), 3),
+        (Path::new("crates/jackin-tui/src/shared.rs"), 1),
+    ];
+    assert_eq!(actual.len(), expected.len(), "{actual:#?}");
+    for ((path, line, message), (expected_path, expected_line)) in actual.iter().zip(expected) {
+        assert_eq!(*path, Some(expected_path));
+        assert_eq!(*line, Some(expected_line));
+        assert!(message.contains("C1: destructures"), "{message}");
+    }
+    Ok(())
+}
