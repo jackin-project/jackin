@@ -597,6 +597,32 @@ impl TypeAlias {
                 && tokens[range.start].is_ident(name)
         })
     }
+
+    fn type_parameter_default(&self, tokens: &[Token], slot: usize) -> Option<Range<usize>> {
+        let parameters = self.parameters.get(..=slot)?;
+        if parameters
+            .iter()
+            .any(|range| range.is_empty() || tokens[range.start].ident().is_none())
+        {
+            return None;
+        }
+        let parameter = parameters.last()?;
+        let equals = alias_boundary(&tokens[..parameter.end], parameter.start + 1)?;
+        let start = equals + 1;
+        (tokens[equals].is_punct('=') && start < parameter.end).then_some(start..parameter.end)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct AliasScope<'a> {
+    application: &'a AliasApplication<'a>,
+    available: usize,
+}
+
+struct AliasApplication<'a> {
+    alias: &'a TypeAlias,
+    arguments: &'a [Range<usize>],
+    caller: Option<AliasScope<'a>>,
 }
 
 enum TypeBinding<'a> {
@@ -963,30 +989,40 @@ impl<'a> TypeScopes<'a> {
         )
     }
 
-    fn projected_slot(
+    fn apply_alias(
         &self,
         tokens: &'a [Token],
         alias: &TypeAlias,
-        active: &mut Vec<usize>,
-    ) -> Option<usize> {
-        if active.contains(&alias.declaration) {
-            return None;
+        arguments: &[Range<usize>],
+        caller: Option<AliasScope<'_>>,
+    ) -> Option<Range<usize>> {
+        let mut ancestor = caller;
+        while let Some(scope) = ancestor {
+            if scope.application.alias.declaration == alias.declaration {
+                return None;
+            }
+            ancestor = scope.application.caller;
         }
-        let previous_count = active.len();
-        active.push(alias.declaration);
-        let value = self.projected_path(tokens, alias.value.clone(), active);
-        active.truncate(previous_count);
-        let [target] = &tokens[value?] else {
-            return None;
+        let application = AliasApplication {
+            alias,
+            arguments,
+            caller,
         };
-        alias.type_parameter_slot(tokens, target.ident()?)
+        self.projected_path(
+            tokens,
+            alias.value.clone(),
+            Some(AliasScope {
+                application: &application,
+                available: alias.parameters.len(),
+            }),
+        )
     }
 
     fn projected_path(
         &self,
         tokens: &'a [Token],
         mut value: Range<usize>,
-        active: &mut Vec<usize>,
+        mut scope: Option<AliasScope<'_>>,
     ) -> Option<Range<usize>> {
         loop {
             let first = value.start + 2 * usize::from(is_path_separator(tokens, value.start));
@@ -999,6 +1035,31 @@ impl<'a> TypeScopes<'a> {
                 end += 3;
             }
             if end + 1 == value.end {
+                if let Some(current) = scope
+                    && value.start == end
+                    && let Some(slot) = current
+                        .application
+                        .alias
+                        .type_parameter_slot(tokens, tokens[end].ident()?)
+                {
+                    if slot >= current.available {
+                        return None;
+                    }
+                    if let Some(argument) = current.application.arguments.get(slot) {
+                        value = argument.clone();
+                        scope = current.application.caller;
+                    } else {
+                        value = current
+                            .application
+                            .alias
+                            .type_parameter_default(tokens, slot)?;
+                        scope = Some(AliasScope {
+                            available: slot,
+                            ..current
+                        });
+                    }
+                    continue;
+                }
                 return Some(value);
             }
             let TypeBinding::Alias(alias) = self.binding_at(tokens, end)? else {
@@ -1009,8 +1070,7 @@ impl<'a> TypeScopes<'a> {
             if boundary != value.end {
                 return None;
             }
-            let slot = self.projected_slot(tokens, alias, active)?;
-            value = slots.get(slot)?.clone();
+            return self.apply_alias(tokens, alias, &slots, scope);
         }
     }
 
@@ -1084,9 +1144,7 @@ fn buffer_pattern_open<'a>(
         return None;
     };
     let (slots, open) = generic_slots(tokens, index + 3)?;
-    let mut active = Vec::new();
-    let slot = types.projected_slot(tokens, alias, &mut active)?;
-    let argument = types.projected_path(tokens, slots.get(slot)?.clone(), &mut active)?;
+    let argument = types.apply_alias(tokens, alias, &slots, None)?;
     matches!(
         types.binding_at(tokens, argument.end - 1),
         Some(TypeBinding::RatatuiBuffer)
