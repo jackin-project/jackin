@@ -78,6 +78,7 @@ pub(crate) struct Token {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Tok {
     Ident(String),
+    RawIdent(String),
     Str(String),
     Number(String),
     Punct(char),
@@ -95,7 +96,7 @@ pub(crate) struct Comment {
 impl Token {
     pub(crate) fn ident(&self) -> Option<&str> {
         match &self.kind {
-            Tok::Ident(name) => Some(name),
+            Tok::Ident(name) | Tok::RawIdent(name) => Some(name),
             _ => None,
         }
     }
@@ -120,6 +121,10 @@ impl Token {
 
     pub(crate) fn is_ident(&self, expected: &str) -> bool {
         self.ident() == Some(expected)
+    }
+
+    pub(crate) fn is_keyword(&self, expected: &str) -> bool {
+        matches!(&self.kind, Tok::Ident(name) if name == expected)
     }
 }
 
@@ -328,7 +333,7 @@ impl Lexer {
                         self.cur.bump();
                     }
                     let name = self.cur.slice(raw_start, self.cur.pos);
-                    self.push(Tok::Ident(name), line);
+                    self.push(Tok::RawIdent(name), line);
                 } else {
                     self.push(Tok::Ident(word), line);
                 }

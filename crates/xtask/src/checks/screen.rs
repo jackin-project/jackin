@@ -662,7 +662,9 @@ impl TypeAlias {
     fn type_parameter_default(&self, tokens: &[Token], slot: usize) -> Option<Range<usize>> {
         let parameters = self.parameters.get(..=slot)?;
         if parameters.iter().any(|range| {
-            range.is_empty() || !matches!(tokens[range.start].kind, Tok::Ident(_) | Tok::Lifetime)
+            range.is_empty()
+                || !(tokens[range.start].ident().is_some()
+                    || tokens[range.start].kind == Tok::Lifetime)
         }) {
             return None;
         }
@@ -781,8 +783,9 @@ struct TypeScope<'a> {
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
-    matches_imported: bool,
+    matches_imported: MatchesImport<'a>,
     matches_textual: bool,
+    matches_to_parent: bool,
 }
 
 impl<'a> TypeScope<'a> {
@@ -813,7 +816,24 @@ impl<'a> TypeScope<'a> {
                 (None, [.., name, "self"] | [.., name]) => *name,
                 _ => continue,
             };
-            self.matches_imported |= name == "matches";
+            if name == "matches" {
+                if let [root @ ("core" | "std"), "matches"] = *segments
+                    && !attributed
+                {
+                    let standard = if absolute {
+                        MatchesImport::Standard
+                    } else {
+                        MatchesImport::RelativeStandard(root)
+                    };
+                    self.matches_imported = match self.matches_imported {
+                        MatchesImport::Absent => standard,
+                        previous if previous == standard => previous,
+                        _ => MatchesImport::Unknown,
+                    };
+                } else {
+                    self.matches_imported = MatchesImport::Unknown;
+                }
+            }
             let binding = match segments {
                 ["ratatui", "buffer", "Buffer"] => TypeBinding::RatatuiBuffer,
                 _ if !attributed => {
@@ -905,6 +925,43 @@ fn has_outer_attribute(tokens: &[Token], item: usize) -> bool {
     outer_attribute_before(tokens, before_visibility(tokens, item)).is_some()
 }
 
+fn has_macro_attribute(
+    tokens: &[Token],
+    declaration: usize,
+    recognizes: impl Fn(&[Token]) -> bool,
+) -> bool {
+    let mut boundary = before_visibility(tokens, declaration);
+    while let Some(attribute) = outer_attribute_before(tokens, boundary) {
+        if recognizes(&tokens[attribute.start + 2..attribute.end - 1]) {
+            return true;
+        }
+        boundary = attribute.start;
+    }
+    false
+}
+
+fn imports_macro_rules(tokens: &[Token], declaration: usize) -> bool {
+    has_macro_attribute(
+        tokens,
+        declaration,
+        |attribute| matches!(attribute, [name] if name.is_keyword("macro_use")),
+    )
+}
+
+fn macro_rules_disabled(tokens: &[Token], declaration: usize) -> bool {
+    has_macro_attribute(tokens, declaration, |attribute| {
+        let [cfg, outer, any, inner, inner_close, outer_close] = attribute else {
+            return false;
+        };
+        cfg.is_keyword("cfg")
+            && outer.is_punct('(')
+            && any.is_keyword("any")
+            && inner.is_punct('(')
+            && inner_close.is_punct(')')
+            && outer_close.is_punct(')')
+    })
+}
+
 fn nominal_attributes_preserve_binding(tokens: &[Token], item: usize) -> bool {
     let mut end = before_visibility(tokens, item);
     while let Some(attribute) = outer_attribute_before(tokens, end) {
@@ -955,6 +1012,15 @@ enum MatchesMacro {
     Absolute,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum MatchesImport<'a> {
+    #[default]
+    Absent,
+    Standard,
+    RelativeStandard(&'a str),
+    Unknown,
+}
+
 fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     let name = bang.checked_sub(1)?;
     if !tokens[bang].is_punct('!') || !tokens[name].is_ident("matches") {
@@ -966,12 +1032,13 @@ fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     let root = name.checked_sub(3)?;
     if !matches!(tokens[root].ident(), Some("core" | "std"))
         || !is_path_separator(tokens, root.wrapping_sub(2))
-        || tokens
-            .get(root.wrapping_sub(3))
-            .and_then(Token::ident)
-            .is_some_and(|word| {
-                !KEYWORDS_BEFORE_PATH.contains(&word) && !matches!(word, "if" | "while" | "match")
-            })
+        || tokens.get(root.wrapping_sub(3)).is_some_and(|token| {
+            token.ident().is_some()
+                && !KEYWORDS_BEFORE_PATH
+                    .iter()
+                    .chain(&["if", "while", "match", "break", "yield"])
+                    .any(|keyword| token.is_keyword(keyword))
+        })
     {
         return None;
     }
@@ -985,30 +1052,58 @@ fn matches_pattern(file: &ScreenFile<'_>, arguments: Range<usize>) -> Option<Ran
     let mut top_level = std::iter::from_fn(|| {
         let current = index;
         let token = tokens.get(current).filter(|_| current < close)?;
-        let nested = matches!(token.kind, Tok::Punct('(' | '[' | '{'))
-            || token.is_punct('<')
-                && (is_path_separator(tokens, current.wrapping_sub(2))
-                    || file.group_ends[current].is_some_and(|end| is_path_separator(tokens, end)));
-        index = if nested {
+        index = if matches!(token.kind, Tok::Punct('(' | '[' | '{')) {
             file.group_ends[current]
                 .filter(|&end| end <= close)
                 .unwrap_or(close)
         } else {
-            current + 1
+            matches_angle_end(file, current, close).unwrap_or(current + 1)
         };
         Some(current)
     });
-    let separator = top_level
-        .by_ref()
-        .find(|&at| matches!(tokens[at].kind, Tok::Punct(',' | '|')))?;
-    if !tokens[separator].is_punct(',') {
-        return None;
-    }
+    let separator = matches_scrutinee_end(tokens, &mut top_level)?;
     let start = separator + 1;
     let end = top_level
-        .find(|&at| tokens[at].is_ident("if") || tokens[at].is_punct(','))
+        .find(|&at| tokens[at].is_keyword("if") || tokens[at].is_punct(','))
         .unwrap_or(close);
     (start < end).then_some(start..end)
+}
+
+fn matches_scrutinee_end(
+    tokens: &[Token],
+    top_level: &mut impl Iterator<Item = usize>,
+) -> Option<usize> {
+    let mut starts_operand = true;
+    while let Some(index) = top_level.next() {
+        let token = &tokens[index];
+        if token.is_punct(',') {
+            return Some(index);
+        }
+        if starts_operand && token.is_punct('|') {
+            top_level.find(|&at| tokens[at].is_punct('|'))?;
+            continue;
+        }
+        starts_operand = matches!(
+            token.kind,
+            Tok::Punct('|' | '&' | '^' | '=' | '!' | '+' | '-' | '*' | '/' | '%')
+        ) || [
+            "if", "while", "match", "return", "break", "yield", "move", "async",
+        ]
+        .iter()
+        .any(|keyword| token.is_keyword(keyword));
+    }
+    None
+}
+
+fn matches_angle_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Option<usize> {
+    let tokens = &file.tokens;
+    if !tokens[open].is_punct('<') {
+        return None;
+    }
+    let end = file.group_ends[open]?;
+    (end <= limit
+        && (is_path_separator(tokens, open.wrapping_sub(2)) || is_path_separator(tokens, end)))
+    .then_some(end)
 }
 
 fn mark_matches_pattern(
@@ -1024,6 +1119,10 @@ fn mark_matches_pattern(
     while index < pattern.end {
         if let Some(open) = opaque_group_open(&file.tokens, index) {
             index = file.group_ends[open].unwrap_or(pattern.end);
+            continue;
+        }
+        if let Some(end) = matches_angle_end(file, index, pattern.end) {
+            index = end;
             continue;
         }
         if file.tokens[index].is_ident("Self") {
@@ -1380,7 +1479,8 @@ impl<'a> TypeScopes<'a> {
                 let scope_state = &mut self.scopes[scope];
                 scope_state.matches_textual |= token.is_punct('!')
                     && tokens[index - 1].is_ident("macro_rules")
-                    && tokens[index + 1].is_ident("matches");
+                    && tokens[index + 1].is_ident("matches")
+                    && !macro_rules_disabled(tokens, index - 1);
                 if scope_state.self_receiver.is_some()
                     && let Some(kind) = matches_macro(tokens, index)
                     && (matches!(kind, MatchesMacro::Absolute) || !scope_state.matches_textual)
@@ -1401,10 +1501,22 @@ impl<'a> TypeScopes<'a> {
                 stack.push(self.enter_scope(source, index, scope, paths, receiver_scopes[index]));
             } else if token.is_punct('}') && stack.len() > 1 {
                 stack.pop();
+                let child = &self.scopes[scope];
+                if child.matches_to_parent && child.matches_textual {
+                    let parent = *stack.last().unwrap_or(&source);
+                    self.scopes[parent].matches_textual = true;
+                }
             } else if token.is_ident("use") {
                 index = self.scopes[scope].import(tokens, index);
                 continue;
             } else {
+                if token.is_keyword("mod")
+                    && tokens.get(index + 2).is_some_and(|end| end.is_punct(';'))
+                    && imports_macro_rules(tokens, index)
+                    && !macro_rules_disabled(tokens, index)
+                {
+                    self.scopes[scope].matches_textual = true;
+                }
                 let file_module = self.file_module(source, scope, index, paths);
                 self.scopes[scope].bind_item(tokens, index, file_module);
             }
@@ -1481,6 +1593,10 @@ impl<'a> TypeScopes<'a> {
             directory,
             self_receiver,
             matches_textual: self.scopes[parent].matches_textual,
+            matches_to_parent: module.is_some_and(|(declaration, _)| {
+                imports_macro_rules(tokens, declaration)
+                    && !macro_rules_disabled(tokens, declaration)
+            }),
             ..TypeScope::default()
         });
         child
@@ -1847,7 +1963,32 @@ impl<'a> TypeScopes<'a> {
         loop {
             work.charge(1)?;
             let current = &self.scopes[scope];
-            if current.matches_imported || current.glob_import {
+            match current.matches_imported {
+                MatchesImport::Standard => return Ok(true),
+                MatchesImport::RelativeStandard(root) => {
+                    return self.matches_standard_root_visible(scope, root, work);
+                }
+                MatchesImport::Unknown => return Ok(false),
+                MatchesImport::Absent if current.glob_import => return Ok(false),
+                MatchesImport::Absent => {}
+            }
+            let Some(parent) = current.parent else {
+                return Ok(true);
+            };
+            scope = parent;
+        }
+    }
+
+    fn matches_standard_root_visible(
+        &self,
+        mut scope: usize,
+        name: &str,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasWorkLimit> {
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            if current.glob_import || current.bindings.contains_key(name) {
                 return Ok(false);
             }
             let Some(parent) = current.parent else {
