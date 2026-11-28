@@ -1283,6 +1283,7 @@ fn mark_matches_pattern(
     file: &ScreenFile<'_>,
     arguments: Range<usize>,
     position: ScopePosition,
+    has_self_receiver: bool,
     enclosing: &mut [Option<ScopePosition>],
 ) {
     let Some(pattern) = matches_pattern(file, arguments) else {
@@ -1298,7 +1299,14 @@ fn mark_matches_pattern(
             index = end;
             continue;
         }
-        if file.tokens[index].is_ident("Self") {
+        let token = &file.tokens[index];
+        if token.ident().is_some()
+            && (has_self_receiver || !token.is_keyword("Self"))
+            && file
+                .tokens
+                .get(index + 1)
+                .is_some_and(|open| open.is_punct('{'))
+        {
             enclosing[index] = Some(position);
         }
         index += 1;
@@ -1872,8 +1880,7 @@ impl<'a> TypeScopes<'a> {
                 {
                     mark_local_macro_arm(file, transcriber, scope, &mut enclosing);
                 }
-                if scope_state.self_receiver.is_some()
-                    && let Some(kind) = matches_macro(tokens, index)
+                if let Some(kind) = matches_macro(tokens, index)
                     && (!matches!(kind, MatchesMacro::Prelude) || !scope_state.matches_textual)
                     && file.group_ends[open].is_some()
                 {
@@ -1881,6 +1888,7 @@ impl<'a> TypeScopes<'a> {
                         file,
                         open..end,
                         ScopePosition::MatchesPattern(scope, kind),
+                        scope_state.self_receiver.is_some(),
                         &mut enclosing,
                     );
                 }
@@ -2337,7 +2345,9 @@ impl<'a> TypeScopes<'a> {
             Some(TypeBinding::Nominal) if rust_scope => false,
             Some(TypeBinding::Alias(alias))
                 if reference == BufferReference::FieldPattern
-                    && rust_scope
+                    && self
+                        .proven_field_pattern_scope(source, index, work)?
+                        .is_some()
                     && self.alias_is_ratatui_buffer(source, alias, None, work)? =>
             {
                 true
@@ -2356,24 +2366,8 @@ impl<'a> TypeScopes<'a> {
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         work.charge(1)?;
-        let scope = match self.sources[source].enclosing[index] {
-            Some(ScopePosition::Rust(scope)) => scope,
-            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute(root)))
-                if self.matches_absolute_root_visible(scope, root, work)? =>
-            {
-                scope
-            }
-            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Prelude))
-                if self.matches_prelude_visible(scope, work)? =>
-            {
-                scope
-            }
-            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Relative(root)))
-                if self.matches_standard_root_visible(scope, root, work)? =>
-            {
-                scope
-            }
-            _ => return Ok(false),
+        let Some(scope) = self.proven_field_pattern_scope(source, index, work)? else {
+            return Ok(false);
         };
         let Some(receiver) = self.scopes[scope].self_receiver else {
             return Ok(false);
@@ -2386,6 +2380,33 @@ impl<'a> TypeScopes<'a> {
             }
             _ => Ok(false),
         }
+    }
+
+    fn proven_field_pattern_scope(
+        &self,
+        source: usize,
+        index: usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<usize>, AliasWorkLimit> {
+        Ok(match self.sources[source].enclosing[index] {
+            Some(ScopePosition::Rust(scope)) => Some(scope),
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute(root)))
+                if self.matches_absolute_root_visible(scope, root, work)? =>
+            {
+                Some(scope)
+            }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Prelude))
+                if self.matches_prelude_visible(scope, work)? =>
+            {
+                Some(scope)
+            }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Relative(root)))
+                if self.matches_standard_root_visible(scope, root, work)? =>
+            {
+                Some(scope)
+            }
+            _ => None,
+        })
     }
 
     fn matches_prelude_visible(
