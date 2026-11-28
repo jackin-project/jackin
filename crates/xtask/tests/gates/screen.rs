@@ -529,9 +529,10 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
          }\n\
          mod nested {\n\
          \x20   use ratatui::buffer::Buffer;\n\
-         \x20   type Wrapper<T> = T;\n\
+         \x20   type Wrapper<T> where T: Iterator<Item = u8> = T;\n\
          \x20   fn check(buf: Buffer) {\n\
          \x20       let Wrapper::<Buffer> { content, .. } = buf;\n\
+         \x20       let Wrapper::<crate::model::Buffer> { value } = crate::model::Buffer { value: 0 };\n\
          \x20   }\n\
          }\n\
          fn local(buf: crate::model::Buffer) {\n\
@@ -550,15 +551,49 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
          \x20   fn check(a: super::Buffer) {\n\
          \x20       let super::Identity::<super::Buffer> { content, .. } = a;\n\
          \x20   }\n\
+         }\n\
+         mod shadowed {\n\
+         \x20   use ratatui::buffer::Buffer;\n\
+         \x20   type Identity<Buffer> = Buffer;\n\
          }\n",
         &[
             ("C1", 6, "destructures"),
             ("C1", 14, "destructures"),
-            ("C1", 21, "destructures"),
-            ("C1", 24, "destructures"),
+            ("C1", 22, "destructures"),
             ("C1", 25, "destructures"),
-            ("C1", 31, "destructures"),
+            ("C1", 26, "destructures"),
+            ("C1", 32, "destructures"),
         ],
+    )
+}
+
+#[test]
+fn associated_type_binding_names_are_not_buffer_references() -> TestResult {
+    expect(
+        "trait Source { type Buffer; }\n\
+         type Local<T> = Box<dyn Source<Buffer = T>>;\n\
+         type UsesRatatui = Box<dyn Source<Buffer = ratatui::buffer::Buffer>>;\n",
+        &[("C1", 3, "renames")],
+    )
+}
+
+#[test]
+fn attributed_buffer_items_preserve_provenance() -> TestResult {
+    expect(
+        "mod model {\n\
+         \x20   #[derive(Clone)]\n\
+         \x20   #[repr(C)]\n\
+         \x20   pub(crate) struct Buffer { pub value: u8 }\n\
+         \x20   fn check(item: Buffer) { let Buffer { value } = item; }\n\
+         }\n\
+         use ratatui::buffer::Buffer;\n\
+         fn conditional(item: Buffer) {\n\
+         \x20   #[cfg(any())]\n\
+         \x20   #[derive(Clone)]\n\
+         \x20   struct Buffer { value: u8 }\n\
+         \x20   let Buffer { content, .. } = item;\n\
+         }\n",
+        &[("C1", 12, "destructures")],
     )
 }
 
