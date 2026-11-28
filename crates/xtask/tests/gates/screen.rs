@@ -472,6 +472,22 @@ fn destructuring_a_buffer_fails() -> TestResult {
 }
 
 #[test]
+fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
+    expect(
+        "use ratatui::buffer::Buffer;\n\
+         type Identity<T> = T;\n\
+         struct Wrapper<T> { item: T }\n\
+         mod model { pub struct Buffer { pub value: u8 } }\n\
+         fn patterns(a: Buffer, b: crate::model::Buffer, c: Wrapper<Buffer>) {\n\
+         \x20   let Identity::<Buffer> { content, .. } = a;\n\
+         \x20   let Identity::<crate::model::Buffer> { value } = b;\n\
+         \x20   let Wrapper::<Buffer> { item } = c;\n\
+         }\n",
+        &[("C1", 6, "destructures")],
+    )
+}
+
+#[test]
 fn other_attributes_pass() -> TestResult {
     expect(
         "#![deny(clippy::disallowed_methods)]\n\

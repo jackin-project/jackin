@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::path::Path;
 
@@ -464,17 +464,108 @@ fn type_alias_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
+fn generic_slots(tokens: &[Token], open: usize) -> Option<(Vec<Range<usize>>, usize)> {
+    if !tokens.get(open)?.is_punct('<') {
+        return None;
+    }
+    let mut slots = Vec::new();
+    let mut start = open + 1;
+    let mut index = start;
+    let mut depth = 0;
+    while let Some(token) = tokens.get(index) {
+        if ['(', '[', '{'].iter().any(|c| token.is_punct(*c)) {
+            index = closing(tokens, index) + 1;
+            continue;
+        }
+        if token.is_punct('<') {
+            depth += 1;
+        } else if token.is_punct('>') && !tokens[index - 1].is_punct('-') {
+            if depth == 0 {
+                if start < index {
+                    slots.push(start..index);
+                }
+                return Some((slots, index + 1));
+            }
+            depth -= 1;
+        } else if token.is_punct(',') && depth == 0 {
+            slots.push(start..index);
+            start = index + 1;
+        }
+        index += 1;
+    }
+    None
+}
+
+fn projected_aliases(tokens: &[Token]) -> BTreeMap<&str, usize> {
+    (0..tokens.len())
+        .filter(|&index| tokens[index].is_ident("type"))
+        .filter_map(|index| {
+            let name = tokens.get(index + 1)?.ident()?;
+            let (slots, end) = generic_slots(tokens, index + 2)?;
+            let [equals, target, terminator, ..] = tokens.get(end..)? else {
+                return None;
+            };
+            if !equals.is_punct('=') || !terminator.is_punct(';') {
+                return None;
+            }
+            let target = target.ident()?;
+            let slot = slots.iter().position(|range| {
+                tokens
+                    .get(range.clone())
+                    .and_then(|param| param.first())
+                    .is_some_and(|param| param.is_ident(target))
+            })?;
+            Some((name, slot))
+        })
+        .collect()
+}
+
+fn buffer_pattern_open(
+    tokens: &[Token],
+    index: usize,
+    aliases: &BTreeMap<&str, usize>,
+) -> Option<usize> {
+    if tokens[index].is_ident("Buffer") && is_ratatui_path(tokens, index) {
+        return Some(index + 1);
+    }
+    if is_path_separator(tokens, index.wrapping_sub(2)) || !is_path_separator(tokens, index + 1) {
+        return None;
+    }
+    let slot = *aliases.get(tokens[index].ident()?)?;
+    let (slots, open) = generic_slots(tokens, index + 3)?;
+    let argument = &tokens[slots.get(slot)?.clone()];
+    let arg = if is_path_separator(argument, 0) {
+        &argument[2..]
+    } else {
+        argument
+    };
+    match arg {
+        [buffer] if buffer.is_ident("Buffer") => Some(open),
+        [root, _, _, module, _, _, buffer]
+            if root.is_ident("ratatui")
+                && module.is_ident("buffer")
+                && buffer.is_ident("Buffer")
+                && is_path_separator(arg, 1)
+                && is_path_separator(arg, 4) =>
+        {
+            Some(open)
+        }
+        _ => None,
+    }
+}
+
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
     let tests = test_modules(tokens);
+    let aliases = projected_aliases(tokens);
     (1..tokens.len())
-        .filter(|index| {
-            tokens[*index].is_ident("Buffer")
-                && tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
-                && opens_fields(tokens, index + 2)
-                && is_ratatui_path(tokens, *index)
-                && !declares_variant(tokens, *index)
-                && !is_type_position(tokens, *index)
-                && !tests.iter().any(|range| range.contains(index))
+        .filter_map(|index| {
+            let open = buffer_pattern_open(tokens, index, &aliases)?;
+            (tokens.get(open).is_some_and(|t| t.is_punct('{'))
+                && opens_fields(tokens, open + 1)
+                && !declares_variant(tokens, index)
+                && !is_type_position(tokens, index, open)
+                && !tests.iter().any(|range| range.contains(&index)))
+            .then_some(index)
         })
         .map(|index| {
             Violation::at_line(
@@ -538,7 +629,7 @@ fn opens_fields(tokens: &[Token], start: usize) -> bool {
             && tokens.get(first + 1).is_some_and(|t| t.is_punct('.')))
 }
 
-fn is_type_position(tokens: &[Token], index: usize) -> bool {
+fn is_type_position(tokens: &[Token], index: usize, open: usize) -> bool {
     let mut start = index;
     while start >= 3 && is_path_separator(tokens, start - 2) && tokens[start - 3].ident().is_some()
     {
@@ -559,7 +650,7 @@ fn is_type_position(tokens: &[Token], index: usize) -> bool {
     let Some(before) = start.checked_sub(1).map(|at| &tokens[at]) else {
         return false;
     };
-    if opens_for_loop_pattern(tokens, index) {
+    if opens_for_loop_pattern(tokens, open) {
         return false;
     }
     (before.is_punct('>') && start >= 2 && tokens[start - 2].is_punct('-'))
@@ -568,8 +659,8 @@ fn is_type_position(tokens: &[Token], index: usize) -> bool {
             .any(|keyword| before.is_ident(keyword))
 }
 
-fn opens_for_loop_pattern(tokens: &[Token], name: usize) -> bool {
-    let close = closing(tokens, name + 1);
+fn opens_for_loop_pattern(tokens: &[Token], open: usize) -> bool {
+    let close = closing(tokens, open);
     tokens.get(close + 1).is_some_and(|t| t.is_ident("in"))
 }
 
