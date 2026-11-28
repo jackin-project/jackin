@@ -461,12 +461,18 @@ fn type_alias_violations<'a>(
     tokens
         .iter()
         .enumerate()
-        .filter(|(index, token)| {
-            token.is_ident("type")
-                && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-                && (*index + 3..tokens.len())
-                    .take_while(|&target| !tokens[target].is_punct(';'))
-                    .any(|target| types.may_be_ratatui_buffer(tokens, target))
+        .filter(|(_, token)| token.is_ident("type"))
+        .filter(|(index, _)| {
+            TypeAlias::parse(tokens, *index).is_some_and(|alias| {
+                alias.value.clone().any(|target| {
+                    types.may_be_ratatui_buffer(tokens, target)
+                        && !associated_argument_name(tokens, target)
+                        && !tokens[target].ident().is_some_and(|name| {
+                            path_start(tokens, target) == (target, false)
+                                && alias.type_parameter_slot(tokens, name).is_some()
+                        })
+                })
+            })
         })
         .map(|(_, token)| Violation::at_line(CiStep::Screen, path, token.line, BUFFER_RENAME))
         .collect()
@@ -504,21 +510,98 @@ fn generic_slots(tokens: &[Token], open: usize) -> Option<(Vec<Range<usize>>, us
     None
 }
 
-fn projected_slot(tokens: &[Token], index: usize) -> Option<usize> {
-    let (slots, end) = generic_slots(tokens, index + 2)?;
-    let [equals, target, terminator, ..] = tokens.get(end..)? else {
-        return None;
-    };
-    if !equals.is_punct('=') || !terminator.is_punct(';') {
-        return None;
+fn associated_argument_name(tokens: &[Token], index: usize) -> bool {
+    if !tokens
+        .get(index.wrapping_sub(1))
+        .is_some_and(|token| matches!(token.kind, Tok::Punct('<' | ',')))
+    {
+        return false;
     }
-    let target = target.ident()?;
-    slots.iter().position(|range| {
-        tokens
-            .get(range.clone())
-            .and_then(|param| param.first())
-            .is_some_and(|param| param.is_ident(target))
+    let after_name = index + 1;
+    let arguments = after_name + 2 * usize::from(is_path_separator(tokens, after_name));
+    let boundary = if tokens
+        .get(arguments)
+        .is_some_and(|token| token.is_punct('<'))
+    {
+        let Some((_, end)) = generic_slots(tokens, arguments) else {
+            return false;
+        };
+        end
+    } else {
+        after_name
+    };
+    tokens.get(boundary).is_some_and(|token| {
+        token.is_punct('=')
+            || token.is_punct(':')
+                && (!is_path_separator(tokens, boundary) || is_path_separator(tokens, boundary + 1))
     })
+}
+
+fn alias_boundary(tokens: &[Token], mut index: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    while let Some(token) = tokens.get(index) {
+        match &token.kind {
+            Tok::Punct('(' | '[' | '{') => index = closing(tokens, index),
+            Tok::Punct('<') => depth += 1,
+            Tok::Punct('>') if !tokens[index - 1].is_punct('-') => depth = depth.checked_sub(1)?,
+            Tok::Punct('=') if depth == 0 => return Some(index),
+            Tok::Ident(name) if depth == 0 && name == "where" => return Some(index),
+            Tok::Punct(';') => return (depth == 0).then_some(index),
+            Tok::Punct(')' | ']' | '}') => return None,
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+struct TypeAlias {
+    parameters: Vec<Range<usize>>,
+    value: Range<usize>,
+}
+
+impl TypeAlias {
+    fn parse(tokens: &[Token], index: usize) -> Option<Self> {
+        tokens.get(index + 1)?.ident()?;
+        let after_name = index + 2;
+        let (parameters, mut assignment) = if tokens.get(after_name)?.is_punct('<') {
+            generic_slots(tokens, after_name)?
+        } else {
+            (Vec::new(), after_name)
+        };
+        if tokens.get(assignment)?.is_ident("where") {
+            assignment = alias_boundary(tokens, assignment + 1)?;
+        }
+        if !tokens[assignment].is_punct('=') {
+            return None;
+        }
+        let start = assignment + 1;
+        let end = alias_boundary(tokens, start)?;
+        let terminator = if tokens[end].is_ident("where") {
+            alias_boundary(tokens, end + 1)?
+        } else {
+            end
+        };
+        (start < end && tokens[terminator].is_punct(';')).then_some(Self {
+            parameters,
+            value: start..end,
+        })
+    }
+
+    fn type_parameter_slot(&self, tokens: &[Token], name: &str) -> Option<usize> {
+        self.parameters.iter().position(|range| {
+            !range.is_empty()
+                && !tokens[range.start].is_ident("const")
+                && tokens[range.start].is_ident(name)
+        })
+    }
+
+    fn projected_slot(&self, tokens: &[Token]) -> Option<usize> {
+        let [target] = &tokens[self.value.clone()] else {
+            return None;
+        };
+        self.type_parameter_slot(tokens, target.ident()?)
+    }
 }
 
 enum TypeBinding<'a> {
@@ -599,9 +682,12 @@ impl<'a> TypeScope<'a> {
             return;
         };
         let binding = match tokens[index].ident() {
-            Some("type") => projected_slot(tokens, index)
+            Some("type") => TypeAlias::parse(tokens, index)
+                .and_then(|alias| alias.projected_slot(tokens))
                 .map_or(TypeBinding::Unresolved, TypeBinding::Projection),
-            Some("struct" | "enum" | "union") if !has_outer_attribute(tokens, index) => {
+            Some("struct" | "enum" | "union")
+                if nominal_attributes_preserve_binding(tokens, index) =>
+            {
                 TypeBinding::Nominal
             }
             Some("struct" | "enum" | "union") => TypeBinding::Unresolved,
@@ -629,7 +715,7 @@ fn group_start(tokens: &[Token], close: usize, left: char, right: char) -> Optio
     None
 }
 
-fn has_outer_attribute(tokens: &[Token], item: usize) -> bool {
+fn before_visibility(tokens: &[Token], item: usize) -> usize {
     let mut end = item;
     if tokens
         .get(end.wrapping_sub(1))
@@ -646,12 +732,40 @@ fn has_outer_attribute(tokens: &[Token], item: usize) -> bool {
     {
         end -= 1;
     }
-    tokens
-        .get(end.wrapping_sub(1))
-        .is_some_and(|t| t.is_punct(']'))
-        && group_start(tokens, end - 1, '[', ']')
-            .and_then(|open| tokens.get(open.wrapping_sub(1)))
-            .is_some_and(|t| t.is_punct('#'))
+    end
+}
+
+fn outer_attribute_before(tokens: &[Token], end: usize) -> Option<Range<usize>> {
+    let close = end.checked_sub(1)?;
+    if !tokens.get(close)?.is_punct(']') {
+        return None;
+    }
+    let start = group_start(tokens, close, '[', ']')?.checked_sub(1)?;
+    tokens[start].is_punct('#').then_some(start..end)
+}
+
+fn has_outer_attribute(tokens: &[Token], item: usize) -> bool {
+    outer_attribute_before(tokens, before_visibility(tokens, item)).is_some()
+}
+
+fn nominal_attributes_preserve_binding(tokens: &[Token], item: usize) -> bool {
+    let mut end = before_visibility(tokens, item);
+    while let Some(attribute) = outer_attribute_before(tokens, end) {
+        let inner = &tokens[attribute.start + 2..attribute.end - 1];
+        let [name, input, ..] = inner else {
+            return false;
+        };
+        if !matches!(
+            name.ident(),
+            Some("derive" | "repr" | "allow" | "warn" | "deny" | "forbid" | "expect")
+        ) || !input.is_punct('(')
+            || closing(inner, 1) + 1 != inner.len()
+        {
+            return false;
+        }
+        end = attribute.start;
+    }
+    true
 }
 
 fn opaque_group_open(tokens: &[Token], index: usize) -> Option<usize> {
