@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::ffi::OsString;
+use std::fmt;
 use std::fs::{self, DirBuilder, File, OpenOptions, TryLockError};
+use std::future::Future;
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::{
     DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink,
 };
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -417,6 +420,18 @@ impl FileSystem for StdFileSystem {
         .await
     }
 
+    async fn stat_following_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<FileKind>, FsError> {
+        blocking(path, move |p| {
+            let _hold = hold;
+            stat_following_kind(p)
+        })
+        .await
+    }
+
     async fn canonicalize_holding(
         &self,
         path: &HostPath,
@@ -565,22 +580,67 @@ pub enum CredentialFileProblem {
     TooLarge,
 }
 
+pub struct CredentialPreflight<'fs> {
+    fs: &'fs dyn FileSystem,
+    hold: Hold,
+}
+
+impl fmt::Debug for CredentialPreflight<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CredentialPreflight")
+            .finish_non_exhaustive()
+    }
+}
+
+impl CredentialPreflight<'_> {
+    pub async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.fs
+            .canonicalize_holding(path, Hold::clone(&self.hold))
+            .await
+    }
+
+    pub async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.fs
+            .stat_following_holding(path, Hold::clone(&self.hold))
+            .await
+    }
+
+    pub async fn read_file(
+        &self,
+        path: &HostPath,
+    ) -> Result<Result<Vec<u8>, CredentialFileProblem>, FsError> {
+        read_credential_held(self.fs, path, Hold::clone(&self.hold)).await
+    }
+}
+
+pub async fn with_credential_preflight<'fs, T>(
+    fs: &'fs dyn FileSystem,
+    path: &HostPath,
+    work: impl for<'scope> FnOnce(
+        &'scope CredentialPreflight<'fs>,
+    ) -> Pin<Box<dyn Future<Output = T> + Send + 'scope>>,
+) -> Result<T, FsError> {
+    within_preflight(CREDENTIAL_FILE_DEADLINE, |hold| async move {
+        work(&CredentialPreflight { fs, hold }).await
+    })
+    .await
+    .map_err(|_| FsError::Io {
+        path: path.clone(),
+        kind: ErrorKind::TimedOut,
+        message: "the credential file read did not finish in time".to_owned(),
+    })
+}
+
 pub async fn read_credential_file(
     fs: &dyn FileSystem,
     path: &HostPath,
 ) -> Result<Result<Vec<u8>, CredentialFileProblem>, FsError> {
-    match within_preflight(CREDENTIAL_FILE_DEADLINE, |hold| {
-        read_credential_held(fs, path, hold)
+    let file = path.clone();
+    with_credential_preflight(fs, path, |io| {
+        Box::pin(async move { io.read_file(&file).await })
     })
-    .await
-    {
-        Ok(read) => read,
-        Err(_) => Err(FsError::Io {
-            path: path.clone(),
-            kind: ErrorKind::TimedOut,
-            message: "the credential file read did not finish in time".to_owned(),
-        }),
-    }
+    .await?
 }
 
 async fn read_credential_held(

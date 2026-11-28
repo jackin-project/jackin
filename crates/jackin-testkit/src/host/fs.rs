@@ -6,6 +6,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -54,6 +55,7 @@ struct FsState {
     hooks: Vec<ReadHook>,
     links: BTreeMap<PathBuf, PathBuf>,
     canonical_stall: Option<(String, Arc<StallProbe>)>,
+    metadata_delays: HashMap<PathBuf, Duration>,
 }
 
 #[derive(Debug)]
@@ -225,6 +227,22 @@ impl MemFs {
         probe
     }
 
+    pub fn delay_metadata_at(&self, path: &HostPath, delay: Duration) {
+        locked(&self.state)
+            .metadata_delays
+            .insert(path.as_path().to_path_buf(), delay);
+    }
+
+    async fn wait_for_metadata(&self, path: &HostPath) {
+        let delay = locked(&self.state)
+            .metadata_delays
+            .get(path.as_path())
+            .copied();
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
+    }
+
     pub fn link(&self, link: &HostPath, target: &HostPath) {
         locked(&self.state)
             .links
@@ -311,6 +329,7 @@ impl FileSystem for MemFs {
     }
 
     async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.wait_for_metadata(path).await;
         let state = self.enter(FsOp::Stat)?;
         if state.links.contains_key(path.as_path()) {
             Ok(Some(FileKind::Symlink))
@@ -324,6 +343,7 @@ impl FileSystem for MemFs {
     }
 
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.wait_for_metadata(path).await;
         let state = self.enter(FsOp::StatFollowing)?;
         if state.files.contains_key(path.as_path()) {
             Ok(Some(FileKind::File))
@@ -335,6 +355,7 @@ impl FileSystem for MemFs {
     }
 
     async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.wait_for_metadata(path).await;
         if let Some(probe) = self.canonical_stalled(path) {
             probe.entered.fetch_add(1, Ordering::SeqCst);
             let _abandoned = Abandoned(&probe);

@@ -9,9 +9,10 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jackin_core::{
-    Account, ChatgptAccountId, CredentialFileProblem, CredentialSource, FileSystem, FsError,
-    GroupFault, HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program,
-    Provider, Secret, SecretBytes, plain, read_credential_file,
+    Account, ChatgptAccountId, CredentialFileProblem, CredentialPreflight, CredentialSource,
+    FileSystem, FsError, GroupFault, HostPath, ProcessError, ProcessSpec, ProcessStatus,
+    ProcessStdin, Program, Provider, Secret, SecretBytes, plain, read_credential_file,
+    with_credential_preflight,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -334,7 +335,14 @@ async fn read_host_bytes(
     fs: &dyn FileSystem,
     path: &HostPath,
 ) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
-    match read_credential_file(fs, path).await? {
+    credential_bytes(path, read_credential_file(fs, path).await?)
+}
+
+fn credential_bytes(
+    path: &HostPath,
+    read: Result<Vec<u8>, CredentialFileProblem>,
+) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
+    match read {
         Ok(bytes) => Ok(Zeroizing::new(bytes)),
         Err(CredentialFileProblem::Missing) => {
             Err(CredentialError::LoginUnreadable { path: path.clone() })
@@ -480,9 +488,16 @@ mod native {
         provider: Provider,
         key: &'static str,
     ) -> Result<Document, CredentialError> {
-        let bytes = read_host_bytes(fs, path).await?;
+        parse_native_auth(&read_host_bytes(fs, path).await?, provider, key)
+    }
+
+    fn parse_native_auth(
+        bytes: &[u8],
+        provider: Provider,
+        key: &'static str,
+    ) -> Result<Document, CredentialError> {
         Ok(Document(
-            serde_json::from_slice(&bytes).map_err(|_| native_invalid(provider, key))?,
+            serde_json::from_slice(bytes).map_err(|_| native_invalid(provider, key))?,
         ))
     }
 
@@ -815,7 +830,7 @@ mod native {
     }
 
     async fn read_minimax_region(
-        fs: &dyn FileSystem,
+        io: &CredentialPreflight<'_>,
         data_root: &HostPath,
         region: MinimaxRegion,
     ) -> Result<Option<MinimaxHostLogin>, CredentialError> {
@@ -830,8 +845,8 @@ mod native {
             &format!("{namespace}/auth.json"),
             Provider::Minimax,
         )?;
-        if fs.canonicalize(&state_path).await?.is_none() {
-            if fs.canonicalize(&credential_path).await?.is_some() {
+        if io.canonicalize(&state_path).await?.is_none() {
+            if io.canonicalize(&credential_path).await?.is_some() {
                 return Err(CredentialError::Credential(
                     super::CredentialError::LoginUnreadable {
                         path: state_path.clone(),
@@ -840,10 +855,17 @@ mod native {
             }
             return Ok(None);
         }
-        let state_document = read_native_auth(fs, &state_path, Provider::Minimax, "state").await?;
+        let state_document = parse_native_auth(
+            &credential_bytes(&state_path, io.read_file(&state_path).await?)?,
+            Provider::Minimax,
+            "state",
+        )?;
         let state = parse_minimax_state(&state_document.0, region)?;
-        let credential_document =
-            read_native_auth(fs, &credential_path, Provider::Minimax, "credential").await?;
+        let credential_document = parse_native_auth(
+            &credential_bytes(&credential_path, io.read_file(&credential_path).await?)?,
+            Provider::Minimax,
+            "credential",
+        )?;
         if native_u64(
             &credential_document.0,
             "schemaVersion",
@@ -900,13 +922,24 @@ mod native {
         fs: &dyn FileSystem,
         data_root: &HostPath,
     ) -> Result<MinimaxHostLogin, CredentialError> {
+        let root = data_root.clone();
+        with_credential_preflight(fs, data_root, |io| {
+            Box::pin(async move { read_minimax_login(io, &root).await })
+        })
+        .await?
+    }
+
+    async fn read_minimax_login(
+        io: &CredentialPreflight<'_>,
+        data_root: &HostPath,
+    ) -> Result<MinimaxHostLogin, CredentialError> {
         let mut selected = None;
         for region in [MinimaxRegion::Cn, MinimaxRegion::En] {
-            if let Some(login) = read_minimax_region(fs, data_root, region).await? {
-                if selected.is_some() {
-                    return Err(native_invalid(Provider::Minimax, "regions"));
-                }
-                selected = Some(login);
+            let Some(login) = read_minimax_region(io, data_root, region).await? else {
+                continue;
+            };
+            if selected.replace(login).is_some() {
+                return Err(native_invalid(Provider::Minimax, "regions"));
             }
         }
         selected.ok_or_else(|| native_invalid(Provider::Minimax, "namespace"))
@@ -1140,21 +1173,25 @@ pub async fn read_chatgpt_login(
     fs: &dyn FileSystem,
     home: &HostPath,
 ) -> Result<ChatgptLogin, CredentialError> {
-    let path = HostPath::resolve(Path::new(AUTH_FILE), home)
-        .map_err(|_| CredentialError::LoginUnreadable { path: home.clone() })?;
-    let bytes = match read_credential_file(fs, &path).await? {
-        Ok(bytes) => Zeroizing::new(bytes),
-        Err(CredentialFileProblem::Missing) => {
-            return Err(CredentialError::LoginUnreadable { path });
-        }
-        Err(CredentialFileProblem::NotARegularFile) => {
-            return Err(CredentialError::LoginNotRegular { path });
-        }
-        Err(CredentialFileProblem::TooLarge) => {
-            return Err(CredentialError::LoginTooLarge { path });
-        }
-    };
-    let document = Document(serde_json::from_slice(&bytes).map_err(|_| invalid(AUTH_FILE))?);
+    let path = chatgpt_auth_path(home)?;
+    parse_chatgpt_login(&read_host_bytes(fs, &path).await?)
+}
+
+pub(crate) async fn read_chatgpt_login_in_preflight(
+    io: &CredentialPreflight<'_>,
+    home: &HostPath,
+) -> Result<ChatgptLogin, CredentialError> {
+    let path = chatgpt_auth_path(home)?;
+    parse_chatgpt_login(&credential_bytes(&path, io.read_file(&path).await?)?)
+}
+
+fn chatgpt_auth_path(home: &HostPath) -> Result<HostPath, CredentialError> {
+    HostPath::resolve(Path::new(AUTH_FILE), home)
+        .map_err(|_| CredentialError::LoginUnreadable { path: home.clone() })
+}
+
+fn parse_chatgpt_login(bytes: &[u8]) -> Result<ChatgptLogin, CredentialError> {
+    let document = Document(serde_json::from_slice(bytes).map_err(|_| invalid(AUTH_FILE))?);
     let root = &document.0;
     if text(root, "auth_mode", "auth_mode")? != CHATGPT_MODE {
         return Err(CredentialError::NotAChatgptLogin);

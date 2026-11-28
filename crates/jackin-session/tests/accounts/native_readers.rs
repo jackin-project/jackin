@@ -1,14 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::io::ErrorKind;
+use std::time::Duration;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use jackin_core::{CREDENTIAL_FILE_MAX_BYTES, HostPath, StdFileSystem};
+use jackin_core::{CREDENTIAL_FILE_MAX_BYTES, FileSystem, FsError, HostPath, StdFileSystem};
 use jackin_session::{
     CredentialError, KimiRegion, MinimaxHostLogin, MinimaxLoginStatus, MinimaxRegion,
     NativeCredentialError, NativeRefreshUnsupportedReason, read_kimi_host_login,
     read_mimo_host_login, read_minimax_host_login,
 };
+use jackin_testkit::MemFs;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -483,6 +487,36 @@ async fn minimax_reads_cn_authenticated_and_en_expired_native_material() -> Test
         Ok(())
     })
     .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn minimax_regions_share_the_credential_deadline() -> TestResult {
+    let files = Files::new()?;
+    seed_minimax(&files, "cn", "authenticated").await?;
+    let fs = MemFs::new();
+    let home = HostPath::parse(&files.path("auth/prod/cn/mcode-public"))?;
+    fs.create_dir_all(&home).await?;
+    let cn_state = HostPath::parse(&home.as_path().join("auth-state.json"))?;
+    let cn_credential = HostPath::parse(&home.as_path().join("auth.json"))?;
+    for path in [&cn_state, &cn_credential] {
+        fs.create(path, tokio::fs::read(path.as_path()).await?);
+    }
+    assert_eq!(
+        read_minimax_host_login(&fs, &files.root).await?.region,
+        MinimaxRegion::Cn
+    );
+
+    let en_state = HostPath::parse(&files.path("auth/prod/en/mcode-public/auth-state.json"))?;
+    fs.delay_metadata_at(&cn_credential, Duration::from_secs(4));
+    fs.delay_metadata_at(&en_state, Duration::from_secs(7));
+    assert!(matches!(
+        read_minimax_host_login(&fs, &files.root).await,
+        Err(NativeCredentialError::Fs(FsError::Io {
+            kind: ErrorKind::TimedOut,
+            ..
+        }))
+    ));
+    Ok(())
 }
 
 #[tokio::test]
