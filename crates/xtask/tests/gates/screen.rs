@@ -636,8 +636,16 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20               let _ = ::core::stringify!(Self { content, .. });\n\
          \x20               let Self { content, .. } = self;\n\
          \x20           }};\n\
+         \x20           (fields) => {{\n\
+         \x20               let Self { content, .. } = self;\n\
+         \x20           }};\n\
          \x20       }\n\
          \x20       read_fields!();\n\
+         \x20       macro_rules! disabled_read {\n\
+         \x20           () => {{ let Self { content, .. } = self; }};\n\
+         \x20       }\n\
+         \x20       #[cfg(any())]\n\
+         \x20       disabled_read!();\n\
          \x20       {\n\
          \x20           #[macro_use]\n\
          \x20           mod shadow { macro_rules! matches { ($($tokens:tt)*) => { false }; } }\n\
@@ -687,12 +695,12 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
         &[
             ("C1", 6, "destructures"),
             ("C1", 10, "destructures"),
-            ("C1", 21, "destructures"),
-            ("C1", 28, "destructures"),
-            ("C1", 32, "destructures"),
-            ("C1", 33, "destructures"),
-            ("C1", 48, "destructures"),
-            ("C1", 58, "destructures"),
+            ("C1", 29, "destructures"),
+            ("C1", 36, "destructures"),
+            ("C1", 40, "destructures"),
+            ("C1", 41, "destructures"),
+            ("C1", 56, "destructures"),
+            ("C1", 66, "destructures"),
         ],
     )
 }
