@@ -170,8 +170,11 @@ impl<'a> ScreenFile<'a> {
         }
     }
 
-    fn is_empty_macro_invocation(&self, group: &Range<usize>) -> bool {
-        group.len() == 2 && !self.doc_before[group.start + 1]
+    fn macro_invocation_literal(&self, group: &Range<usize>) -> Option<MacroLiteral<'_>> {
+        let close = group.end - 1;
+        let start = group.start + 1;
+        let literal = macro_literal(&self.tokens[start..close])?;
+        (!self.doc_before[start..=close].iter().any(|&doc| doc)).then_some(literal)
     }
 }
 
@@ -1319,15 +1322,34 @@ struct ImplReceiver {
     arguments: Option<usize>,
 }
 
-struct LocalMacroTemplate {
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum MacroLiteral<'a> {
+    Empty,
+    Identifier(&'a str),
+}
+
+fn macro_literal(tokens: &[Token]) -> Option<MacroLiteral<'_>> {
+    match tokens {
+        [] => Some(MacroLiteral::Empty),
+        [
+            Token {
+                kind: Tok::Ident(name),
+                ..
+            },
+        ] => Some(MacroLiteral::Identifier(name)),
+        _ => None,
+    }
+}
+
+struct LocalMacroTemplate<'a> {
     receiver: ImplReceiver,
-    transcriber: Option<Range<usize>>,
+    transcribers: BTreeMap<MacroLiteral<'a>, Range<usize>>,
 }
 
 #[derive(Default)]
 struct LocalMacroTemplates<'a> {
-    active: BTreeMap<&'a str, LocalMacroTemplate>,
-    undo: Vec<(&'a str, Option<LocalMacroTemplate>)>,
+    active: BTreeMap<&'a str, LocalMacroTemplate<'a>>,
+    undo: Vec<(&'a str, Option<LocalMacroTemplate<'a>>)>,
     blocks: Vec<(usize, usize)>,
     last_import: usize,
 }
@@ -1373,18 +1395,14 @@ impl<'a> LocalMacroTemplates<'a> {
             }
             return None;
         }
-        if !file.is_empty_macro_invocation(&group) {
-            return None;
-        }
+        let literal = file.macro_invocation_literal(&group)?;
         let template = self.active.get_mut(tokens[invoked].ident()?)?;
+        let transcriber = template.transcribers.get(&literal)?;
         if Some(template.receiver) == receiver
-            && template
-                .transcriber
-                .as_ref()
-                .is_some_and(|transcriber| transcriber.start > self.last_import)
+            && transcriber.start > self.last_import
             && is_direct_template_invocation(tokens, invoked)
         {
-            template.transcriber.take()
+            template.transcribers.remove(&literal)
         } else {
             None
         }
@@ -1409,10 +1427,10 @@ impl<'a> LocalMacroTemplates<'a> {
                 })
             })
             .and_then(|receiver| {
-                let transcriber = first_empty_macro_transcriber(file, definition)?;
-                Some(LocalMacroTemplate {
+                let transcribers = literal_macro_transcribers(file, definition);
+                (!transcribers.is_empty()).then_some(LocalMacroTemplate {
                     receiver,
-                    transcriber: Some(transcriber),
+                    transcribers,
                 })
             });
         if current.is_some() || previous.is_some() {
@@ -1457,21 +1475,36 @@ fn macro_arm_group_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Opti
     file.group_ends[open].filter(|&end| end <= limit)
 }
 
-fn first_empty_macro_transcriber(
-    file: &ScreenFile<'_>,
+fn literal_macro_transcribers<'a>(
+    file: &'a ScreenFile<'_>,
     definition: Range<usize>,
-) -> Option<Range<usize>> {
+) -> BTreeMap<MacroLiteral<'a>, Range<usize>> {
     let tokens = &file.tokens;
     let limit = definition.end - 1;
-    let matcher = definition.start + 1;
-    let arrow = macro_arm_group_end(file, matcher, limit)?;
-    if arrow != matcher + 2 || !tokens[arrow].is_punct('=') || !tokens.get(arrow + 1)?.is_punct('>')
-    {
-        return None;
+    let mut matcher = definition.start + 1;
+    let mut transcribers = BTreeMap::new();
+    while let Some(arrow) = macro_arm_group_end(file, matcher, limit) {
+        let Some(literal) = macro_literal(&tokens[matcher + 1..arrow - 1]) else {
+            break;
+        };
+        if !tokens[arrow].is_punct('=')
+            || !tokens
+                .get(arrow + 1)
+                .is_some_and(|token| token.is_punct('>'))
+        {
+            break;
+        }
+        let open = arrow + 2;
+        let Some(end) = macro_arm_group_end(file, open, limit) else {
+            break;
+        };
+        transcribers.entry(literal).or_insert(open + 1..end - 1);
+        if !tokens[end].is_punct(';') {
+            break;
+        }
+        matcher = end + 1;
     }
-    let open = arrow + 2;
-    let end = macro_arm_group_end(file, open, limit)?;
-    Some(open + 1..end - 1)
+    transcribers
 }
 
 fn mark_local_macro_arm(
