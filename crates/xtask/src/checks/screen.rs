@@ -63,7 +63,6 @@ const RATATUI_ALLOWED: [&[&str]; 4] = [
 
 const BUFFER_RENAME: &str = "C1: renames a ratatui Buffer; jackin-tui names the type as Buffer so the drawing gate can see it";
 const ALIAS_WORK_LIMIT: usize = 16_384;
-const MACRO_IDENTIFIER_NFC_LIMIT: usize = 256;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ScreenCheck {
@@ -1332,11 +1331,12 @@ enum MacroLiteral<'a> {
     Identifier(Cow<'a, str>),
 }
 
-fn macro_identifier(name: &str) -> Option<Cow<'_, str>> {
+fn macro_identifier(name: &str) -> Cow<'_, str> {
     if name.is_ascii() {
-        return Some(Cow::Borrowed(name));
+        Cow::Borrowed(name)
+    } else {
+        Cow::Owned(name.nfc().collect())
     }
-    (name.len() <= MACRO_IDENTIFIER_NFC_LIMIT).then(|| Cow::Owned(name.nfc().collect()))
 }
 
 fn macro_literal(tokens: &[Token]) -> Option<MacroLiteral<'_>> {
@@ -1347,7 +1347,7 @@ fn macro_literal(tokens: &[Token]) -> Option<MacroLiteral<'_>> {
                 kind: Tok::Ident(name),
                 ..
             },
-        ] => macro_identifier(name).map(MacroLiteral::Identifier),
+        ] => Some(MacroLiteral::Identifier(macro_identifier(name))),
         _ => None,
     }
 }
@@ -1362,20 +1362,19 @@ struct LocalMacroTemplates<'a> {
     active: BTreeMap<Cow<'a, str>, LocalMacroTemplate<'a>>,
     undo: Vec<(Cow<'a, str>, Option<LocalMacroTemplate<'a>>)>,
     blocks: Vec<(usize, usize)>,
-    last_uncertain_binding: usize,
+    last_import: usize,
 }
 
 impl<'a> LocalMacroTemplates<'a> {
     fn enter_block(&mut self) {
-        self.blocks
-            .push((self.undo.len(), self.last_uncertain_binding));
+        self.blocks.push((self.undo.len(), self.last_import));
     }
 
     fn leave_block(&mut self) {
-        let Some((start, last_uncertain_binding)) = self.blocks.pop() else {
+        let Some((start, last_import)) = self.blocks.pop() else {
             return;
         };
-        self.last_uncertain_binding = last_uncertain_binding;
+        self.last_import = last_import;
         for (name, previous) in self.undo.drain(start..).rev() {
             if let Some(previous) = previous {
                 self.active.insert(name, previous);
@@ -1385,8 +1384,8 @@ impl<'a> LocalMacroTemplates<'a> {
         }
     }
 
-    fn observe_uncertain_binding(&mut self, token: usize) {
-        self.last_uncertain_binding = token;
+    fn observe_import(&mut self, token: usize) {
+        self.last_import = token;
     }
 
     fn observe(
@@ -1410,12 +1409,12 @@ impl<'a> LocalMacroTemplates<'a> {
         if self.active.is_empty() {
             return None;
         }
-        let name = macro_identifier(tokens[invoked].ident()?)?;
+        let name = macro_identifier(tokens[invoked].ident()?);
         let template = self.active.get_mut(name.as_ref())?;
         let literal = file.macro_invocation_literal(&group)?;
         let transcriber = template.transcribers.get(&literal)?;
         if Some(template.receiver) == receiver
-            && transcriber.start > self.last_uncertain_binding
+            && transcriber.start > self.last_import
             && is_direct_template_invocation(tokens, invoked)
         {
             template.transcribers.remove(&literal)
@@ -1435,10 +1434,7 @@ impl<'a> LocalMacroTemplates<'a> {
         let Some(name) = tokens.get(declaration + 2).and_then(Token::ident) else {
             return;
         };
-        let Some(name) = macro_identifier(name) else {
-            self.observe_uncertain_binding(declaration);
-            return;
-        };
+        let name = macro_identifier(name);
         let previous = self.active.remove(name.as_ref());
         let current = receiver
             .filter(|_| {
@@ -1958,7 +1954,7 @@ impl<'a> TypeScopes<'a> {
                 local_macros.leave_block();
                 let child = &self.scopes[scope];
                 if child.matches_to_parent {
-                    local_macros.observe_uncertain_binding(index);
+                    local_macros.observe_import(index);
                     let imports_matches = child.matches_textual;
                     let parent = *stack.last().unwrap_or(&source);
                     self.scopes[parent].matches_textual |= imports_matches;
@@ -1972,7 +1968,7 @@ impl<'a> TypeScopes<'a> {
                     && imports_macro_rules(tokens, index)
                     && !macro_item_disabled(tokens, index)
                 {
-                    local_macros.observe_uncertain_binding(index);
+                    local_macros.observe_import(index);
                     let imports_matches = self.file_may_import_matches(source, scope, index, paths);
                     self.scopes[scope].matches_textual |= imports_matches;
                 }
