@@ -262,13 +262,13 @@ impl Session {
         tokio::select! {
             biased;
             found = lookup => match found {
-                Ok(Located::Absent | Located::Unmanaged) => Ok(outcome),
+                Ok(Located::Absent) => Ok(outcome),
                 Ok(Located::Found(now)) if now.phase == Phase::Deleting => Ok(outcome),
                 Ok(Located::Found(now)) => match (deleted.created_at, now.created_at) {
                     (Some(before), Some(current)) if current != before => Ok(outcome),
                     _ => Err(unconfirmed(error)),
                 },
-                Err(_) => Err(unconfirmed(error)),
+                Ok(Located::Unmanaged) | Err(_) => Err(unconfirmed(error)),
             },
             () = budget => Err(unconfirmed(error)),
         }

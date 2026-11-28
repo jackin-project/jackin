@@ -4,12 +4,13 @@
 use std::time::Duration;
 
 use jackin_core::{Config, Phase, SandboxName, sandbox_layout};
-use jackin_openshell::{Gateway, GatewayError, GatewayOp};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp, SandboxQuery};
 use jackin_session::{LaunchStep, PurgeError, PurgeMode, PurgeOutcome, UnknownReason, WorkState};
-use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
+use jackin_testkit::{Fault, Rig, TestResult, Trigger, default_limits, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{digests, export, snapshot, state};
+use super::tap::Tap;
 
 async fn refused(rig: &Rig, config: &Config, name: &SandboxName, case: &str) -> TestResult {
     let handle = rig
@@ -506,6 +507,61 @@ async fn a_forced_purge_cancelled_before_dispatch_preserves_the_sandbox() -> Tes
 
         assert!(matches!(result, Err(PurgeError::Cancelled { sandbox }) if sandbox == name));
         assert_eq!(rig.handle(1).await?.phase(), Phase::Ready);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_sandbox_that_loses_its_management_label_keeps_an_uncertain_delete_unconfirmed()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let sandbox = rig.sandbox_name(1)?;
+        let gateway = rig.gateway();
+        gateway.force_phase(&sandbox, Phase::Stopped);
+        let query = SandboxQuery::Name(sandbox.clone());
+        let before = gateway
+            .find_sandboxes(&query)
+            .await?
+            .pop()
+            .ok_or("no sandbox before purge")?;
+        assert!(before.labels.is_managed());
+        assert!(before.created_at.is_some());
+        gateway.inject(Fault::FailNext {
+            op: GatewayOp::Delete,
+            error: GatewayError::Timeout {
+                op: GatewayOp::Delete,
+                after: Duration::from_secs(1),
+                group: None,
+            },
+        });
+        let tap = Tap::new(&rig);
+        tap.relabel_after_failed_delete("jackin.dev/managed", "false");
+        let session = tap.session(&rig, default_limits());
+
+        let outcome = session
+            .purge(&rig.config, &sandbox, PurgeMode::Forced, &CancellationToken::new())
+            .await;
+
+        let after = gateway
+            .find_sandboxes(&query)
+            .await?
+            .pop()
+            .ok_or("purge removed the sandbox")?;
+        assert_eq!(after.name, before.name);
+        assert_eq!(after.created_at, before.created_at);
+        assert_eq!(after.phase, Phase::Stopped);
+        assert!(!after.labels.is_managed());
+        assert!(
+            matches!(
+                &outcome,
+                Err(PurgeError::DeleteUnconfirmed { sandbox: found, cause, .. })
+                    if *found == sandbox && matches!(**cause, GatewayError::Timeout { op: GatewayOp::Delete, .. })
+            ),
+            "{outcome:?}"
+        );
         Ok(())
     })
     .await
