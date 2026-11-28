@@ -1129,3 +1129,34 @@ fn canonical_ratatui_paths_survive_unrelated_glob_imports() -> TestResult {
         &[("C1", 3, "destructures"), ("C1", 3, "widgets")],
     )
 }
+
+#[test]
+fn attributed_alias_parameters_preserve_effective_positions() -> TestResult {
+    expect(
+        "use ratatui::buffer::Buffer;\n\
+         #[derive(Clone, Copy)] struct Local { value: u8 }\n\
+         struct Wrapper<T> { value: u8, marker: std::marker::PhantomData<T> }\n\
+         type Inert<#[allow(unused)] T> = T;\n\
+         type Active<#[cfg(all())] T> = T;\n\
+         type Shift<#[cfg(any())] Hidden, T> = T;\n\
+         type Maybe<#[cfg(unix)] T> = T;\n\
+         type Ambiguous<#[cfg(windows)] X = Local, T = Buffer> = T;\n\
+         type Concrete<#[cfg(unix)] X> = Wrapper<X>;\n\
+         fn inspect(a: Buffer, b: Buffer, c: Buffer, d: Buffer, local: Local, wrapped: Wrapper<Local>) {\n\
+         \x20   let Inert::<Buffer> { content, .. } = a;\n\
+         \x20   let Active::<Buffer> { content, .. } = b;\n\
+         \x20   let Shift::<Buffer> { content, .. } = c;\n\
+         \x20   let Maybe::<Buffer> { content, .. } = d;\n\
+         \x20   let Ambiguous::<Local> { value } = local;\n\
+         \x20   let Maybe::<Local> { value } = local;\n\
+         \x20   let Concrete::<Local> { value, .. } = wrapped;\n\
+         }\n",
+        &[
+            ("C1", 11, "destructures"),
+            ("C1", 12, "destructures"),
+            ("C1", 13, "destructures"),
+            ("C1", 14, "destructures"),
+            ("C1", 15, "conditional"),
+        ],
+    )
+}
