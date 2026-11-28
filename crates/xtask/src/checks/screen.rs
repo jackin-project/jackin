@@ -498,7 +498,12 @@ fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation
             TypeAlias::parse(tokens, *index, source).is_some_and(|alias| {
                 alias.value.clone().any(|target| {
                     types
-                        .may_be_ratatui_buffer(source, target, &mut AliasWork::Unlimited)
+                        .may_be_ratatui_buffer(
+                            source,
+                            target,
+                            BufferReference::Rename,
+                            &mut AliasWork::Unlimited,
+                        )
                         .unwrap_or(false)
                         && !associated_argument_name(tokens, target)
                         && !tokens[target].ident().is_some_and(|name| {
@@ -763,6 +768,12 @@ enum TypeBinding<'a> {
     Unresolved,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BufferReference {
+    Rename,
+    FieldPattern,
+}
+
 struct ImportPath<'a> {
     segments: Vec<&'a str>,
     absolute: bool,
@@ -786,9 +797,10 @@ struct TypeScope<'a> {
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
-    matches_imported: MatchesImport<'a>,
+    matches_imported: MatchesImport,
     matches_textual: bool,
     matches_to_parent: bool,
+    extern_macro_roots: [Option<bool>; 2],
 }
 
 impl<'a> TypeScope<'a> {
@@ -851,6 +863,14 @@ impl<'a> TypeScope<'a> {
     }
 
     fn bind_item(&mut self, tokens: &'a [Token], index: usize, file_module: Option<FileModule>) {
+        if tokens[index].is_keyword("extern")
+            && tokens
+                .get(index + 1)
+                .is_some_and(|token| token.is_keyword("crate"))
+        {
+            self.bind_extern_macro_root(tokens, index);
+            return;
+        }
         let Some(name) = tokens.get(index + 1).and_then(Token::ident) else {
             return;
         };
@@ -869,6 +889,31 @@ impl<'a> TypeScope<'a> {
             _ => return,
         };
         self.bind(name, binding);
+    }
+
+    fn bind_extern_macro_root(&mut self, tokens: &[Token], index: usize) {
+        let Some(source) = tokens.get(index + 2).and_then(Token::ident) else {
+            return;
+        };
+        let name = if tokens
+            .get(index + 3)
+            .is_some_and(|token| token.is_keyword("as"))
+        {
+            tokens.get(index + 4).and_then(Token::ident)
+        } else {
+            Some(source)
+        };
+        let Some(root) = name.and_then(StandardMacroRoot::from_name) else {
+            return;
+        };
+        if !macro_item_disabled(tokens, index) {
+            self.extern_macro_roots[root as usize] = Some(
+                StandardMacroRoot::from_name(source).is_some()
+                    && !has_macro_attribute(tokens, index, |attribute| {
+                        !inert_lint_attribute(attribute)
+                    }),
+            );
+        }
     }
 }
 
@@ -1013,25 +1058,52 @@ enum ScopePosition {
 #[derive(Clone, Copy)]
 enum MatchesMacro {
     Prelude,
-    Absolute,
-    Relative(usize),
+    Absolute(StandardMacroRoot),
+    Relative(StandardMacroRoot),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StandardMacroRoot {
+    Core,
+    Std,
+}
+
+impl StandardMacroRoot {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "core" => Some(Self::Core),
+            "std" => Some(Self::Std),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Core => "core",
+            Self::Std => "std",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum MatchesImport<'a> {
+enum MatchesImport {
     #[default]
     Absent,
-    Standard,
-    RelativeStandard(&'a str),
+    Standard(StandardMacroRoot),
+    RelativeStandard(StandardMacroRoot),
     Unknown,
 }
 
-impl<'a> MatchesImport<'a> {
-    fn include(self, segments: &[&'a str], absolute: bool, attributed: bool) -> Self {
-        let observed = match (segments, absolute, attributed) {
-            (["core" | "std", "matches"], true, false) => Self::Standard,
-            ([root @ ("core" | "std"), "matches"], false, false) => Self::RelativeStandard(root),
-            _ => Self::Unknown,
+impl MatchesImport {
+    fn include(self, segments: &[&str], absolute: bool, attributed: bool) -> Self {
+        let root = match (segments, attributed) {
+            ([name, "matches"], false) => StandardMacroRoot::from_name(name),
+            _ => None,
+        };
+        let observed = match (root, absolute) {
+            (Some(root), true) => Self::Standard(root),
+            (Some(root), false) => Self::RelativeStandard(root),
+            (None, _) => Self::Unknown,
         };
         if self == Self::Absent || self == observed {
             observed
@@ -1078,14 +1150,12 @@ fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     if !is_path_separator(tokens, name.wrapping_sub(2)) {
         return Some(MatchesMacro::Prelude);
     }
-    let root = name.checked_sub(3)?;
-    if !matches!(tokens[root].ident(), Some("core" | "std")) {
-        return None;
-    }
-    if !is_path_separator(tokens, root.wrapping_sub(2)) {
+    let root_start = name.checked_sub(3)?;
+    let root = StandardMacroRoot::from_name(tokens[root_start].ident()?)?;
+    if !is_path_separator(tokens, root_start.wrapping_sub(2)) {
         return Some(MatchesMacro::Relative(root));
     }
-    if tokens.get(root.wrapping_sub(3)).is_some_and(|token| {
+    if tokens.get(root_start.wrapping_sub(3)).is_some_and(|token| {
         token.ident().is_some()
             && !KEYWORDS_BEFORE_PATH
                 .iter()
@@ -1094,7 +1164,7 @@ fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     }) {
         return None;
     }
-    Some(MatchesMacro::Absolute)
+    Some(MatchesMacro::Absolute(root))
 }
 
 fn matches_pattern(file: &ScreenFile<'_>, arguments: Range<usize>) -> Option<Range<usize>> {
@@ -1985,6 +2055,7 @@ impl<'a> TypeScopes<'a> {
         &self,
         source: usize,
         index: usize,
+        reference: BufferReference,
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         let tokens = &self.files[source].tokens;
@@ -1996,7 +2067,9 @@ impl<'a> TypeScopes<'a> {
             Some(TypeBinding::RatatuiBuffer) => true,
             Some(TypeBinding::Nominal) if rust_scope => false,
             Some(TypeBinding::Alias(alias))
-                if rust_scope && self.alias_is_ratatui_buffer(source, alias, None, work)? =>
+                if reference == BufferReference::FieldPattern
+                    && rust_scope
+                    && self.alias_is_ratatui_buffer(source, alias, None, work)? =>
             {
                 true
             }
@@ -2015,22 +2088,20 @@ impl<'a> TypeScopes<'a> {
     ) -> Result<bool, AliasWorkLimit> {
         work.charge(1)?;
         let scope = match self.sources[source].enclosing[index] {
-            Some(
-                ScopePosition::Rust(scope)
-                | ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute),
-            ) => scope,
+            Some(ScopePosition::Rust(scope)) => scope,
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute(root)))
+                if self.matches_absolute_root_visible(root, work)? =>
+            {
+                scope
+            }
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Prelude))
                 if self.matches_prelude_visible(scope, work)? =>
             {
                 scope
             }
-            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Relative(root))) => {
-                let Some(name) = self.files[source].tokens[root].ident() else {
-                    return Ok(false);
-                };
-                if !self.matches_standard_root_visible(scope, name, work)? {
-                    return Ok(false);
-                }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Relative(root)))
+                if self.matches_standard_root_visible(scope, root, work)? =>
+            {
                 scope
             }
             _ => return Ok(false),
@@ -2057,7 +2128,9 @@ impl<'a> TypeScopes<'a> {
             work.charge(1)?;
             let current = &self.scopes[scope];
             match current.matches_imported {
-                MatchesImport::Standard => return Ok(true),
+                MatchesImport::Standard(root) => {
+                    return self.matches_absolute_root_visible(root, work);
+                }
                 MatchesImport::RelativeStandard(root) => {
                     return self.matches_standard_root_visible(scope, root, work);
                 }
@@ -2075,20 +2148,39 @@ impl<'a> TypeScopes<'a> {
     fn matches_standard_root_visible(
         &self,
         mut scope: usize,
-        name: &str,
+        root: StandardMacroRoot,
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
+        let name = root.name();
         loop {
             work.charge_name(name)?;
             let current = &self.scopes[scope];
-            if current.glob_import || current.bindings.contains_key(name) {
+            if current.bindings.contains_key(name) {
+                return Ok(false);
+            }
+            if let Some(standard) = current.extern_macro_roots[root as usize] {
+                return Ok(standard);
+            }
+            if current.glob_import {
                 return Ok(false);
             }
             let Some(parent) = current.parent else {
-                return Ok(true);
+                return self.matches_absolute_root_visible(root, work);
             };
             scope = parent;
         }
+    }
+
+    fn matches_absolute_root_visible(
+        &self,
+        root: StandardMacroRoot,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasWorkLimit> {
+        work.charge_name(root.name())?;
+        Ok(self
+            .crate_root
+            .and_then(|scope| self.scopes[scope].extern_macro_roots[root as usize])
+            .unwrap_or(true))
     }
 
     fn alias_is_ratatui_buffer(
@@ -2201,7 +2293,12 @@ fn buffer_pattern_matches(
         if tokens[index].is_ident("Self") && !is_path_separator(tokens, index.wrapping_sub(2)) {
             return types.self_is_ratatui_buffer(source, index, &mut work);
         }
-        return types.may_be_ratatui_buffer(source, index, &mut work);
+        return types.may_be_ratatui_buffer(
+            source,
+            index,
+            BufferReference::FieldPattern,
+            &mut work,
+        );
     }
     let start = index + 3;
     if !is_path_separator(tokens, index + 1) || !tokens.get(start).is_some_and(|t| t.is_punct('<'))
