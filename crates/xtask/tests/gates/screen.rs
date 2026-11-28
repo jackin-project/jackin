@@ -841,6 +841,9 @@ fn omitted_alias_type_arguments_use_the_declaration_defaults() -> TestResult {
          }\n\
          use model::Buffer;\n\
          fn check(a: ratatui::buffer::Buffer, b: Buffer) {\n\
+         \x20   let _ = matches!(&a, defaults::Fixed { content, .. } if !content.is_empty());\n\
+         \x20   let _ = matches!(&b, model::Fixed { value: _ });\n\
+         \x20   let _ = ::core::stringify!(defaults::Fixed { content, .. });\n\
          \x20   let defaults::Default::<7> { content, .. } = a;\n\
          \x20   let defaults::Default::<7, Buffer> { value } = b;\n\
          \x20   let model::Local::<7> { value } = b;\n\
@@ -851,7 +854,8 @@ fn omitted_alias_type_arguments_use_the_declaration_defaults() -> TestResult {
         &[
             ("C1", 16, "destructures"),
             ("C1", 19, "destructures"),
-            ("C1", 20, "destructures"),
+            ("C1", 22, "destructures"),
+            ("C1", 23, "destructures"),
         ],
     )
 }
