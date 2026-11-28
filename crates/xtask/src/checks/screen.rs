@@ -126,6 +126,7 @@ struct ScreenFile<'a> {
     tokens: Vec<Token>,
     group_ends: Vec<Option<usize>>,
     header_bodies: Vec<Option<usize>>,
+    may_supply_matches: bool,
 }
 
 impl<'a> ScreenFile<'a> {
@@ -133,11 +134,13 @@ impl<'a> ScreenFile<'a> {
         let tokens = lex_rust(text).tokens;
         let group_ends = pattern_group_ends(&tokens);
         let header_bodies = header_body_starts(&tokens, &group_ends);
+        let may_supply_matches = file_may_supply_matches(&tokens, &group_ends);
         Self {
             path,
             tokens,
             group_ends,
             header_bodies,
+            may_supply_matches,
         }
     }
 }
@@ -783,6 +786,7 @@ struct TypeScope<'a> {
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
+    macro_glob_import: bool,
     matches_imported: MatchesImport<'a>,
     matches_textual: bool,
     matches_to_parent: bool,
@@ -805,34 +809,23 @@ impl<'a> TypeScope<'a> {
         let mut paths = Vec::new();
         path_tree(tokens, &mut position, &[], &mut paths);
         let attributed = has_outer_attribute(tokens, index);
+        let active_macros = !macro_item_disabled(tokens, index);
         for mut path in paths {
             let segments = path.segments.as_slice();
             let name = match (path.rename, segments) {
                 (Some((name, _)), _) => name,
                 (None, [.., "*"]) => {
                     self.glob_import = true;
+                    self.macro_glob_import |= active_macros;
                     continue;
                 }
                 (None, [.., name, "self"] | [.., name]) => *name,
                 _ => continue,
             };
-            if name == "matches" {
-                if let [root @ ("core" | "std"), "matches"] = *segments
-                    && !attributed
-                {
-                    let standard = if absolute {
-                        MatchesImport::Standard
-                    } else {
-                        MatchesImport::RelativeStandard(root)
-                    };
-                    self.matches_imported = match self.matches_imported {
-                        MatchesImport::Absent => standard,
-                        previous if previous == standard => previous,
-                        _ => MatchesImport::Unknown,
-                    };
-                } else {
-                    self.matches_imported = MatchesImport::Unknown;
-                }
+            if active_macros && name == "matches" {
+                self.matches_imported = self
+                    .matches_imported
+                    .include(segments, absolute, attributed);
             }
             let binding = match segments {
                 ["ratatui", "buffer", "Buffer"] => TypeBinding::RatatuiBuffer,
@@ -948,7 +941,7 @@ fn imports_macro_rules(tokens: &[Token], declaration: usize) -> bool {
     )
 }
 
-fn macro_rules_disabled(tokens: &[Token], declaration: usize) -> bool {
+fn macro_item_disabled(tokens: &[Token], declaration: usize) -> bool {
     has_macro_attribute(tokens, declaration, |attribute| {
         let [cfg, outer, any, inner, inner_close, outer_close] = attribute else {
             return false;
@@ -1021,6 +1014,51 @@ enum MatchesImport<'a> {
     Unknown,
 }
 
+impl<'a> MatchesImport<'a> {
+    fn include(self, segments: &[&'a str], absolute: bool, attributed: bool) -> Self {
+        let observed = match (segments, absolute, attributed) {
+            (["core" | "std", "matches"], true, false) => Self::Standard,
+            ([root @ ("core" | "std"), "matches"], false, false) => Self::RelativeStandard(root),
+            _ => Self::Unknown,
+        };
+        if self == Self::Absent || self == observed {
+            observed
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+fn file_may_supply_matches(tokens: &[Token], ends: &[Option<usize>]) -> bool {
+    let mut index = 0;
+    while index < tokens.len() {
+        let Some(open) = opaque_group_open(tokens, index) else {
+            index += 1;
+            continue;
+        };
+        if tokens[index].is_punct('#') {
+            let inert = tokens
+                .get(open + 1)
+                .and_then(Token::ident)
+                .is_some_and(|name| {
+                    matches!(
+                        name,
+                        "cfg" | "allow" | "warn" | "deny" | "forbid" | "expect"
+                    )
+                });
+            if !inert {
+                return true;
+            }
+        } else if !tokens[index - 1].is_keyword("macro_rules")
+            || tokens[index + 1].is_ident("matches")
+        {
+            return true;
+        }
+        index = ends[open].unwrap_or(tokens.len());
+    }
+    false
+}
+
 fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     let name = bang.checked_sub(1)?;
     if !tokens[bang].is_punct('!') || !tokens[name].is_ident("matches") {
@@ -1078,6 +1116,11 @@ fn matches_scrutinee_end(
         let token = &tokens[index];
         if token.is_punct(',') {
             return Some(index);
+        }
+        if token.joins_next_pipe {
+            top_level.next()?;
+            starts_operand = true;
+            continue;
         }
         if starts_operand && token.is_punct('|') {
             top_level.find(|&at| tokens[at].is_punct('|'))?;
@@ -1480,7 +1523,7 @@ impl<'a> TypeScopes<'a> {
                 scope_state.matches_textual |= token.is_punct('!')
                     && tokens[index - 1].is_ident("macro_rules")
                     && tokens[index + 1].is_ident("matches")
-                    && !macro_rules_disabled(tokens, index - 1);
+                    && !macro_item_disabled(tokens, index - 1);
                 if scope_state.self_receiver.is_some()
                     && let Some(kind) = matches_macro(tokens, index)
                     && (matches!(kind, MatchesMacro::Absolute) || !scope_state.matches_textual)
@@ -1513,7 +1556,8 @@ impl<'a> TypeScopes<'a> {
                 if token.is_keyword("mod")
                     && tokens.get(index + 2).is_some_and(|end| end.is_punct(';'))
                     && imports_macro_rules(tokens, index)
-                    && !macro_rules_disabled(tokens, index)
+                    && !macro_item_disabled(tokens, index)
+                    && self.file_may_import_matches(source, scope, index, paths)
                 {
                     self.scopes[scope].matches_textual = true;
                 }
@@ -1546,6 +1590,30 @@ impl<'a> TypeScopes<'a> {
         let mut child = paths.file(module.directory?, tokens.get(declaration + 1)?.ident()?)?;
         child.matches_textual = module.matches_textual;
         Some(child)
+    }
+
+    fn file_may_import_matches(
+        &self,
+        source: usize,
+        scope: usize,
+        declaration: usize,
+        paths: &ModulePaths<'a>,
+    ) -> bool {
+        let module = &self.scopes[scope];
+        let tokens = &self.files[source].tokens;
+        if !self.sources[source].connected
+            || scope != module.module
+            || has_macro_attribute(tokens, declaration, |attribute| {
+                attribute.first().and_then(Token::ident) != Some("macro_use")
+            })
+        {
+            return true;
+        }
+        module
+            .directory
+            .zip(tokens.get(declaration + 1).and_then(Token::ident))
+            .and_then(|(directory, name)| paths.file(directory, name))
+            .is_none_or(|child| self.files[child.source].may_supply_matches)
     }
 
     fn enter_scope(
@@ -1595,7 +1663,7 @@ impl<'a> TypeScopes<'a> {
             matches_textual: self.scopes[parent].matches_textual,
             matches_to_parent: module.is_some_and(|(declaration, _)| {
                 imports_macro_rules(tokens, declaration)
-                    && !macro_rules_disabled(tokens, declaration)
+                    && !macro_item_disabled(tokens, declaration)
             }),
             ..TypeScope::default()
         });
@@ -1969,7 +2037,7 @@ impl<'a> TypeScopes<'a> {
                     return self.matches_standard_root_visible(scope, root, work);
                 }
                 MatchesImport::Unknown => return Ok(false),
-                MatchesImport::Absent if current.glob_import => return Ok(false),
+                MatchesImport::Absent if current.macro_glob_import => return Ok(false),
                 MatchesImport::Absent => {}
             }
             let Some(parent) = current.parent else {
@@ -1988,7 +2056,7 @@ impl<'a> TypeScopes<'a> {
         loop {
             work.charge_name(name)?;
             let current = &self.scopes[scope];
-            if current.glob_import || current.bindings.contains_key(name) {
+            if current.macro_glob_import || current.bindings.contains_key(name) {
                 return Ok(false);
             }
             let Some(parent) = current.parent else {

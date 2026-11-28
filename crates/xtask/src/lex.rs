@@ -73,6 +73,7 @@ pub(crate) struct Lexed {
 pub(crate) struct Token {
     pub(crate) kind: Tok,
     pub(crate) line: u32,
+    pub(crate) joins_next_pipe: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -184,7 +185,12 @@ impl Lexer {
     }
 
     fn push(&mut self, kind: Tok, line: u32) {
-        self.out.tokens.push(Token { kind, line });
+        let joins_next_pipe = kind == Tok::Punct('|') && self.cur.peek(0) == Some('|');
+        self.out.tokens.push(Token {
+            kind,
+            line,
+            joins_next_pipe,
+        });
     }
 
     fn line_comment(&mut self, line: u32) {
