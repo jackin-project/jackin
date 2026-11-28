@@ -975,6 +975,8 @@ pub enum MissingBinding {
     SeveralAccountsNoDefault { provider: Provider, accounts: Vec<AccountName> },
 }
 pub struct ConfigStore { }
+pub struct ConfigEditLease<'store> { }
+pub struct PreparedConfigEdit<'lease> { }
 
 impl ConfigStore {
     pub fn new(fs: Arc<dyn FileSystem>, clock: Arc<dyn Clock>, path: HostPath) -> ConfigStore;
@@ -982,11 +984,21 @@ impl ConfigStore {
     pub async fn load(&self) -> Result<Config, ConfigError>;
     pub async fn edit(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<Config, ConfigError>;
     pub async fn edit_checked<E: From<ConfigError>>(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken, check: impl FnOnce(&Config) -> Result<(), E>) -> Result<Config, E>;   // `check` sees the edited config under the lock; the commit point is after it
+    pub async fn begin_edit(&self, cancel: &CancellationToken) -> Result<ConfigEditLease<'_>, ConfigError>;
+}
+impl ConfigEditLease<'_> {
+    pub async fn prepare<E: From<ConfigError>>(&mut self, edits: Vec<ConfigEdit>, cancel: &CancellationToken, check_live: impl FnOnce(&Config) -> Result<(), E>) -> Result<PreparedConfigEdit<'_>, E>;
+}
+impl PreparedConfigEdit<'_> {
+    pub fn candidate(&self) -> &Config;
+    pub async fn commit(self, cancel: &CancellationToken) -> Result<Config, ConfigError>;
 }
 impl ConfigError { pub const fn committed(&self) -> bool; pub const fn cancelled(&self) -> bool; pub fn unless_cancelled(cancel: &CancellationToken) -> Result<(), ConfigError> }
 ```
 
 `edit_checked` checks the token before it creates the directory, while it waits for the lock, after the lock, and after `check`; each of those returns `ConfigError::Cancelled` and writes nothing. The atomic write is never raced against the token, so once it starts the caller gets its real outcome: `Ok`, a write error, or `FsError::Unsynced`, which `committed()` reports as written.
+
+`begin_edit` acquires the same cross-process lock. `prepare` reads and checks the live config under that lock, then applies the edits to a candidate in memory. `commit` writes the candidate under the same lock. Account plans keep the lease through provider operations, config commit, and any rollback. They acquire account locks and connect before taking the lease. Other writers of the same config wait within the existing lock timeout.
 
 Gateway keys are the registered OpenShell gateway names (D03). `jackin gateway add` writes `builder` (default `default`) and `platform` (default `Platform::host_default()` evaluated at add time), so a stored entry is always explicit and no later code guesses a default. The `docker_engine` entry exists because OpenShell has no place for an engine endpoint (D24).
 
@@ -1552,7 +1564,7 @@ impl SandboxCreate {
 Contract of each method. The fake and the real adapter obey the same text, and `contract::run` checks it.
 
 - `ensure_profile`: imports the profile when its ID is absent and returns `Imported`. A present profile with identical content gives `Unchanged`. A present profile with different content is replaced through `UpdateProviderProfiles` (`openshell.proto:366`), with the resource version that `GetProviderProfile` returned in the same call, and gives `Updated`. That RPC rejects a zero version, so an update is optimistic: a change between the read and the update gives `FailedPrecondition` and writes nothing, and the next launch converges. Idempotent.
-- `put_provider`: returns the `ProviderWriteEffect` of the write, and the same effect inside `ProviderWriteError` when it fails after or around a write: `NoWrite` when nothing was written (a missing profile, a failed state lookup, or a create that failed with an outcome the gateway proves was not applied), `Created` when this call's `CreateProvider` succeeded, `Existing` when the provider was already there (an update, or a create that lost a race to `AlreadyExists` and then updated), and `Unknown` when a create failed with an outcome `GatewayError::outcome_unknown` cannot rule out. A refresh-configuration failure after the write keeps `Created` or `Existing`. A caller removes a provider only after `Created`. It creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
+- `put_provider`: returns the `ProviderWriteEffect` of the write, and the same effect inside `ProviderWriteError` when it fails after or around a write: `NoWrite` when nothing was written (a missing profile, a failed state lookup, or a create that failed with an outcome the gateway proves was not applied), `Created` when this call's `CreateProvider` succeeded, `Existing` when the provider was already there (an update, or a create that lost a race to `AlreadyExists` and then updated), and `Unknown` when a create failed with an outcome `GatewayError::outcome_unknown` cannot rule out. A refresh-configuration failure after the write keeps `Created` or `Existing`. An update that fails after `DeleteProviderRefresh` removed a refresh configuration (its outcome is not `AlreadyAbsent`) reports `Existing`, whatever the failure was, because the provider changed. A caller removes a provider only after `Created`. It creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
 - `create_sandbox`: creates with the image tag, labels, the `JACKIN_LAUNCH_ID` environment, providers, policy, and the main process with a kept PTY and restart policy never. It returns when the call returns, not when `Ready` (P0.2). A second create with the same name returns `AlreadyExists`. Names and label values are validated by types, so the gateway never sees an invalid one, and the fake rejects an invalid one the same way the gateway does.
 - `find_sandboxes`: `Labels` lists every matching sandbox across all pages, and `managed()` returns only sandboxes that carry the jackin label set. `Name` returns zero or one result. A missing sandbox is an empty list, not an error. A view carries `Provisioning::Failed` when the gateway reports a failed provisioning.
 - `sandbox_detail`: the view, the attached OpenShell providers, and the effective policy as a `PolicyDocument`.
@@ -2086,7 +2098,7 @@ pub struct AttachTarget { pub sandbox: SandboxName, pub state: SupervisorState }
 pub struct RestoreCandidate { pub launch_id: LaunchId, pub finding: RestoreFinding }
 pub enum RestoreFinding { Observed(SandboxName), Absent { requested: bool }, Ambiguous(Vec<SandboxName>), Unconfirmed { last_observed: Option<SandboxName>, planned: SandboxName } }
 pub const RECOVERY_LOOKUP_BUDGET: Duration = Duration::from_secs(3);
-pub enum LaunchOutcome { Ready(AttachTarget), Cancelled(RestoreCandidate) }
+pub enum LaunchOutcome { Ready(AttachTarget), Cancelled(RestoreCandidate) }   // a cancelled launch whose provider write is uncertain or whose rollback failed (`leaves_provider_unsettled`) returns `LaunchFailure` at `Provider` instead, so the uncertainty is reported
 pub struct LaunchFailure { pub launch_id: LaunchId, pub step: LaunchStep, pub sandbox: Option<SandboxName>, pub error: Box<LaunchError> }
 pub enum LaunchError {
     Image(ImageError),
@@ -2424,7 +2436,8 @@ impl AccountPlan {
 impl OfflinePlan { pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, ConfigError> }
 impl GatewayPlan { pub fn config(&self) -> &Config; pub async fn apply(self, gateways: &Gateways, cancel: &CancellationToken) -> Result<Config, AccountEditError> }   // build `gateways` from config()
 pub async fn plan_gateway_removal(desk: &AccountDesk, name: &GatewayName, cancel: &CancellationToken) -> Result<GatewayRemoval, AccountEditError>;
-pub enum GatewayRemoval { Offline(OfflinePlan), Online(RemovalPlan) }
+pub enum GatewayRemoval { Offline(OfflineRemoval), Online(RemovalPlan) }
+impl OfflineRemoval { pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
 impl RemovalPlan { pub fn gateway(&self) -> &GatewayName; pub async fn apply(self, connector: &dyn GatewayConnector, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
 pub enum AccountEditError { Config(ConfigError), Account(AccountError), OnGateway { gateway: GatewayName, source: GatewayError },
                             Unreachable(Vec<UnreachableGateway>), Connect(ConnectError), RollbackFailed { .. } }
@@ -2512,7 +2525,7 @@ pub enum AccountError {
     ProviderWrite(ProviderWriteError),                               // a provider write failed; `write_effect()` says whether it created, updated or wrote nothing
     ProviderWriteUncertain { account: AccountName, gateway: GatewayName, source: Box<AccountError> },   // the write may have completed; nothing was deleted
 }
-impl AccountError { pub fn write_effect(&self) -> ProviderWriteEffect; pub fn is_cancelled(&self) -> bool }   // a cancel before the commit, a cancelled lock, or a cancelled credential read
+impl AccountError { pub fn write_effect(&self) -> ProviderWriteEffect; pub fn leaves_provider_unsettled(&self) -> bool; pub fn is_cancelled(&self) -> bool }   // a cancel before the commit, a cancelled lock, or a cancelled credential read
 ```
 
 All error enums derive `Debug` and `thiserror::Error`, and none holds a secret. Their messages follow the error text rule of section 1. `RoleError::Manifest` prints only `invalid role manifest at <path>`, and the report of the binary adds the cause once. `ExportError::BundleHeads` reads `extra a, b; missing none`. `EnvFileProblem`, `LaunchStep`, `ProjectStep`, `EnvQuestion`, `UnknownReason`, `WorkState`, `ObjectFormat`, and `EntryKind` implement `Display` and print words.

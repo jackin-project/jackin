@@ -123,6 +123,17 @@ impl AccountError {
     }
 
     #[must_use]
+    pub fn leaves_provider_unsettled(&self) -> bool {
+        match self {
+            AccountError::ProviderWriteUncertain { .. } | AccountError::RollbackFailed { .. } => {
+                true
+            }
+            AccountError::ProviderWrite(write) => write.effect() == ProviderWriteEffect::Existing,
+            _ => false,
+        }
+    }
+
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         match self {
             AccountError::Lock(LockError::Cancelled)
@@ -220,29 +231,6 @@ struct Locked {
     desk: AccountDesk,
     config: Config,
     _held: Vec<FileLock>,
-}
-
-type LiveCheck = fn(&Config, &Config) -> Result<(), AccountError>;
-
-impl Locked {
-    async fn ensure_current(&self, check: LiveCheck) -> Result<(), AccountEditError> {
-        check(&self.config, &self.desk.store.load().await?)?;
-        Ok(())
-    }
-
-    async fn commit(
-        &self,
-        edits: Vec<ConfigEdit>,
-        cancel: &CancellationToken,
-        check: LiveCheck,
-    ) -> Result<Config, AccountEditError> {
-        self.desk
-            .store
-            .edit_checked(edits, cancel, |live| {
-                check(&self.config, live).map_err(AccountEditError::from)
-            })
-            .await
-    }
 }
 
 fn account_lock(name: &AccountName) -> String {
@@ -519,11 +507,11 @@ impl OfflineRemoval {
     pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, AccountEditError> {
         let OfflineRemoval { locked, name } = self;
         locked
-            .commit(
-                vec![ConfigEdit::RemoveGateway(name)],
-                cancel,
-                check_no_new_logins,
-            )
+            .desk
+            .store
+            .edit_checked(vec![ConfigEdit::RemoveGateway(name)], cancel, |candidate| {
+                check_no_new_logins(&locked.config, candidate).map_err(AccountEditError::from)
+            })
             .await
     }
 }
@@ -539,7 +527,8 @@ impl RemovalPlan {
         cancel: &CancellationToken,
     ) -> Result<Config, AccountEditError> {
         ConfigError::unless_cancelled(cancel)?;
-        self.locked.ensure_current(check_removal).await?;
+        let store = &self.locked.desk.store;
+        check_removal(&self.locked.config, &store.load().await?)?;
         let gateway = match connector.connect(&self.name, &self.entry, cancel).await {
             Ok(gateway) => gateway,
             Err(error) if error.is_cancelled() => return Err(AccountEditError::Connect(error)),
@@ -550,7 +539,14 @@ impl RemovalPlan {
             }
         };
         let host = &self.locked.desk.host;
-        let edit = ConfigEdit::RemoveGateway(self.name.clone());
+        let mut lease = store.begin_edit(cancel).await?;
+        let prepared = lease
+            .prepare(
+                vec![ConfigEdit::RemoveGateway(self.name.clone())],
+                cancel,
+                |live| check_removal(&self.locked.config, live).map_err(AccountEditError::from),
+            )
+            .await?;
         let mut journal = Vec::new();
         let written = async {
             for account in &self.forget {
@@ -571,7 +567,7 @@ impl RemovalPlan {
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
             }
-            self.locked.commit(vec![edit], cancel, check_removal).await
+            Ok(prepared.commit(cancel).await?)
         }
         .await;
         match written {
@@ -798,7 +794,12 @@ impl GatewayPlan {
         ConfigError::unless_cancelled(cancel)?;
         let scope = effects.scope();
         check_gateways(&locked.config, gateways, scope)?;
-        locked.ensure_current(check_gateway_entries).await?;
+        let mut lease = locked.desk.store.begin_edit(cancel).await?;
+        let prepared = lease
+            .prepare(edits, cancel, |live| {
+                check_gateway_entries(&locked.config, live).map_err(AccountEditError::from)
+            })
+            .await?;
         let sessions = match scope {
             GatewayScope::Every => gateways.every().map_err(AccountEditError::Unreachable)?,
             GatewayScope::Home => vec![gateways.home()],
@@ -807,7 +808,7 @@ impl GatewayPlan {
         let written = async {
             forget(&sessions, &effects.forget, &mut journal, cancel).await?;
             publish(&sessions, &effects.publish, &agents, &mut journal, cancel).await?;
-            locked.commit(edits, cancel, check_gateway_entries).await
+            Ok(prepared.commit(cancel).await?)
         }
         .await;
         match written {

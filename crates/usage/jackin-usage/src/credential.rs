@@ -1,16 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::future::Future;
-use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, CredentialFileProblem, CredentialSource, FileIdentity, HostPath, ProcessSpec,
-    ProcessStatus, ProcessStdin, Program, Secret, lookup_tuple, read_credential_file,
+    Agent, CaptureLimits, CaptureProblem, CredentialFileProblem, CredentialSource, FileIdentity,
+    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath,
+    SQLITE_MAGIC, STORE_LENGTH_LIMIT, STORE_PRAGMAS, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
+    STORE_VALUE_MAX_BYTES, Secret, StoreImage, capture, lookup_tuple, read_credential_file,
+    run_bounded,
 };
 use jackin_usage_provider_core::Credential;
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
@@ -19,7 +21,12 @@ use crate::deps::UsageDeps;
 use crate::request::UsageAccount;
 
 const OP_TIMEOUT: Duration = Duration::from_secs(30);
-const OMP_RESOLVE_ATTEMPTS: usize = 4;
+const OPENCODE_LIMITS: CaptureLimits = CaptureLimits {
+    database_bytes: 512 * 1024 * 1024,
+    log_bytes: 128 * 1024 * 1024,
+    image_bytes: 640 * 1024 * 1024,
+    deadline: Duration::from_secs(60),
+};
 const CODEX_LOGIN_FILE: &str = "auth.json";
 const OMP_DB: &str = jackin_core::OMP_HOST_STORE;
 const KIMI_CONFIG: &str = "config.toml";
@@ -27,15 +34,8 @@ const KIMI_GLOBAL_BASE: &str = "https://api.kimi.ai/coding/v1";
 const KIMI_MAINLAND_BASE: &str = "https://api.kimi.com/coding/v1";
 const OPENCODE_INTEGRATION: &str = "opencode";
 const OPENCODE_OAUTH: &str = "oauth";
-const OPENCODE_SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
-const OPENCODE_SNAPSHOT_ATTEMPTS: usize = 3;
 const OPENCODE_CREDENTIAL_QUERY: &str = "SELECT id, value, time_updated, time_created FROM credential \
      WHERE integration_id = ?1 AND (active = 1 OR active IS NULL)";
-const OPENCODE_WAL_HEADER: usize = 32;
-const OPENCODE_WAL_FRAME_HEADER: usize = 24;
-const OPENCODE_WAL_MAGIC: u32 = 0x377f_0682;
-const OPENCODE_WAL_MAGIC_SWAPPED: u32 = 0x377f_0683;
-const OPENCODE_WAL_FORMAT: u32 = 3_007_000;
 const KIMI_GLOBAL_OAUTH: &str = "https://auth.kimi.ai";
 const KIMI_MAINLAND_OAUTH: &str = "https://auth.kimi.com";
 const HEX: [char; 16] = [
@@ -361,106 +361,70 @@ async fn minimax_host_login(
 }
 
 async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Material>, Unresolved> {
-    if !is_opencode_store(deps, path).await {
-        return Ok(None);
-    }
-    let identity = deps
-        .fs
-        .identity(path)
-        .await
-        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
-        .ok_or(Unresolved::Missing)?;
-    let (bytes, wal) = read_opencode_snapshot(deps, path).await?;
-    let found =
-        tokio::task::spawn_blocking(move || extract_opencode_credential(bytes, wal.as_deref()))
-            .await
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))??;
+    let captured = match capture(deps.fs.as_ref(), path, OPENCODE_LIMITS).await {
+        Ok(captured) => captured,
+        Err(CaptureProblem::NotSqlite | CaptureProblem::NotARegularFile) => return Ok(None),
+        Err(CaptureProblem::Symlink) if !links_to_sqlite(deps, path).await => return Ok(None),
+        Err(CaptureProblem::Missing) => return Err(Unresolved::Missing),
+        Err(CaptureProblem::LogUnreadable | CaptureProblem::LogTooLarge) => {
+            return Err(Unresolved::Unreadable(
+                "the OpenCode write-ahead log could not be read",
+            ));
+        }
+        Err(_) => {
+            return Err(Unresolved::Unreadable(
+                "the OpenCode store could not be read",
+            ));
+        }
+    };
+    let identity = captured.identity;
+    let found = query_image(captured.image, OPENCODE_WORDS, |connection| {
+        extract_opencode_credential(connection)
+    })
+    .await?;
     let revision = opencode_revision(path.as_path(), identity, &found);
     Ok(Some(
-        Material::login(found.value).with_revision(Some(revision)),
+        Material::login(found.value.expose().to_owned()).with_revision(Some(revision)),
     ))
 }
 
-async fn is_opencode_store(deps: &UsageDeps, path: &HostPath) -> bool {
-    match deps.fs.read_at(path, 0, OPENCODE_SQLITE_MAGIC.len()).await {
-        Ok(head) => head == OPENCODE_SQLITE_MAGIC,
-        Err(_) => false,
-    }
-}
-
-async fn read_opencode_snapshot(
-    deps: &UsageDeps,
-    path: &HostPath,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved> {
-    opencode_consistent_snapshot(|| async {
-        let bytes = read_opencode_store(deps, path).await?;
-        let wal = read_opencode_wal(deps, path).await?;
-        let again = read_opencode_store(deps, path).await?;
-        Ok((bytes, wal, again))
-    })
-    .await
-}
-
-async fn opencode_consistent_snapshot<Read, ReadFuture>(
-    mut read: Read,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved>
-where
-    Read: FnMut() -> ReadFuture,
-    ReadFuture: Future<Output = Result<(Vec<u8>, Option<Vec<u8>>, Vec<u8>), Unresolved>>,
-{
-    for _ in 0..OPENCODE_SNAPSHOT_ATTEMPTS {
-        let (bytes, wal, again) = read().await?;
-        if bytes == again {
-            return Ok((bytes, wal));
-        }
-    }
-    Err(Unresolved::Unreadable(
-        "the OpenCode store could not be read",
-    ))
-}
-
-async fn read_opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Vec<u8>, Unresolved> {
-    deps.fs
-        .read(path)
-        .await
-        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
-        .ok_or(Unresolved::Missing)
-}
-
-async fn read_opencode_wal(
-    deps: &UsageDeps,
-    path: &HostPath,
-) -> Result<Option<Vec<u8>>, Unresolved> {
-    let wal = HostPath::parse(&PathBuf::from(format!("{}-wal", path.as_path().display())))
-        .map_err(|_| Unresolved::Unreadable("the OpenCode write-ahead log could not be read"))?;
-    match deps.fs.read(&wal).await {
-        Ok(bytes) => Ok(bytes),
-        Err(_) => Err(Unresolved::Unreadable(
-            "the OpenCode write-ahead log could not be read",
-        )),
-    }
+async fn links_to_sqlite(deps: &UsageDeps, path: &HostPath) -> bool {
+    let Ok(Some(target)) = deps.fs.canonicalize(path).await else {
+        return false;
+    };
+    let (Some(dir), Some(name)) = (
+        target
+            .as_path()
+            .parent()
+            .and_then(|dir| HostPath::parse(dir).ok()),
+        target
+            .as_path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| RepoPath::parse(name).ok()),
+    ) else {
+        return false;
+    };
+    matches!(
+        deps.fs.read_regular(&dir, &name, SQLITE_MAGIC.len()).await,
+        Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC)
+    )
 }
 
 struct OpenCodeRecord {
     id: String,
-    value: String,
+    value: Secret,
     digest: String,
 }
 
 fn extract_opencode_credential(
-    bytes: Vec<u8>,
-    wal: Option<&[u8]>,
+    connection: &rusqlite::Connection,
 ) -> Result<OpenCodeRecord, Unresolved> {
-    let image = opencode_store_image(bytes, wal)?;
-    let mut connection = opencode_connection()?;
-    connection
-        .deserialize_read_exact(
-            "main",
-            std::io::Cursor::new(image.as_slice()),
-            image.len(),
-            true,
-        )
-        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    if !is_plain_table(connection, "credential") {
+        return Err(Unresolved::Unreadable(
+            "the OpenCode store could not be read",
+        ));
+    }
     let mut statement = connection
         .prepare(OPENCODE_CREDENTIAL_QUERY)
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
@@ -472,19 +436,22 @@ fn extract_opencode_credential(
         .next()
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
     {
-        let id: String = row
-            .get(0)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        let value: String = row
-            .get(1)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let unreadable = || Unresolved::Unreadable("the OpenCode store could not be read");
+        let id = row
+            .get_ref(0)
+            .and_then(bounded_text)
+            .map_err(|_| unreadable())?;
+        let value = row
+            .get_ref(1)
+            .and_then(bounded_secret)
+            .map_err(|_| unreadable())?;
         let updated: i64 = row
             .get(2)
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
         let created: i64 = row
             .get(3)
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        let kind = serde_json::from_str::<Value>(&value)
+        let kind = serde_json::from_str::<Value>(value.expose())
             .map_err(|_| Unresolved::Unreadable("the OpenCode credential is not valid JSON"))?;
         if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
             continue;
@@ -504,23 +471,14 @@ fn extract_opencode_credential(
     };
     Ok(OpenCodeRecord {
         id: found.id,
-        digest: revision_of(found.value.as_bytes()),
+        digest: revision_of(found.value.expose().as_bytes()),
         value: found.value,
     })
 }
 
-fn opencode_connection() -> Result<rusqlite::Connection, Unresolved> {
-    let connection = rusqlite::Connection::open_in_memory()
-        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
-    connection
-        .execute_batch("PRAGMA temp_store = MEMORY;")
-        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
-    Ok(connection)
-}
-
 struct OpenCodeCandidate {
     id: String,
-    value: String,
+    value: Secret,
     updated: i64,
     created: i64,
 }
@@ -531,171 +489,6 @@ impl OpenCodeCandidate {
             || ((self.updated, self.created) == (other.updated, other.created)
                 && self.id < other.id)
     }
-}
-
-fn opencode_store_image(mut image: Vec<u8>, wal: Option<&[u8]>) -> Result<Vec<u8>, Unresolved> {
-    if let Some(wal) = wal {
-        apply_opencode_wal(&mut image, wal)?;
-    }
-    if let Some(header) = image.get_mut(18..20) {
-        header.copy_from_slice(&[1, 1]);
-    }
-    Ok(image)
-}
-
-fn apply_opencode_wal(image: &mut Vec<u8>, wal: &[u8]) -> Result<(), Unresolved> {
-    let unreadable = || Unresolved::Unreadable("the OpenCode write-ahead log could not be read");
-    if wal.len() < OPENCODE_WAL_HEADER {
-        return Ok(());
-    }
-    let Some(magic) = wal.get(0..4).and_then(opencode_u32) else {
-        return Err(unreadable());
-    };
-    if magic != OPENCODE_WAL_MAGIC && magic != OPENCODE_WAL_MAGIC_SWAPPED {
-        return Err(unreadable());
-    }
-    let big_endian = magic & 1 == 1;
-    if wal.get(4..8).and_then(opencode_u32) != Some(OPENCODE_WAL_FORMAT) {
-        return Err(unreadable());
-    }
-    let page_size = match wal.get(8..12).and_then(opencode_u32) {
-        Some(1) => 65_536,
-        Some(size) => size as usize,
-        None => return Err(unreadable()),
-    };
-    if page_size < 512 || !page_size.is_power_of_two() {
-        return Err(unreadable());
-    }
-    if image.len() < page_size || !image.len().is_multiple_of(page_size) {
-        return Err(unreadable());
-    }
-    let store_page_size = match image.get(16..18).and_then(opencode_u16) {
-        Some(1) => 65_536,
-        Some(size) => size as usize,
-        None => return Err(unreadable()),
-    };
-    if store_page_size != page_size {
-        return Err(unreadable());
-    }
-    let Some(salt) = wal.get(16..24) else {
-        return Err(unreadable());
-    };
-    let Some(header) = wal.get(0..24) else {
-        return Err(unreadable());
-    };
-    let (mut check_one, mut check_two) = opencode_wal_checksum(header, 0, 0, big_endian);
-    if wal.get(24..28).and_then(opencode_u32) != Some(check_one)
-        || wal.get(28..32).and_then(opencode_u32) != Some(check_two)
-    {
-        return Err(unreadable());
-    }
-    let mut frames: Vec<(u32, usize)> = Vec::new();
-    let mut committed: Vec<(u32, usize)> = Vec::new();
-    let mut pages = 0usize;
-    let mut offset = OPENCODE_WAL_HEADER;
-    while offset + OPENCODE_WAL_FRAME_HEADER + page_size <= wal.len() {
-        let Some(header) = wal.get(offset..offset + OPENCODE_WAL_FRAME_HEADER) else {
-            break;
-        };
-        let Some(page) = header.get(0..4).and_then(opencode_u32) else {
-            break;
-        };
-        let Some(after) = header.get(4..8).and_then(opencode_u32) else {
-            break;
-        };
-        if page == 0 || header.get(8..16) != Some(salt) {
-            break;
-        }
-        let Some(head) = header.get(0..8) else {
-            break;
-        };
-        let (one, two) = opencode_wal_checksum(head, check_one, check_two, big_endian);
-        let Some(page_data) = wal.get(
-            offset + OPENCODE_WAL_FRAME_HEADER..offset + OPENCODE_WAL_FRAME_HEADER + page_size,
-        ) else {
-            break;
-        };
-        let (one, two) = opencode_wal_checksum(page_data, one, two, big_endian);
-        if header.get(16..20).and_then(opencode_u32) != Some(one)
-            || header.get(20..24).and_then(opencode_u32) != Some(two)
-        {
-            break;
-        }
-        check_one = one;
-        check_two = two;
-        frames.push((page, offset + OPENCODE_WAL_FRAME_HEADER));
-        if after != 0 {
-            committed.clone_from(&frames);
-            pages = after as usize;
-        }
-        offset += OPENCODE_WAL_FRAME_HEADER + page_size;
-    }
-    if committed.is_empty() {
-        return Ok(());
-    }
-    for (page, at) in committed {
-        let start = (page as usize - 1) * page_size;
-        if image.len() < start + page_size {
-            image.resize(start + page_size, 0);
-        }
-        let Some(target) = image.get_mut(start..start + page_size) else {
-            return Err(unreadable());
-        };
-        let Some(source) = wal.get(at..at + page_size) else {
-            return Err(unreadable());
-        };
-        target.copy_from_slice(source);
-    }
-    image.truncate(pages * page_size);
-    if let Some(size) = image.get_mut(28..32) {
-        size.copy_from_slice(&(pages as u32).to_be_bytes());
-    }
-    Ok(())
-}
-
-fn opencode_u32(bytes: &[u8]) -> Option<u32> {
-    match bytes {
-        [first, second, third, fourth] => {
-            Some(u32::from_be_bytes([*first, *second, *third, *fourth]))
-        }
-        _ => None,
-    }
-}
-
-fn opencode_u16(bytes: &[u8]) -> Option<u16> {
-    match bytes {
-        [first, second] => Some(u16::from_be_bytes([*first, *second])),
-        _ => None,
-    }
-}
-
-fn opencode_wal_checksum(data: &[u8], mut one: u32, mut two: u32, big_endian: bool) -> (u32, u32) {
-    let (chunks, _) = data.as_chunks::<8>();
-    for chunk in chunks {
-        let [
-            byte_one,
-            byte_two,
-            byte_three,
-            byte_four,
-            byte_five,
-            byte_six,
-            byte_seven,
-            byte_eight,
-        ] = chunk;
-        let first = if big_endian {
-            u32::from_be_bytes([*byte_one, *byte_two, *byte_three, *byte_four])
-        } else {
-            u32::from_le_bytes([*byte_one, *byte_two, *byte_three, *byte_four])
-        };
-        let second = if big_endian {
-            u32::from_be_bytes([*byte_five, *byte_six, *byte_seven, *byte_eight])
-        } else {
-            u32::from_le_bytes([*byte_five, *byte_six, *byte_seven, *byte_eight])
-        };
-        one = one.wrapping_add(first).wrapping_add(two);
-        two = two.wrapping_add(second).wrapping_add(one);
-    }
-    (one, two)
 }
 
 fn opencode_revision(db: &Path, identity: FileIdentity, found: &OpenCodeRecord) -> String {
@@ -718,86 +511,55 @@ async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Se
         ))?;
     let db = HostPath::resolve(Path::new(OMP_DB), &deps.home)
         .map_err(|_| Unresolved::Unreadable("the OMP database path is not usable"))?;
-    for _ in 0..OMP_RESOLVE_ATTEMPTS {
-        let identity = omp_identity(deps, &db).await?;
-        let found = extract_omp_api_key(db.as_path().to_owned(), provider_id.to_owned()).await?;
-        let confirmed = match (identity, omp_identity(deps, &db).await?) {
-            (Some(before), Some(after)) if before == after => before,
-            _ => continue,
-        };
-        return Ok((
-            omp_revision(db.as_path(), confirmed.dev, confirmed.ino, &found),
-            found.key,
-        ));
-    }
-    Err(Unresolved::Unreadable("the OMP store could not be read"))
-}
-
-async fn omp_identity(deps: &UsageDeps, db: &HostPath) -> Result<Option<FileIdentity>, Unresolved> {
-    deps.fs
-        .identity(db)
-        .await
-        .map_err(|_| Unresolved::Unreadable("the OMP store could not be read"))
+    let captured = match capture(deps.fs.as_ref(), &db, OMP_CAPTURE_LIMITS).await {
+        Ok(captured) => captured,
+        Err(CaptureProblem::Missing) => return Err(Unresolved::Missing),
+        Err(_) => return Err(Unresolved::Unreadable("the OMP store could not be read")),
+    };
+    let identity = captured.identity;
+    let wanted = provider_id.to_owned();
+    let found = query_image(captured.image, OMP_WORDS, move |connection| {
+        read_omp_api_key(connection, &wanted)
+    })
+    .await?;
+    Ok((omp_revision(db.as_path(), identity, &found), found.key))
 }
 
 struct Extracted {
     id: i64,
     key: Secret,
-    ctime: i64,
-    ctime_nsec: i64,
     digest: String,
 }
 
-fn omp_revision(db: &Path, dev: u64, ino: u64, found: &Extracted) -> String {
+fn omp_revision(db: &Path, identity: FileIdentity, found: &Extracted) -> String {
     format!(
-        "{}:{}:{}:{}:{}:{}:{}",
+        "{}:{}:{}:{}:{}",
         db.display(),
-        dev,
-        ino,
+        identity.dev,
+        identity.ino,
         found.id,
-        found.ctime,
-        found.ctime_nsec,
         found.digest
     )
 }
 
-async fn extract_omp_api_key(
-    db_path: PathBuf,
-    provider_id: String,
+fn read_omp_api_key(
+    connection: &rusqlite::Connection,
+    provider_id: &str,
 ) -> Result<Extracted, Unresolved> {
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    std::thread::spawn(move || {
-        let _sent = sender.send(read_omp_api_key(&db_path, &provider_id));
-    });
-    receiver
-        .await
-        .map_err(|_| Unresolved::Unreadable("the OMP store could not be read"))?
-}
-
-fn read_omp_api_key(db_path: &Path, provider_id: &str) -> Result<Extracted, Unresolved> {
-    let metadata = match std::fs::metadata(db_path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Err(Unresolved::Missing);
-        }
-        Err(_) => {
-            return Err(Unresolved::Unreadable("the OMP store could not be read"));
-        }
-        Ok(metadata) => metadata,
-    };
-    let connection =
-        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|_| Unresolved::Unreadable("the OMP store could not be opened"))?;
-    let (id, data): (i64, String) = connection
+    if !is_plain_table(connection, "auth_credentials") {
+        return Err(Unresolved::Unreadable("the OMP store could not be read"));
+    }
+    let (id, data): (i64, Secret) = connection
         .query_row(
             "SELECT id, data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
             [provider_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, bounded_secret(row.get_ref(1)?)?)),
         )
         .map_err(|error| match error {
             rusqlite::Error::QueryReturnedNoRows => Unresolved::Missing,
             _ => Unresolved::Unreadable("the OMP store could not be read"),
         })?;
-    let document: Value = serde_json::from_str(&data)
+    let document: Value = serde_json::from_str(data.expose())
         .map_err(|_| Unresolved::Unreadable("the OMP credential is not valid JSON"))?;
     let value = document
         .get("key")
@@ -807,10 +569,108 @@ fn read_omp_api_key(db_path: &Path, provider_id: &str) -> Result<Extracted, Unre
     Ok(Extracted {
         id,
         key: Secret::new(value.to_owned()),
-        ctime: metadata.ctime(),
-        ctime_nsec: metadata.ctime_nsec(),
-        digest: revision_of(data.as_bytes()),
+        digest: revision_of(data.expose().as_bytes()),
     })
+}
+
+fn bounded_text(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<String> {
+    let text = value.as_str()?;
+    if text.len() > STORE_VALUE_MAX_BYTES {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(text.to_owned())
+}
+
+fn bounded_secret(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<Secret> {
+    bounded_text(value).map(Secret::new)
+}
+
+struct StoreWords {
+    opened: &'static str,
+    read: &'static str,
+}
+
+const OPENCODE_WORDS: StoreWords = StoreWords {
+    opened: "the OpenCode store could not be opened",
+    read: "the OpenCode store could not be read",
+};
+const OMP_WORDS: StoreWords = StoreWords {
+    opened: "the OMP store could not be opened",
+    read: "the OMP store could not be read",
+};
+
+async fn query_image<T, Work>(
+    image: StoreImage,
+    words: StoreWords,
+    work: Work,
+) -> Result<T, Unresolved>
+where
+    T: Send + 'static,
+    Work: FnOnce(&rusqlite::Connection) -> Result<T, Unresolved> + Send + 'static,
+{
+    let connection = store_connection(words.opened)?;
+    let (opened, read) = (words.opened, words.read);
+    let done = run_bounded(STORE_QUERY_DEADLINE, move |mut budget| {
+        let mut connection = connection;
+        connection
+            .progress_handler(STORE_QUERY_STEP, Some(move || budget.spent()))
+            .map_err(|_| Unresolved::Unreadable(opened))?;
+        let mut image = image;
+        let length = image.as_slice().len();
+        connection
+            .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
+            .map_err(|_| Unresolved::Unreadable(opened))?;
+        image.wipe();
+        connection
+            .authorizer(Some(store_policy))
+            .map_err(|_| Unresolved::Unreadable(opened))?;
+        work(&connection)
+    })
+    .await;
+    done.unwrap_or(Err(Unresolved::Unreadable(read)))
+}
+
+fn store_policy(context: AuthContext<'_>) -> Authorization {
+    match context.action {
+        AuthAction::Select | AuthAction::Function { .. } | AuthAction::Read { .. }
+            if context.accessor.is_none() =>
+        {
+            Authorization::Allow
+        }
+        _ => Authorization::Deny,
+    }
+}
+
+fn is_plain_table(connection: &rusqlite::Connection, name: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT type, sql FROM sqlite_schema WHERE name = ?1 COLLATE NOCASE",
+            [name],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .is_ok_and(|(kind, sql)| {
+            kind == "table"
+                && !sql.is_some_and(|sql| {
+                    sql.trim_start()
+                        .to_ascii_uppercase()
+                        .starts_with("CREATE VIRTUAL")
+                })
+        })
+}
+
+fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unresolved> {
+    let connection =
+        rusqlite::Connection::open_in_memory().map_err(|_| Unresolved::Unreadable(opened))?;
+    connection
+        .execute_batch(STORE_PRAGMAS)
+        .map_err(|_| Unresolved::Unreadable(opened))?;
+    connection
+        .set_limit(
+            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+            STORE_LENGTH_LIMIT,
+        )
+        .map_err(|_| Unresolved::Unreadable(opened))?;
+    Ok(connection)
 }
 
 async fn read_credential(
@@ -861,8 +721,8 @@ fn non_empty(text: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, OPENCODE_CREDENTIAL_QUERY, Path, Secret,
-        kimi_base_for_slot, omp_revision,
+        Extracted, FileIdentity, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, OPENCODE_CREDENTIAL_QUERY,
+        Path, Secret, kimi_base_for_slot, omp_revision,
     };
 
     const OPENCODE_SCHEMA: &str = "CREATE TABLE credential (
@@ -888,14 +748,30 @@ mod tests {
         plan
     }
 
-    fn row(ctime: i64, digest: &str) -> Extracted {
+    fn row(digest: &str) -> Extracted {
         Extracted {
             id: 7,
             key: Secret::new("k".to_owned()),
-            ctime,
-            ctime_nsec: 0,
             digest: digest.to_owned(),
         }
+    }
+
+    fn identity(ino: u64) -> FileIdentity {
+        FileIdentity { dev: 3, ino }
+    }
+
+    #[test]
+    fn a_store_connection_distrusts_the_schema_and_limits_value_length() -> rusqlite::Result<()> {
+        let Ok(connection) = super::store_connection("opened") else {
+            panic!("a connection");
+        };
+        let trusted: i64 = connection.query_row("PRAGMA trusted_schema", [], |row| row.get(0))?;
+        assert_eq!(trusted, 0);
+        assert_eq!(
+            connection.limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH)?,
+            jackin_core::STORE_LENGTH_LIMIT
+        );
+        Ok(())
     }
 
     #[test]
@@ -920,19 +796,20 @@ mod tests {
     }
 
     #[test]
-    fn a_reused_store_identity_with_a_new_change_time_revises_the_entry() {
+    fn a_reused_store_identity_with_new_row_content_revises_the_entry() {
         let db = Path::new("/home/work/.omp/agent/agent.db");
-        let before = omp_revision(db, 3, 9, &row(1, "d"));
-        let after = omp_revision(db, 3, 9, &row(2, "d"));
+        let before = omp_revision(db, identity(9), &row("d"));
+        let after = omp_revision(db, identity(9), &row("e"));
         assert_ne!(before, after);
     }
 
     #[test]
-    fn a_reused_store_identity_with_new_row_content_revises_the_entry() {
+    fn a_new_store_identity_revises_the_entry() {
         let db = Path::new("/home/work/.omp/agent/agent.db");
-        let before = omp_revision(db, 3, 9, &row(1, "d"));
-        let after = omp_revision(db, 3, 9, &row(1, "e"));
-        assert_ne!(before, after);
+        assert_ne!(
+            omp_revision(db, identity(9), &row("d")),
+            omp_revision(db, identity(10), &row("d"))
+        );
     }
 
     #[test]
@@ -947,7 +824,7 @@ mod tests {
 
     #[test]
     fn the_store_connection_keeps_its_temporary_storage_in_memory() {
-        let Ok(connection) = super::opencode_connection() else {
+        let Ok(connection) = super::store_connection("opened") else {
             panic!("a connection");
         };
         let store: i64 = connection
@@ -988,12 +865,23 @@ mod tests {
                 .expect("the newer row");
         }
         let bytes = std::fs::read(&path).expect("the store bytes");
-        let Ok(found) = super::extract_opencode_credential(bytes, None) else {
+        let Ok(mut loaded) = super::store_connection("opened") else {
+            panic!("a connection");
+        };
+        loaded
+            .deserialize_read_exact(
+                "main",
+                std::io::Cursor::new(bytes.as_slice()),
+                bytes.len(),
+                true,
+            )
+            .expect("the image");
+        let Ok(found) = super::extract_opencode_credential(&loaded) else {
             panic!("the credential");
         };
         assert_eq!(found.id, "cred_newer");
-        assert!(found.value.contains("newer"));
-        let Ok(connection) = super::opencode_connection() else {
+        assert!(found.value.expose().contains("newer"));
+        let Ok(connection) = super::store_connection("opened") else {
             panic!("a connection");
         };
         connection

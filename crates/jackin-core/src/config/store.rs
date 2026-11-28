@@ -25,6 +25,19 @@ pub struct ConfigStore {
     path: HostPath,
 }
 
+#[derive(Debug)]
+pub struct ConfigEditLease<'store> {
+    store: &'store ConfigStore,
+    lock: FileLock,
+}
+
+#[derive(Debug)]
+pub struct PreparedConfigEdit<'lease> {
+    store: &'lease ConfigStore,
+    lock: &'lease FileLock,
+    candidate: Config,
+}
+
 impl ConfigStore {
     pub fn new(fs: Arc<dyn FileSystem>, clock: Arc<dyn Clock>, path: HostPath) -> ConfigStore {
         ConfigStore { fs, clock, path }
@@ -61,6 +74,16 @@ impl ConfigStore {
     where
         E: From<ConfigError>,
     {
+        let mut lease = self.begin_edit(cancel).await?;
+        let prepared = lease.prepare(edits, cancel, |_| Ok::<(), E>(())).await?;
+        check(prepared.candidate())?;
+        Ok(prepared.commit(cancel).await?)
+    }
+
+    pub async fn begin_edit(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<ConfigEditLease<'_>, ConfigError> {
         ConfigError::unless_cancelled(cancel)?;
         if let Some(dir) = self.path.parent() {
             self.fs
@@ -70,22 +93,7 @@ impl ConfigStore {
         }
         let lock = self.lock(cancel).await?;
         ConfigError::unless_cancelled(cancel)?;
-        let mut config = self.read().await?;
-        check(&config)?;
-        for edit in edits {
-            config.apply(edit)?;
-        }
-        ConfigError::unless_cancelled(cancel)?;
-        write_atomic_locked(
-            self.fs.as_ref(),
-            &self.path,
-            config.render().as_bytes(),
-            CONFIG_MODE,
-            &lock,
-        )
-        .await
-        .map_err(ConfigError::from)?;
-        Ok(config)
+        Ok(ConfigEditLease { store: self, lock })
     }
 
     async fn read(&self) -> Result<Config, ConfigError> {
@@ -156,5 +164,49 @@ impl ConfigStore {
                 other => return other.map_err(ConfigError::from),
             }
         }
+    }
+}
+
+impl ConfigEditLease<'_> {
+    pub async fn prepare<E>(
+        &mut self,
+        edits: Vec<ConfigEdit>,
+        cancel: &CancellationToken,
+        check_live: impl FnOnce(&Config) -> Result<(), E>,
+    ) -> Result<PreparedConfigEdit<'_>, E>
+    where
+        E: From<ConfigError>,
+    {
+        ConfigError::unless_cancelled(cancel)?;
+        let mut candidate = self.store.read().await?;
+        check_live(&candidate)?;
+        for edit in edits {
+            candidate.apply(edit)?;
+        }
+        Ok(PreparedConfigEdit {
+            store: self.store,
+            lock: &self.lock,
+            candidate,
+        })
+    }
+}
+
+impl PreparedConfigEdit<'_> {
+    pub fn candidate(&self) -> &Config {
+        &self.candidate
+    }
+
+    pub async fn commit(self, cancel: &CancellationToken) -> Result<Config, ConfigError> {
+        ConfigError::unless_cancelled(cancel)?;
+        write_atomic_locked(
+            self.store.fs.as_ref(),
+            &self.store.path,
+            self.candidate.render().as_bytes(),
+            CONFIG_MODE,
+            self.lock,
+        )
+        .await
+        .map_err(ConfigError::from)?;
+        Ok(self.candidate)
     }
 }

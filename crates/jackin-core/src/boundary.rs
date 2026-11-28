@@ -74,6 +74,8 @@ pub trait Clock: Send + Sync + Debug {
 
 pub const UNBOUNDED_READ: usize = usize::MAX;
 
+pub type Hold = std::sync::Arc<dyn Any + Send + Sync>;
+
 #[async_trait]
 pub trait FileSystem: Send + Sync + Debug {
     async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError>;
@@ -82,6 +84,29 @@ pub trait FileSystem: Send + Sync + Debug {
     async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError>;
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError>;
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError>;
+    async fn stat_holding(&self, path: &HostPath, hold: Hold) -> Result<Option<FileKind>, FsError> {
+        let found = self.stat(path).await;
+        drop(hold);
+        found
+    }
+    async fn canonicalize_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<HostPath>, FsError> {
+        let found = self.canonicalize(path).await;
+        drop(hold);
+        found
+    }
+    async fn identity_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<FileIdentity>, FsError> {
+        let found = self.identity(path).await;
+        drop(hold);
+        found
+    }
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError>;
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;
@@ -99,6 +124,17 @@ pub trait FileSystem: Send + Sync + Debug {
         file: &RepoPath,
         max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError>;
+    async fn read_regular_holding(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+        hold: Hold,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let read = self.read_regular(root, file, max_bytes).await;
+        drop(hold);
+        read
+    }
     async fn read_link(
         &self,
         root: &HostPath,

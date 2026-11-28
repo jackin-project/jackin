@@ -3,14 +3,15 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use jackin_core::{
     Account, AccountName, Config, ConfigEdit, ConfigStore, GatewayName, OpenShellWorkspace,
     ProviderName,
 };
 use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_session::{
-    AccountEditError, AccountError, AccountPlan, ConnectError, GatewayRemoval, GatewayScope,
-    Gateways, HostPorts, RemovalPlan, Session, SessionDeps, plan_account_edits,
+    AccountEditError, AccountError, AccountPlan, ConnectError, GatewayConnector, GatewayRemoval,
+    GatewayScope, Gateways, HostPorts, RemovalPlan, Session, SessionDeps, plan_account_edits,
     plan_gateway_removal,
 };
 use jackin_testkit::{FakeGateway, Fault, ScriptedConnector, Trigger, World, default_limits};
@@ -1448,85 +1449,161 @@ async fn a_removal_plan_cancelled_before_it_starts_connects_to_no_gateway() -> T
     .await
 }
 
-async fn removal_meddled_with_during_the_first_forget(
+async fn remove_while_writer_waits<T>(
     fleet: &Fleet,
-    meddling: Vec<ConfigEdit>,
-) -> Result<(AccountEditError, Config), Box<dyn std::error::Error>> {
+    writer: impl Future<Output = T>,
+) -> Result<(Config, T), Box<dyn std::error::Error>> {
     let plan = fleet.removal("second").await?;
-    let held = fleet.second.provider(&provider()?).ok_or("no provider")?;
-    let operations = fleet.provider_calls();
+    let providers_before = fleet.second.providers();
     let hold = Trigger::Op(GatewayOp::Provider);
     fleet.second.inject(Fault::HoldAt {
         trigger: hold.clone(),
     });
     let connector = scripted(fleet);
     let cancel = CancellationToken::new();
-    let meddler = async {
+    let queued = async {
         assert!(fleet.second.until_held(&hold).await);
-        let config = fleet.edit(meddling).await;
-        fleet.second.release(&hold);
-        config
+        let next_poll = fleet.world.clock.slept().len() + 1;
+        let mut writer = std::pin::pin!(writer);
+        let early = tokio::select! {
+            biased;
+            result = &mut writer => Some(result),
+            () = until_polling(&fleet.world, next_poll) => None,
+        };
+        let providers_while_held = fleet.second.providers();
+        assert!(fleet.second.release(&hold));
+        assert!(
+            early.is_none(),
+            "the competing writer completed before removal"
+        );
+        assert_eq!(providers_while_held, providers_before);
+        writer.await
     };
-    let (removed, meddled) = tokio::join!(plan.apply(connector.as_ref(), &cancel), meddler);
-    let error = removed
-        .err()
-        .ok_or("a removal that went stale was committed")?;
-    assert!(fleet.second.calls(GatewayOp::Provider) > operations[1]);
-    assert_eq!(fleet.holders()?, [true, true, true]);
-    assert_eq!(
-        fleet.second.provider(&provider()?).ok_or("no provider")?,
-        held
-    );
-    assert_eq!(fleet.store.load().await?, meddled?);
-    Ok((error, fleet.store.load().await?))
+    let (removed, written) = tokio::join!(plan.apply(connector.as_ref(), &cancel), queued);
+    Ok((removed?, written))
 }
 
 #[tokio::test]
-async fn a_gateway_added_while_a_removal_forgets_the_providers_restores_them_and_commits_nothing()
--> TestResult {
+async fn a_gateway_added_during_provider_removal_commits_after_the_removal() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, true]).await?;
-        let meddling = fleet.added("zulu").await?;
+        let second = GatewayName::parse("second")?;
+        let zulu = GatewayName::parse("zulu")?;
+        let edits = fleet.added("zulu").await?;
 
-        let (error, config) =
-            removal_meddled_with_during_the_first_forget(&fleet, meddling).await?;
+        let (removed, added) = remove_while_writer_waits(&fleet, fleet.edit(edits)).await?;
 
-        assert!(
-            matches!(
-                &error,
-                AccountEditError::Account(AccountError::GatewayAdded { gateway })
-                    if gateway.as_str() == "zulu"
-            ),
-            "{error:?}"
-        );
-        assert!(config.gateway(&GatewayName::parse("second")?).is_some());
+        assert!(removed.gateway(&second).is_none());
+        assert!(removed.gateway(&zulu).is_none());
+        let config = fleet.store.load().await?;
+        assert_eq!(config, added?);
+        assert!(config.gateway(&second).is_none());
+        assert!(config.gateway(&zulu).is_some());
+        assert_eq!(fleet.holders()?, [true, false, true]);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn a_login_account_added_while_a_removal_forgets_the_providers_restores_them_and_commits_nothing()
+async fn a_login_plan_waiting_for_gateway_removal_publishes_no_provider_to_the_removed_gateway()
 -> TestResult {
     guard(async {
         let fleet = fleet([true, true, true]).await?;
         let (_other, added) = other_login_account().await?;
-
-        let (error, config) = removal_meddled_with_during_the_first_forget(
-            &fleet,
+        let name = added.name().clone();
+        let second = GatewayName::parse("second")?;
+        let cancel = CancellationToken::new();
+        let second_only = Gateways::single(session_on(&fleet.world, &fleet.second));
+        let plan = plan_account_edits(
+            &fleet.world.desk(),
             vec![ConfigEdit::AddAccount(added)],
+            &cancel,
         )
         .await?;
+        let (removed, refused) =
+            remove_while_writer_waits(&fleet, plan.apply(&second_only, &cancel)).await?;
 
         assert!(
             matches!(
-                &error,
-                AccountEditError::Account(AccountError::LoginAdded { account })
-                    if account.as_str() == "other"
+                &refused,
+                Err(AccountEditError::Account(AccountError::GatewayRemoved { gateway }))
+                    if gateway == &second
             ),
-            "{error:?}"
+            "{refused:?}"
         );
-        assert!(config.gateway(&GatewayName::parse("second")?).is_some());
+        let config = fleet.store.load().await?;
+        assert_eq!(config, removed);
+        assert!(config.gateway(&second).is_none());
+        assert!(config.account(&name).is_none());
+        let other_provider = ProviderName::for_account(&name, jackin_core::Agent::Codex);
+        assert!(fleet.second.provider(&other_provider).is_none());
+        assert_eq!(fleet.holders()?, [true, false, true]);
+        Ok(())
+    })
+    .await
+}
+
+#[derive(Debug)]
+struct ChangingConnector {
+    store: ConfigStore,
+    edits: Vec<ConfigEdit>,
+    gateway: Arc<FakeGateway>,
+}
+
+#[async_trait]
+impl GatewayConnector for ChangingConnector {
+    async fn connect(
+        &self,
+        _name: &GatewayName,
+        _entry: &jackin_core::GatewayEntry,
+        cancel: &CancellationToken,
+    ) -> Result<Arc<dyn Gateway>, ConnectError> {
+        self.store
+            .edit(self.edits.clone(), cancel)
+            .await
+            .map_err(|error| {
+                ConnectError::Gateway(GatewayError::FailedPrecondition {
+                    message: error.to_string(),
+                })
+            })?;
+        Ok(Arc::<FakeGateway>::clone(&self.gateway))
+    }
+}
+
+#[tokio::test]
+async fn a_gateway_changed_during_connection_makes_removal_stale_before_provider_work() -> TestResult
+{
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let second = GatewayName::parse("second")?;
+        let plan = fleet.removal(second.as_str()).await?;
+        let connector = ChangingConnector {
+            store: fleet.store.clone(),
+            edits: Fleet::moved(second.as_str())?,
+            gateway: Arc::<FakeGateway>::clone(&fleet.second),
+        };
+        fleet.second.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::PermissionDenied {
+                what: "provider work".to_owned(),
+            },
+        });
+
+        let refused = plan.apply(&connector, &CancellationToken::new()).await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::Account(AccountError::GatewayChanged { gateway }))
+                    if gateway == &second
+            ),
+            "{refused:?}"
+        );
+        let config = fleet.store.load().await?;
+        let entry = config.gateway(&second).ok_or("second gateway is missing")?;
+        assert_eq!(entry.builder.as_str(), "moved");
+        assert_eq!(fleet.holders()?, [true, true, true]);
         Ok(())
     })
     .await

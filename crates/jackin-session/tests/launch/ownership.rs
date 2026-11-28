@@ -10,6 +10,7 @@ use jackin_core::{
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, ProviderMaterial, ProviderProfile, ProviderSpec,
+    ProviderWriteEffect,
 };
 use jackin_session::{AccountError, LaunchError, LaunchStep, plan_launch};
 use jackin_testkit::{Fault, Rig, Trigger, guard_within};
@@ -177,6 +178,121 @@ async fn a_lost_provider_write_response_is_reported_as_uncertain_and_deletes_not
 
         ready(launch(&rig, 35).await?)?;
         assert_eq!(rig.gateway().providers().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_while_a_provider_write_is_lost_still_reports_the_uncertain_write() -> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, _key) = key_rig(b"KEY-ONE").await?;
+        let hold = Trigger::Op(GatewayOp::Provider);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        rig.gateway()
+            .inject(Fault::PutProviderOutcomeUnknown { error: broken() });
+        let config = rig.world.config.load().await?;
+        let request = rig
+            .request(36)?
+            .tuple(Agent::Omp, Provider::Zai)
+            .account(Some(AccountName::parse(ACCOUNT)?));
+        let plan = plan_launch(&config, &rig.loaded, request)?;
+        let token = CancellationToken::new();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+            rig.gateway().release(&hold);
+        };
+        let (outcome, ()) = tokio::join!(
+            rig.run_planned(&rig.world.session, plan, token.clone()),
+            driver
+        );
+        let failed = failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Provider);
+        let LaunchError::ProviderUnavailable { source, .. } = &*failed.error else {
+            return Err(format!("{:?}", failed.error).into());
+        };
+        assert!(
+            matches!(&**source, AccountError::ProviderWriteUncertain { account, .. } if account.as_str() == ACCOUNT),
+            "{source:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_while_a_failed_provider_rollback_leaves_the_provider_is_still_reported()
+-> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, _key) = key_rig(b"KEY-ONE").await?;
+        let hold = Trigger::Op(GatewayOp::Provider);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        rig.gateway()
+            .inject(Fault::PutProviderFailsAfterWrite { error: broken() });
+        rig.gateway()
+            .inject(Fault::DeleteProviderFailsAfterWrite { error: broken() });
+        let config = rig.world.config.load().await?;
+        let request = rig
+            .request(37)?
+            .tuple(Agent::Omp, Provider::Zai)
+            .account(Some(AccountName::parse(ACCOUNT)?));
+        let plan = plan_launch(&config, &rig.loaded, request)?;
+        let token = CancellationToken::new();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+            rig.gateway().release(&hold);
+        };
+        let (outcome, ()) = tokio::join!(
+            rig.run_planned(&rig.world.session, plan, token.clone()),
+            driver
+        );
+        let failed = failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Provider);
+        let LaunchError::ProviderUnavailable { source, .. } = &*failed.error else {
+            return Err(format!("{:?}", failed.error).into());
+        };
+        assert!(
+            matches!(&**source, AccountError::RollbackFailed { account, .. } if account.as_str() == ACCOUNT),
+            "{source:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_write_that_changed_an_existing_provider_leaves_it_unsettled() -> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, key) = key_rig(b"KEY-ONE").await?;
+        ready(launch(&rig, 38).await?)?;
+        rig.gateway().delete_sandbox(&rig.sandbox_name(38)?).await?;
+        rig.world.fs.remove_file(&key).await?;
+        rig.world
+            .fs
+            .write_new(&key, b"KEY-TWO", FileMode(0o600))
+            .await?;
+        rig.gateway()
+            .inject(Fault::PutProviderFailsAfterWrite { error: broken() });
+        let failed = failure(launch(&rig, 39).await?)?;
+        assert_eq!(failed.step, LaunchStep::Provider);
+        let LaunchError::ProviderUnavailable { source, .. } = &*failed.error else {
+            return Err(format!("{:?}", failed.error).into());
+        };
+        assert!(
+            matches!(&**source, AccountError::ProviderWrite(write) if write.effect() == ProviderWriteEffect::Existing),
+            "{source:?}"
+        );
+        assert!(
+            source.leaves_provider_unsettled(),
+            "a provider changed in place was reported as settled: {source:?}"
+        );
+        assert_eq!(access_token(&rig)?.as_deref(), Some("KEY-TWO"));
         Ok(())
     })
     .await

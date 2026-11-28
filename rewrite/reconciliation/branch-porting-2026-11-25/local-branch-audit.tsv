@@ -1,0 +1,57 @@
+backup/p03-residuals-wip	+17	LOCAL-ONLY	
+ci/velnor-gen	+6	ON-GITHUB	pr#1298(MERGED)
+docs/design-gemini-usage	+2	ON-GITHUB	pr#1311(MERGED)
+feat/usage-accounts-ux	+33	ON-GITHUB	pr#1310(MERGED)
+fix/integration-review	+3	ON-GITHUB	pr#1329(MERGED)
+fix/p01-store-capture	+25	ON-GITHUB	pr#1317(MERGED)
+fix/p04-filesystem-boundaries	+7	ON-GITHUB	pr#1303(MERGED)
+fix/p05-cert-key-pair	+6	ON-GITHUB	pr#1315(MERGED)
+fix/p06-all-checkout-changes	+1	ON-GITHUB	pr#1312(MERGED)
+fix/p09-check-save-parity	+3	ON-GITHUB	pr#1306(MERGED)
+fix/p10-unsaved-build-note	+2	ON-GITHUB	pr#1302(MERGED)
+fix/p11-usage-cache-freshness	+1	LOCAL-ONLY	
+fix/p13-gateway-scope	+7	ON-GITHUB	pr#1318(MERGED)
+fix/p14-page-token-cycles	+4	ON-GITHUB	pr#1300(MERGED)
+fix/p15-final-image-paths	+13	ON-GITHUB	pr#1316(MERGED)
+fix/p18-picker-file-kinds	+4	ON-GITHUB	pr#1301(MERGED)
+fix/p19-architecture-gates	+6	ON-GITHUB	pr#1304(MERGED)
+fix/p20-j15-fail-closed	+2	ON-GITHUB	pr#1299(MERGED)
+fix/p21-role-default-edits	+3	ON-GITHUB	pr#1307(MERGED)
+fix/usage-ux-followup	+114	LOCAL-ONLY	
+fix/usage-ux-followup-2	+88	ON-GITHUB	pr#1323(MERGED)
+integrate/batch-1	+7	ON-GITHUB	pr#1321(MERGED)
+integrate/batch-2	+4	ON-GITHUB	pr#1324(MERGED)
+integrate/batch-3	+2	ON-GITHUB	pr#1328(MERGED)
+ux/b1	+3	LOCAL-ONLY	
+ux/b2	+2	LOCAL-ONLY	
+ux/f1	+19	LOCAL-ONLY	
+ux/f10	+33	LOCAL-ONLY	
+ux/f11	+41	LOCAL-ONLY	
+ux/f12	+64	LOCAL-ONLY	
+ux/f13	+58	LOCAL-ONLY	
+ux/f14	+58	LOCAL-ONLY	
+ux/f15	+58	LOCAL-ONLY	
+ux/f16	+60	LOCAL-ONLY	
+ux/f17	+84	LOCAL-ONLY	
+ux/f18	+80	LOCAL-ONLY	
+ux/f19	+79	LOCAL-ONLY	
+ux/f2	+19	LOCAL-ONLY	
+ux/f20	+81	LOCAL-ONLY	
+ux/f21	+100	LOCAL-ONLY	
+ux/f23	+101	LOCAL-ONLY	
+ux/f24	+108	LOCAL-ONLY	
+ux/f25	+109	LOCAL-ONLY	
+ux/f3	+20	LOCAL-ONLY	
+ux/f4	+20	LOCAL-ONLY	
+ux/f5	+20	LOCAL-ONLY	
+ux/f6	+21	LOCAL-ONLY	
+ux/f7	+19	LOCAL-ONLY	
+ux/int2	+34	LOCAL-ONLY	
+ux/int3	+33	LOCAL-ONLY	
+ux/t1	+32	LOCAL-ONLY	
+ux/u1	+2	LOCAL-ONLY	
+ux/u2	+2	LOCAL-ONLY	
+ux/u3	+2	LOCAL-ONLY	
+ux/u4	+2	LOCAL-ONLY	
+ux/u5	+2	LOCAL-ONLY	
+ux/u7	+2	LOCAL-ONLY	
