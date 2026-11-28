@@ -607,6 +607,31 @@ fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Viola
             && !KEYWORDS_BEFORE_PATH
                 .iter()
                 .any(|keyword| tokens[index - 3].is_keyword(keyword));
+        if !continues_path
+            && token
+                .ident()
+                .is_some_and(|name| types.conditional_root_at(source, index, name))
+        {
+            let mut position = index;
+            let mut paths = Vec::new();
+            path_tree(tokens, &mut position, &[], None, false, &mut paths);
+            if paths.iter().any(|leaf| {
+                !RATATUI_ALLOWED
+                    .iter()
+                    .any(|prefix| leaf.segments[1..].starts_with(prefix))
+            }) {
+                violations.push((
+                    index,
+                    Violation::at_line(
+                        CiStep::Screen,
+                        path,
+                        token.line,
+                        "C1: conditional module leaves ratatui root provenance uncertain",
+                    ),
+                ));
+            }
+            continue;
+        }
         let starts_path = token
             .ident()
             .is_some_and(|name| types.root_at(source, index, name))
@@ -1134,6 +1159,7 @@ struct TypeScope<'a> {
     module_parent: Option<usize>,
     directory: Option<usize>,
     self_receiver: Option<ImplReceiver>,
+    guard_origin: Option<usize>,
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32, usize)>,
     imports: Vec<PathLeaf<'a>>,
@@ -1141,6 +1167,7 @@ struct TypeScope<'a> {
     glob_paths: GlobPaths<'a>,
     public_bindings: BTreeSet<&'a str>,
     uncertain_visibility: BTreeSet<&'a str>,
+    conditional_roots: BTreeSet<&'a str>,
     matches_imported: MatchesImport,
     named_matches_imports: BTreeMap<&'a str, MatchesImport>,
     matches_textual: bool,
@@ -1263,6 +1290,9 @@ impl<'a> TypeScope<'a> {
         let Some(name) = tokens.get(index + 1).and_then(Token::ident) else {
             return;
         };
+        if tokens[index].is_keyword("mod") && conditional_attribute(tokens, index) {
+            self.conditional_roots.insert(name);
+        }
         let binding = match tokens[index].ident() {
             Some("type") => TypeAlias::parse(tokens, index, self.source)
                 .map_or(TypeBinding::Unresolved, TypeBinding::Alias),
@@ -1380,6 +1410,14 @@ fn outer_attribute_before(tokens: &[Token], end: usize) -> Option<Range<usize>> 
 
 fn has_outer_attribute(tokens: &[Token], item: usize) -> bool {
     outer_attribute_before(tokens, before_visibility(tokens, item)).is_some()
+}
+
+fn conditional_attribute(tokens: &[Token], item: usize) -> bool {
+    has_macro_attribute(tokens, item, |attribute| {
+        attribute
+            .first()
+            .is_some_and(|token| token.is_keyword("cfg") || token.is_keyword("cfg_attr"))
+    })
 }
 
 fn has_macro_attribute(
@@ -2472,8 +2510,10 @@ impl<'a> TypeScopes<'a> {
         graph
     }
 
-    fn source_scopes(&self, source: usize) -> impl Iterator<Item = usize> + use<> {
-        std::iter::once(source).chain(self.sources[source].inner_scopes.clone())
+    fn source_scopes(&self, source: usize) -> impl Iterator<Item = usize> + '_ {
+        std::iter::once(source)
+            .chain(self.sources[source].inner_scopes.clone())
+            .filter(|scope| self.scopes[*scope].guard_origin.is_none())
     }
 
     fn attach_children(&mut self, source: usize, pending: &mut VecDeque<usize>) {
@@ -2498,6 +2538,68 @@ impl<'a> TypeScopes<'a> {
                 self.sources[child.source].connected = true;
                 pending.push_back(child.source);
             }
+        }
+    }
+
+    fn collect_matches_guard(
+        &mut self,
+        source: usize,
+        arguments: Range<usize>,
+        origin: usize,
+        kind: MatchesMacro,
+        paths: &ModulePaths<'a>,
+        enclosing: &mut [Option<ScopePosition>],
+    ) {
+        let file = &self.files[source];
+        let Some(pattern) = matches_pattern(file, arguments.clone()) else {
+            return;
+        };
+        if !file.tokens[pattern.end].is_keyword("if") {
+            return;
+        }
+        let limit = arguments.end - 1;
+        let root = self.scopes.len();
+        self.scopes.push(TypeScope {
+            source,
+            parent: Some(origin),
+            module: self.scopes[origin].module,
+            directory: self.scopes[origin].directory,
+            self_receiver: self.scopes[origin].self_receiver,
+            guard_origin: Some(origin),
+            textual_macros: TextualMacros {
+                parent: Some((origin, arguments.start)),
+                ..TextualMacros::default()
+            },
+            ..TypeScope::default()
+        });
+        let mut stack = vec![root];
+        let mut index = pattern.end + 1;
+        while index < limit {
+            let scope = *stack.last().unwrap_or(&root);
+            let token = &file.tokens[index];
+            if let Some(open) = opaque_group_open(&file.tokens, index) {
+                index = file.group_ends[open].unwrap_or(limit).min(limit);
+                continue;
+            }
+            if let Some(end) = template_item_end(file, index, limit) {
+                index = end;
+                continue;
+            }
+            enclosing[index] = Some(ScopePosition::MatchesPattern(scope, kind));
+            if token.is_punct('{') {
+                stack.push(self.enter_scope(source, index, scope, paths, SelfReceiver::Inherit));
+            } else if token.is_punct('}') && stack.len() > 1 {
+                stack.pop();
+            } else if token.is_keyword("use") {
+                index = self.scopes[scope].import(&file.tokens, index).min(limit);
+                continue;
+            } else if ["type", "struct", "enum", "union"]
+                .iter()
+                .any(|keyword| token.is_keyword(keyword))
+            {
+                self.scopes[scope].bind_item(file, index, None);
+            }
+            index += 1;
         }
     }
 
@@ -2547,6 +2649,14 @@ impl<'a> TypeScopes<'a> {
                         open..end,
                         ScopePosition::MatchesPattern(scope, kind),
                         scope_state.self_receiver.is_some(),
+                        &mut enclosing,
+                    );
+                    self.collect_matches_guard(
+                        source,
+                        open..end,
+                        scope,
+                        kind,
+                        paths,
                         &mut enclosing,
                     );
                 }
@@ -2677,6 +2787,9 @@ impl<'a> TypeScopes<'a> {
             if macro_item_disabled(tokens, declaration) {
                 return None;
             }
+            if conditional_attribute(tokens, declaration) {
+                self.scopes[parent].conditional_roots.insert(name);
+            }
             let attributed = has_macro_attribute(tokens, declaration, |attribute| {
                 !inert_lint_attribute(attribute)
             });
@@ -2714,6 +2827,7 @@ impl<'a> TypeScopes<'a> {
             module_parent: module.map(|_| enclosing_module),
             directory,
             self_receiver,
+            guard_origin: self.scopes[parent].guard_origin,
             matches_textual: self.scopes[parent].matches_textual,
             textual_macros: TextualMacros {
                 parent: Some((parent, open)),
@@ -3008,6 +3122,31 @@ impl<'a> TypeScopes<'a> {
             &mut AliasWork::Unlimited,
         )
         .unwrap_or(false)
+    }
+
+    fn conditional_root_at(&self, source: usize, index: usize, name: &str) -> bool {
+        if !self.roots.get(name).copied().unwrap_or(false)
+            || is_path_separator(&self.files[source].tokens, index.wrapping_sub(2))
+        {
+            return false;
+        }
+        let Some(mut scope) = self.sources[source].use_enclosing[index].or_else(|| {
+            self.proven_field_pattern_scope(source, index, &mut AliasWork::Unlimited)
+                .ok()
+                .flatten()
+        }) else {
+            return false;
+        };
+        loop {
+            let current = &self.scopes[scope];
+            if current.bindings.contains_key(name) {
+                return current.conditional_roots.contains(name);
+            }
+            let Some(parent) = current.parent else {
+                return false;
+            };
+            scope = parent;
+        }
     }
 
     fn super_module(
@@ -3516,22 +3655,37 @@ impl<'a> TypeScopes<'a> {
         Ok(match self.sources[source].enclosing[index] {
             Some(ScopePosition::Rust(scope)) => Some(scope),
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute(root)))
-                if self.matches_absolute_root_visible(scope, root, work)? =>
+                if self.matches_absolute_root_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    root,
+                    work,
+                )? =>
             {
                 Some(scope)
             }
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Prelude))
-                if self.matches_prelude_visible(scope, work)? =>
+                if self.matches_prelude_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    work,
+                )? =>
             {
                 Some(scope)
             }
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Relative(root)))
-                if self.matches_standard_root_visible(scope, root, work)? =>
+                if self.matches_standard_root_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    root,
+                    work,
+                )? =>
             {
                 Some(scope)
             }
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Named(name)))
-                if self.matches_named_visible(scope, name, work)? =>
+                if self.matches_named_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    name,
+                    work,
+                )? =>
             {
                 Some(scope)
             }
@@ -3724,6 +3878,30 @@ impl<'a> TypeScopes<'a> {
         let mut violations = Vec::new();
         for scope in self.source_scopes(source) {
             for leaf in &self.scopes[scope].imports {
+                let conditional = leaf
+                    .segments
+                    .first()
+                    .is_some_and(|root| self.conditional_root_at(source, leaf.root, root));
+                let rest = leaf.segments.get(1..).unwrap_or_default();
+                if conditional
+                    && (!RATATUI_ALLOWED
+                        .iter()
+                        .any(|prefix| rest.starts_with(prefix))
+                        || rest == ["buffer", "Buffer"] && leaf.rename.is_some())
+                {
+                    violations.push((
+                        leaf.root,
+                        Violation::at_line(
+                            CiStep::Screen,
+                            file.path,
+                            file.tokens[leaf.root].line,
+                            "C1: conditional module leaves ratatui root provenance uncertain",
+                        ),
+                    ));
+                }
+                if conditional {
+                    continue;
+                }
                 if !self.direct_import_is_ratatui(scope, leaf) {
                     continue;
                 }
