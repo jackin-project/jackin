@@ -776,7 +776,7 @@ struct TypeScope<'a> {
     module: usize,
     module_parent: Option<usize>,
     directory: Option<usize>,
-    self_receiver: Option<usize>,
+    self_receiver: Option<ImplReceiver>,
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
@@ -945,14 +945,20 @@ enum ScopePosition {
 }
 
 #[derive(Clone, Copy)]
+struct ImplReceiver {
+    ident: usize,
+    arguments: Option<usize>,
+}
+
+#[derive(Clone, Copy)]
 enum SelfReceiver {
     Inherit,
     Mask,
-    Concrete(usize),
+    Concrete(ImplReceiver),
 }
 
 impl SelfReceiver {
-    fn resolve(self, parent: Option<usize>) -> Option<usize> {
+    fn resolve(self, parent: Option<ImplReceiver>) -> Option<ImplReceiver> {
         match self {
             Self::Inherit => parent,
             Self::Mask => None,
@@ -1001,7 +1007,11 @@ fn starts_impl_item(tokens: &[Token], index: usize) -> bool {
         .is_none_or(|token| matches!(token.kind, Tok::Punct('{' | '}' | ';' | ']')))
 }
 
-fn concrete_impl_receiver(file: &ScreenFile<'_>, declaration: usize, body: usize) -> Option<usize> {
+fn concrete_impl_receiver(
+    file: &ScreenFile<'_>,
+    declaration: usize,
+    body: usize,
+) -> Option<ImplReceiver> {
     let tokens = &file.tokens;
     let ends = &file.group_ends;
     let generic_start = declaration + 1;
@@ -1021,7 +1031,7 @@ fn concrete_impl_receiver(file: &ScreenFile<'_>, declaration: usize, body: usize
     }
     if bare && trait_start != generic_start {
         let (parameters, _) = generic_slots(&tokens[..trait_start], generic_start)?;
-        let name = tokens[receiver].ident()?;
+        let name = tokens[receiver.ident].ident()?;
         if parameters.iter().any(|range| {
             impl_type_parameter(tokens, ends, range).is_some_and(|parameter| parameter == name)
         }) {
@@ -1035,10 +1045,10 @@ fn impl_receiver_path(
     tokens: &[Token],
     ends: &[Option<usize>],
     start: usize,
-) -> Option<(usize, usize, bool)> {
+) -> Option<(ImplReceiver, usize, bool)> {
     if !tokens.get(start)?.is_punct('(') {
-        let (receiver, end) = impl_path(tokens, ends, start, false)?;
-        return Some((receiver, end, receiver == start));
+        let (receiver, end) = impl_receiver_type(tokens, ends, start)?;
+        return Some((receiver, end, receiver.ident == start));
     }
     let boundary = ends[start]?;
     if boundary > tokens.len() {
@@ -1050,8 +1060,23 @@ fn impl_receiver_path(
         inner += 1;
         end -= 1;
     }
-    let (receiver, inner_end) = impl_path(&tokens[..end], ends, inner, false)?;
-    (inner_end == end).then_some((receiver, boundary, receiver == inner))
+    let (receiver, inner_end) = impl_receiver_type(&tokens[..end], ends, inner)?;
+    (inner_end == end).then_some((receiver, boundary, receiver.ident == inner))
+}
+
+fn impl_receiver_type(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    start: usize,
+) -> Option<(ImplReceiver, usize)> {
+    let (ident, end) = impl_path(tokens, ends, start, false)?;
+    let angle = end + 2 * usize::from(is_path_separator(tokens, end));
+    let arguments = tokens
+        .get(angle)
+        .filter(|token| token.is_punct('<'))
+        .map(|_| angle);
+    let boundary = arguments.map_or(Some(end), |open| ends[open])?;
+    (boundary <= tokens.len()).then_some((ImplReceiver { ident, arguments }, boundary))
 }
 
 fn impl_path(
@@ -1072,7 +1097,9 @@ fn impl_path(
         {
             position = ends[position]?;
         }
-        if !is_path_separator(tokens, position) {
+        if !is_path_separator(tokens, position)
+            || tokens.get(position + 2).and_then(Token::ident).is_none()
+        {
             return Some((ident, position));
         }
         position += 2;
@@ -1653,8 +1680,36 @@ impl<'a> TypeScopes<'a> {
         let Some(receiver) = self.scopes[scope].self_receiver else {
             return Ok(false);
         };
+        let binding = self.binding_at(source, receiver.ident, work)?;
+        match (binding, receiver.arguments) {
+            (Some(TypeBinding::RatatuiBuffer), None) => Ok(true),
+            (Some(TypeBinding::Alias(alias)), Some(start)) => {
+                self.alias_is_ratatui_buffer(source, alias, start, work)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn alias_is_ratatui_buffer(
+        &self,
+        source: usize,
+        alias: &TypeAlias,
+        start: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasWorkLimit> {
+        let file = &self.files[source];
+        let Some(end) = file.group_ends[start] else {
+            return Ok(false);
+        };
+        work.charge(end - start)?;
+        let Some((slots, _)) = generic_slots(&file.tokens[..end], start) else {
+            return Ok(false);
+        };
+        let Some(argument) = self.apply_alias(source, alias, slots, work)? else {
+            return Ok(false);
+        };
         Ok(matches!(
-            self.binding_at(source, receiver, work)?,
+            self.binding_at(argument.source, argument.range.end - 1, work)?,
             Some(TypeBinding::RatatuiBuffer)
         ))
     }
@@ -1762,17 +1817,7 @@ fn buffer_pattern_matches(
     let Some(TypeBinding::Alias(alias)) = types.binding_at(source, index, &mut work)? else {
         return Ok(false);
     };
-    work.charge(open - start)?;
-    let Some((slots, _)) = generic_slots(&tokens[..open], start) else {
-        return Ok(false);
-    };
-    let Some(argument) = types.apply_alias(source, alias, slots, &mut work)? else {
-        return Ok(false);
-    };
-    Ok(matches!(
-        types.binding_at(argument.source, argument.range.end - 1, &mut work)?,
-        Some(TypeBinding::RatatuiBuffer)
-    ))
+    types.alias_is_ratatui_buffer(source, alias, start, &mut work)
 }
 
 fn pattern_violations(
