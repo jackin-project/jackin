@@ -922,3 +922,57 @@ fn real_tree_passes() -> TestResult {
     assert!(violations.is_empty(), "{violations:#?}");
     Ok(())
 }
+
+#[test]
+fn standard_matches_preserves_nominal_buffer_provenance() -> TestResult {
+    expect(
+        "struct Buffer { value: u8 }\n\
+         fn inspect(local: Buffer, real: ratatui::buffer::Buffer) {\n\
+         \x20   let _ = matches!(local, Buffer { value: 1 });\n\
+         \x20   let _ = ::core::matches!(real, ratatui::buffer::Buffer { content, .. });\n\
+         }\n",
+        &[("C1", 4, "destructures")],
+    )
+}
+
+#[test]
+fn inert_attributes_preserve_inline_module_provenance() -> TestResult {
+    expect(
+        "#[allow(dead_code)] mod bridge { pub use ratatui::buffer::Buffer; }\n\
+         use bridge::Buffer as Cells;\n\
+         fn inspect(buf: bridge::Buffer) { let bridge::Buffer { content, .. } = buf; }\n",
+        &[("C1", 2, "renames"), ("C1", 3, "destructures")],
+    )
+}
+
+#[test]
+fn generic_alias_argument_self_uses_its_implementation() -> TestResult {
+    expect(
+        "type Identity<T> = T;\n\
+         type Forward<T> = Identity<T>;\n\
+         struct Local { value: u8 }\n\
+         trait Inspect { fn inspect(&self); }\n\
+         impl Inspect for ratatui::buffer::Buffer {\n\
+         \x20   fn inspect(&self) { let Forward::<Self> { content, .. } = self; }\n\
+         }\n\
+         impl Inspect for Local {\n\
+         \x20   fn inspect(&self) { let Forward::<Self> { value } = self; }\n\
+         }\n",
+        &[("C1", 6, "destructures")],
+    )
+}
+
+#[test]
+fn inert_attributes_preserve_file_module_provenance() -> TestResult {
+    let workspace = tui("#[allow(dead_code)] mod bridge;\n\
+         fn inspect(buf: bridge::Buffer) { let bridge::Buffer { content, .. } = buf; }\n")?;
+    workspace.write(
+        "crates/jackin-tui/src/bridge.rs",
+        "pub use ratatui::buffer::Buffer;\n",
+    )?;
+    expect_workspace(
+        ScreenCheck::with_allowed(&[]),
+        &workspace,
+        &[("C1", 2, "destructures")],
+    )
+}
