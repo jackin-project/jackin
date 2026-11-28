@@ -537,12 +537,13 @@ impl Session {
 
         on_dispatch();
         let settle = CancellationToken::new();
+        let mut signal_error = None;
         self.instance_deadline(
             GatewayOp::Program,
-            self.signal_and_observe_exit(view, identity.pid, &settle),
+            self.signal_and_observe_exit(view, identity.pid, &settle, &mut signal_error),
         )
         .await
-        .map_err(InstanceStopError::Unconfirmed)?;
+        .map_err(|cause| InstanceStopError::Unconfirmed(signal_error.unwrap_or(cause)))?;
         self.instance_deadline(
             GatewayOp::Program,
             self.clear_if_same_instance(view, &record, &identity, &settle),
@@ -573,13 +574,14 @@ impl Session {
         view: &SandboxView,
         pid: u32,
         settle: &CancellationToken,
+        signal_error: &mut Option<GatewayError>,
     ) -> Result<(), GatewayError> {
         let sandbox = &view.name;
         let pid = pid.to_string();
-        if let Ok(outcome) = self.signal_instance(sandbox, &pid, settle).await
-            && !matches!(outcome.exit_code, 0 | 1)
-        {
-            return Err(instance_exit("kill", outcome.exit_code));
+        match self.signal_instance(sandbox, &pid, settle).await {
+            Ok(outcome) if matches!(outcome.exit_code, 0 | 1) => {}
+            Ok(outcome) => return Err(instance_exit("kill", outcome.exit_code)),
+            Err(cause) => *signal_error = Some(cause),
         }
         loop {
             let probe = self.probe_instance(sandbox, &pid, settle).await?;
