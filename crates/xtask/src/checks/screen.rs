@@ -1211,7 +1211,7 @@ impl<'a> TypeScope<'a> {
                 (Some((name, _)), _) => name,
                 (None, [.., "*"]) => {
                     self.glob_import = true;
-                    if attributed {
+                    if macro_attributed {
                         self.glob_paths.unknown = true;
                     } else {
                         path.segments.pop();
@@ -1253,9 +1253,9 @@ impl<'a> TypeScope<'a> {
                 }
                 _ => TypeBinding::Unresolved,
             };
-            if glob_visible(tokens, index) && !attributed {
+            if glob_visible(tokens, index) && !macro_attributed {
                 self.public_bindings.insert(name);
-            } else if glob_visibility(tokens, index).is_none() || attributed {
+            } else if glob_visibility(tokens, index).is_none() || macro_attributed {
                 self.uncertain_visibility.insert(name);
             }
             self.bind(name, binding);
@@ -1319,9 +1319,11 @@ impl<'a> TypeScope<'a> {
             }
             _ => return,
         };
-        if glob_visible(tokens, index) && !has_outer_attribute(tokens, index) {
+        let attributed =
+            has_macro_attribute(tokens, index, |attribute| !inert_lint_attribute(attribute));
+        if glob_visible(tokens, index) && !attributed {
             self.public_bindings.insert(name);
-        } else if glob_visibility(tokens, index).is_none() || has_outer_attribute(tokens, index) {
+        } else if glob_visibility(tokens, index).is_none() || attributed {
             self.uncertain_visibility.insert(name);
         }
         self.bind(name, binding);
@@ -2918,11 +2920,9 @@ impl<'a> TypeScopes<'a> {
             } else {
                 TypeBinding::InlineModule(child)
             };
-            if glob_visible(tokens, declaration) && !has_outer_attribute(tokens, declaration) {
+            if glob_visible(tokens, declaration) && !attributed {
                 self.scopes[parent].public_bindings.insert(name);
-            } else if glob_visibility(tokens, declaration).is_none()
-                || has_outer_attribute(tokens, declaration)
-            {
+            } else if glob_visibility(tokens, declaration).is_none() || attributed {
                 self.scopes[parent].uncertain_visibility.insert(name);
             }
             self.scopes[parent].bind(name, binding);
