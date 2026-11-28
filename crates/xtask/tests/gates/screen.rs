@@ -590,7 +590,8 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20           let _ = matches!(self, Self { content, .. });\n\
          \x20       }\n\
          \x20       #[cfg(any())] macro_rules! matches { ($($tokens:tt)*) => { false }; }\n\
-         \x20       let _ = matches!(if false | true { self } else { return }, r#if @ Self { content, .. } if {\n\
+         \x20       #[cfg(any())] use ::core::matches;\n\
+         \x20       let _ = matches!(if false | false || true { self } else { return }, r#if @ Self { content, .. } if {\n\
          \x20           let _ = ::core::stringify!(Self { content, .. });\n\
          \x20           !content.is_empty()\n\
          \x20       });\n\
@@ -625,11 +626,11 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          }\n",
         &[
             ("C1", 6, "destructures"),
-            ("C1", 13, "destructures"),
-            ("C1", 19, "destructures"),
-            ("C1", 23, "destructures"),
-            ("C1", 34, "destructures"),
-            ("C1", 44, "destructures"),
+            ("C1", 14, "destructures"),
+            ("C1", 20, "destructures"),
+            ("C1", 24, "destructures"),
+            ("C1", 35, "destructures"),
+            ("C1", 45, "destructures"),
         ],
     )
 }
@@ -637,7 +638,7 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
 #[test]
 fn out_of_line_buffer_reexports_preserve_provenance() -> TestResult {
     let workspace = tui("mod bridge;\n\
-         mod model;\n\
+         #[macro_use] mod model;\n\
          mod relay;\n\
          mod r#mod;\n\
          fn check(a: bridge::Buffer, b: model::Buffer, c: relay::Buffer, d: r#mod::Buffer) {\n\
@@ -645,6 +646,10 @@ fn out_of_line_buffer_reexports_preserve_provenance() -> TestResult {
          \x20   let model::Buffer { value } = b;\n\
          \x20   let relay::Buffer { content, .. } = c;\n\
          \x20   let r#mod::Buffer { content, .. } = d;\n\
+         }\n\
+         trait Inspect { fn inspect(&self); }\n\
+         impl Inspect for ratatui::buffer::Buffer {\n\
+         \x20   fn inspect(&self) { let _ = matches!(self, Self { content, .. }); }\n\
          }\n")?;
     workspace.write(
         "crates/jackin-tui/src/bridge.rs",
@@ -669,6 +674,7 @@ fn out_of_line_buffer_reexports_preserve_provenance() -> TestResult {
             ("C1", 6, "destructures"),
             ("C1", 8, "destructures"),
             ("C1", 9, "destructures"),
+            ("C1", 13, "destructures"),
         ],
     )
 }
