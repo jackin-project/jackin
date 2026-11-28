@@ -57,10 +57,12 @@ const RATATUI_ALLOWED: [&[&str]; 4] = [
 ];
 
 const BUFFER_RENAME: &str = "C1: renames a ratatui Buffer; jackin-tui names the type as Buffer so the drawing gate can see it";
+const ALIAS_WORK_LIMIT: usize = 16_384;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ScreenCheck {
     allowed: &'static [&'static str],
+    alias_work_limit: usize,
 }
 
 impl ScreenCheck {
@@ -71,7 +73,10 @@ impl ScreenCheck {
 
     #[must_use]
     pub const fn with_allowed(allowed: &'static [&'static str]) -> Self {
-        Self { allowed }
+        Self {
+            allowed,
+            alias_work_limit: ALIAS_WORK_LIMIT,
+        }
     }
 }
 
@@ -95,7 +100,12 @@ impl Check for ScreenCheck {
             violations.extend(types.renamed_imports(file.path()));
             violations.extend(index_violations(file.path(), &tokens));
             violations.extend(silencing_violations(file.path(), &tokens));
-            violations.extend(pattern_violations(file.path(), &tokens, &types));
+            violations.extend(pattern_violations(
+                file.path(),
+                &tokens,
+                &types,
+                self.alias_work_limit,
+            ));
             violations.extend(type_alias_violations(file.path(), &tokens, &types));
             violations.extend(literal_violations(
                 file.path(),
@@ -510,6 +520,33 @@ fn generic_slots(tokens: &[Token], open: usize) -> Option<(Vec<Range<usize>>, us
     None
 }
 
+fn generic_ends(tokens: &[Token]) -> Vec<Option<usize>> {
+    let mut ends = vec![None; tokens.len()];
+    let mut opens = Vec::new();
+    let mut groups = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        match token.kind {
+            Tok::Punct('(' | '[' | '{') => groups.push(opens.len()),
+            Tok::Punct(')' | ']' | '}') => {
+                if let Some(start) = groups.pop() {
+                    opens.truncate(start);
+                }
+            }
+            Tok::Punct('<') => opens.push(index),
+            Tok::Punct('>')
+                if opens.len() > groups.last().copied().unwrap_or(0)
+                    && !tokens[index - 1].is_punct('-') =>
+            {
+                if let Some(open) = opens.pop() {
+                    ends[open] = Some(index + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    ends
+}
+
 fn associated_argument_name(tokens: &[Token], index: usize) -> bool {
     if !tokens
         .get(index.wrapping_sub(1))
@@ -613,16 +650,31 @@ impl TypeAlias {
     }
 }
 
-#[derive(Clone, Copy)]
-struct AliasScope<'a> {
-    application: &'a AliasApplication<'a>,
+struct AliasApplication<'a> {
+    alias: &'a TypeAlias,
+    arguments: Vec<Range<usize>>,
     available: usize,
 }
 
-struct AliasApplication<'a> {
-    alias: &'a TypeAlias,
-    arguments: &'a [Range<usize>],
-    caller: Option<AliasScope<'a>>,
+impl<'a> AliasApplication<'a> {
+    fn new(alias: &'a TypeAlias, arguments: Vec<Range<usize>>) -> Self {
+        Self {
+            alias,
+            arguments,
+            available: alias.parameters.len(),
+        }
+    }
+}
+
+struct AliasWork(usize);
+
+struct AliasWorkLimit;
+
+impl AliasWork {
+    fn charge(&mut self, units: usize) -> Result<(), AliasWorkLimit> {
+        self.0 = self.0.checked_sub(units).ok_or(AliasWorkLimit)?;
+        Ok(())
+    }
 }
 
 enum TypeBinding<'a> {
@@ -993,41 +1045,18 @@ impl<'a> TypeScopes<'a> {
         &self,
         tokens: &'a [Token],
         alias: &TypeAlias,
-        arguments: &[Range<usize>],
-        caller: Option<AliasScope<'_>>,
-    ) -> Option<Range<usize>> {
-        let mut ancestor = caller;
-        while let Some(scope) = ancestor {
-            if scope.application.alias.declaration == alias.declaration {
-                return None;
-            }
-            ancestor = scope.application.caller;
-        }
-        let application = AliasApplication {
-            alias,
-            arguments,
-            caller,
-        };
-        self.projected_path(
-            tokens,
-            alias.value.clone(),
-            Some(AliasScope {
-                application: &application,
-                available: alias.parameters.len(),
-            }),
-        )
-    }
-
-    fn projected_path(
-        &self,
-        tokens: &'a [Token],
-        mut value: Range<usize>,
-        mut scope: Option<AliasScope<'_>>,
-    ) -> Option<Range<usize>> {
+        arguments: Vec<Range<usize>>,
+        work: &mut AliasWork,
+    ) -> Result<Option<Range<usize>>, AliasWorkLimit> {
+        let mut value = alias.value.clone();
+        let mut applications = vec![AliasApplication::new(alias, arguments)];
         loop {
+            work.charge(value.len().max(1))?;
             let first = value.start + 2 * usize::from(is_path_separator(tokens, value.start));
             let mut end = first;
-            tokens.get(end)?.ident()?;
+            let Some(name) = tokens.get(end).and_then(Token::ident) else {
+                return Ok(None);
+            };
             while end + 3 < value.end
                 && is_path_separator(tokens, end + 1)
                 && tokens[end + 3].ident().is_some()
@@ -1035,42 +1064,48 @@ impl<'a> TypeScopes<'a> {
                 end += 3;
             }
             if end + 1 == value.end {
-                if let Some(current) = scope
-                    && value.start == end
-                    && let Some(slot) = current
-                        .application
-                        .alias
-                        .type_parameter_slot(tokens, tokens[end].ident()?)
-                {
-                    if slot >= current.available {
-                        return None;
-                    }
-                    if let Some(argument) = current.application.arguments.get(slot) {
-                        value = argument.clone();
-                        scope = current.application.caller;
-                    } else {
-                        value = current
-                            .application
-                            .alias
-                            .type_parameter_default(tokens, slot)?;
-                        scope = Some(AliasScope {
-                            available: slot,
-                            ..current
-                        });
-                    }
-                    continue;
+                let Some(current) = applications.last_mut().filter(|_| value.start == end) else {
+                    return Ok(Some(value));
+                };
+                work.charge(current.alias.parameters.len())?;
+                let Some(slot) = current.alias.type_parameter_slot(tokens, name) else {
+                    return Ok(Some(value));
+                };
+                if slot >= current.available {
+                    return Ok(None);
                 }
-                return Some(value);
+                if let Some(argument) = current.arguments.get(slot) {
+                    value = argument.clone();
+                    applications.truncate(applications.len() - 1);
+                } else {
+                    work.charge(slot + 1 + current.alias.parameters[slot].len())?;
+                    let Some(default) = current.alias.type_parameter_default(tokens, slot) else {
+                        return Ok(None);
+                    };
+                    value = default;
+                    current.available = slot;
+                }
+                continue;
             }
-            let TypeBinding::Alias(alias) = self.binding_at(tokens, end)? else {
-                return None;
+            let Some(TypeBinding::Alias(alias)) = self.binding_at(tokens, end) else {
+                return Ok(None);
             };
             let arguments = end + 1 + 2 * usize::from(is_path_separator(tokens, end + 1));
-            let (slots, boundary) = generic_slots(tokens, arguments)?;
+            let Some((slots, boundary)) = generic_slots(&tokens[..value.end], arguments) else {
+                return Ok(None);
+            };
             if boundary != value.end {
-                return None;
+                return Ok(None);
             }
-            return self.apply_alias(tokens, alias, &slots, scope);
+            work.charge(applications.len())?;
+            if applications
+                .iter()
+                .any(|active| active.alias.declaration == alias.declaration)
+            {
+                return Ok(None);
+            }
+            value = alias.value.clone();
+            applications.push(AliasApplication::new(alias, slots));
         }
     }
 
@@ -1123,50 +1158,65 @@ fn path_start(tokens: &[Token], end: usize) -> (usize, bool) {
     (start, false)
 }
 
-fn buffer_pattern_open<'a>(
+fn field_pattern(tokens: &[Token], index: usize, open: usize, tests: &[Range<usize>]) -> bool {
+    tokens.get(open).is_some_and(|t| t.is_punct('{'))
+        && opens_fields(tokens, open + 1)
+        && !declares_variant(tokens, index)
+        && !is_type_position(tokens, index, open)
+        && !tests.iter().any(|range| range.contains(&index))
+}
+
+fn buffer_pattern_matches<'a>(
     tokens: &'a [Token],
     index: usize,
     types: &TypeScopes<'a>,
-) -> Option<usize> {
-    if tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
-        && types.may_be_ratatui_buffer(tokens, index)
-    {
-        return Some(index + 1);
+    generic_ends: &[Option<usize>],
+    tests: &[Range<usize>],
+    work_limit: usize,
+) -> Result<bool, AliasWorkLimit> {
+    if tokens.get(index + 1).is_some_and(|t| t.is_punct('{')) {
+        return Ok(types.may_be_ratatui_buffer(tokens, index)
+            && field_pattern(tokens, index, index + 1, tests));
     }
-    if !is_path_separator(tokens, index + 1)
-        || !tokens
-            .get(index + 3)
-            .is_some_and(|token| token.is_punct('<'))
-    {
-        return None;
+    if !is_path_separator(tokens, index + 1) {
+        return Ok(false);
     }
-    let TypeBinding::Alias(alias) = types.binding_at(tokens, index)? else {
-        return None;
+    let start = index + 3;
+    let Some(open) = generic_ends.get(start).copied().flatten() else {
+        return Ok(false);
     };
-    let (slots, open) = generic_slots(tokens, index + 3)?;
-    let argument = types.apply_alias(tokens, alias, &slots, None)?;
-    matches!(
-        types.binding_at(tokens, argument.end - 1),
-        Some(TypeBinding::RatatuiBuffer)
-    )
-    .then_some(open)
+    let Some(TypeBinding::Alias(alias)) = types.binding_at(tokens, index) else {
+        return Ok(false);
+    };
+    if !field_pattern(tokens, index, open, tests) {
+        return Ok(false);
+    }
+    let mut work = AliasWork(work_limit);
+    work.charge(open - start)?;
+    let Some((slots, _)) = generic_slots(&tokens[..open], start) else {
+        return Ok(false);
+    };
+    let argument = types.apply_alias(tokens, alias, slots, &mut work)?;
+    Ok(argument.is_some_and(|range| {
+        matches!(
+            types.binding_at(tokens, range.end - 1),
+            Some(TypeBinding::RatatuiBuffer)
+        )
+    }))
 }
 
 fn pattern_violations<'a>(
     path: &Path,
     tokens: &'a [Token],
     aliases: &TypeScopes<'a>,
+    work_limit: usize,
 ) -> Vec<Violation> {
     let tests = test_modules(tokens);
+    let generic_ends = generic_ends(tokens);
     (1..tokens.len())
-        .filter_map(|index| {
-            let open = buffer_pattern_open(tokens, index, aliases)?;
-            (tokens.get(open).is_some_and(|t| t.is_punct('{'))
-                && opens_fields(tokens, open + 1)
-                && !declares_variant(tokens, index)
-                && !is_type_position(tokens, index, open)
-                && !tests.iter().any(|range| range.contains(&index)))
-            .then_some(index)
+        .filter(|&index| {
+            buffer_pattern_matches(tokens, index, aliases, &generic_ends, &tests, work_limit)
+                .unwrap_or(false)
         })
         .map(|index| {
             Violation::at_line(
@@ -1289,4 +1339,68 @@ fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         }
     }
     violations
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use std::fs;
+    use std::path::Path;
+
+    use super::{Check, CiStep, Repo, SCREEN_LIB, ScreenCheck, Violation};
+
+    #[test]
+    fn alias_budget_reports_an_explicit_screen_violation() -> Result<(), Box<dyn Error>> {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let status = jackin_testkit::git_command()
+            .args(["init", "-q"])
+            .current_dir(root)
+            .status()?;
+        assert!(status.success(), "git init exited with {status}");
+        fs::create_dir_all(root.join("crates/jackin-tui/src"))?;
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/jackin-tui\"]\nresolver = \"3\"\n",
+        )?;
+        fs::write(
+            root.join("crates/jackin-tui/Cargo.toml"),
+            "[package]\nname = \"jackin-tui\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )?;
+        fs::write(
+            root.join(SCREEN_LIB),
+            "use ratatui::buffer::Buffer;\n\
+             type Identity<T> = T;\n\
+             fn view(buf: Buffer) {\n\
+             \x20   let _: Option<Identity::<Buffer>> = None;\n\
+             \x20   let Identity::<Buffer> { content, .. } = buf;\n\
+             }\n",
+        )?;
+        let repo = Repo::open(root.to_owned())?;
+        let normal = ScreenCheck::with_allowed(&[]);
+        let capacity_limited = ScreenCheck {
+            alias_work_limit: 3,
+            ..normal
+        };
+        let path = Path::new(SCREEN_LIB);
+        assert_eq!(
+            normal.run(&repo),
+            [Violation::at_line(
+                CiStep::Screen,
+                path,
+                5,
+                "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
+            )]
+        );
+        assert_eq!(
+            capacity_limited.run(&repo),
+            [Violation::at_line(
+                CiStep::Screen,
+                path,
+                5,
+                "C1: Screen alias resolution exceeded its work limit for this pattern",
+            )]
+        );
+        Ok(())
+    }
 }
