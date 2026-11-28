@@ -15,6 +15,7 @@ pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION"];
 
 const SCREEN_SOURCE: &str = "crates/jackin-tui/src";
 const SCREEN_LIB: &str = "crates/jackin-tui/src/lib.rs";
+const SCREEN_MAIN: &str = "crates/jackin-tui/src/main.rs";
 
 const SCREEN_CHECK_FILE: &str = "crates/xtask/src/checks/screen.rs";
 
@@ -910,7 +911,7 @@ impl<'a> TypeScope<'a> {
             self.extern_macro_roots[root as usize] = Some(
                 StandardMacroRoot::from_name(source).is_some()
                     && !has_macro_attribute(tokens, index, |attribute| {
-                        !inert_lint_attribute(attribute)
+                        !inert_lint_attribute(attribute) && !extern_macro_use_attribute(attribute)
                     }),
             );
         }
@@ -986,6 +987,15 @@ fn imports_macro_rules(tokens: &[Token], declaration: usize) -> bool {
 
 fn macro_use_attribute(attribute: &[Token]) -> bool {
     matches!(attribute, [name] if name.is_keyword("macro_use"))
+}
+
+fn extern_macro_use_attribute(attribute: &[Token]) -> bool {
+    match attribute {
+        [name, open, .., close] => {
+            name.is_keyword("macro_use") && open.is_punct('(') && close.is_punct(')')
+        }
+        _ => macro_use_attribute(attribute),
+    }
 }
 
 fn inert_lint_attribute(attribute: &[Token]) -> bool {
@@ -2090,7 +2100,7 @@ impl<'a> TypeScopes<'a> {
         let scope = match self.sources[source].enclosing[index] {
             Some(ScopePosition::Rust(scope)) => scope,
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute(root)))
-                if self.matches_absolute_root_visible(root, work)? =>
+                if self.matches_absolute_root_visible(scope, root, work)? =>
             {
                 scope
             }
@@ -2129,7 +2139,7 @@ impl<'a> TypeScopes<'a> {
             let current = &self.scopes[scope];
             match current.matches_imported {
                 MatchesImport::Standard(root) => {
-                    return self.matches_absolute_root_visible(root, work);
+                    return self.matches_absolute_root_visible(scope, root, work);
                 }
                 MatchesImport::RelativeStandard(root) => {
                     return self.matches_standard_root_visible(scope, root, work);
@@ -2165,7 +2175,7 @@ impl<'a> TypeScopes<'a> {
                 return Ok(false);
             }
             let Some(parent) = current.parent else {
-                return self.matches_absolute_root_visible(root, work);
+                return self.matches_absolute_root_visible(scope, root, work);
             };
             scope = parent;
         }
@@ -2173,14 +2183,20 @@ impl<'a> TypeScopes<'a> {
 
     fn matches_absolute_root_visible(
         &self,
+        scope: usize,
         root: StandardMacroRoot,
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         work.charge_name(root.name())?;
-        Ok(self
-            .crate_root
-            .and_then(|scope| self.scopes[scope].extern_macro_roots[root as usize])
-            .unwrap_or(true))
+        let source = self.scopes[scope].source;
+        let crate_root = if self.sources[source].connected {
+            self.crate_root
+        } else {
+            (self.files[source].path == Path::new(SCREEN_MAIN)).then_some(source)
+        };
+        Ok(crate_root.is_some_and(|root_scope| {
+            self.scopes[root_scope].extern_macro_roots[root as usize].unwrap_or(true)
+        }))
     }
 
     fn alias_is_ratatui_buffer(
