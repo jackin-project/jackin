@@ -625,7 +625,7 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
             .all(|violation| violation.message.starts_with("C1: destructures"))
     );
     expect(
-        "mod model { pub struct Buffer { pub value: u8 } }\n\
+        &"mod model { pub struct Buffer { pub value: u8 } }\n\
          trait View { fn inspect(&self); }\n\
          impl View for (ratatui::buffer::Buffer) {\n\
          \x20   fn inspect(&self) {\n\
@@ -650,6 +650,7 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20               let Self { content, .. } = self;\n\
          \x20           }};\n\
          \x20       }\n\
+         \x20       macro_rules! LONG_MACRO_NAME { () => { () }; }\n\
          \x20       {\n\
          \x20           #![allow(unused_variables)]\n\
          \x20           read_fields!(/* ordinary comment */);\n\
@@ -711,18 +712,18 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          trait DefaultView { fn inspect_default(&self); }\n\
          impl DefaultView for Forward {\n\
          \x20   fn inspect_default(&self) { let Self { content, .. } = self; }\n\
-         }\n",
+         }\n".replace("LONG_MACRO_NAME", &"é".repeat(129)),
         &[
             ("C1", 6, "destructures"),
             ("C1", 11, "destructures"),
             ("C1", 17, "destructures"),
             ("C1", 20, "destructures"),
-            ("C1", 49, "destructures"),
-            ("C1", 56, "destructures"),
-            ("C1", 60, "destructures"),
+            ("C1", 50, "destructures"),
+            ("C1", 57, "destructures"),
             ("C1", 61, "destructures"),
-            ("C1", 76, "destructures"),
-            ("C1", 86, "destructures"),
+            ("C1", 62, "destructures"),
+            ("C1", 77, "destructures"),
+            ("C1", 87, "destructures"),
         ],
     )
 }
