@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use jackin_core::{
     ChatgptAccountId, CredentialFileProblem, EnvName, EnvSnapshot, FileKind, FileSystem, FsError,
-    HostPath, OpReference, plain, read_credential_file,
+    HostPath, OpReference, plain, read_credential_file, with_credential_preflight,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::credentials::{CredentialError, read_chatgpt_login};
+use crate::credentials::{CredentialError, read_chatgpt_login_in_preflight};
 use crate::op::{OnePasswordCli, OpFault, OpFieldInfo, OpFieldKind};
 
 pub const AUTH_FILE: &str = "auth.json";
@@ -52,6 +52,15 @@ pub enum FolderFacts {
     Malformed,
     Unrecognised,
     CodexLogin,
+}
+
+enum FolderInspection {
+    Missing,
+    Unreadable,
+    NoCredential,
+    Malformed,
+    Unrecognised,
+    CodexLogin(ChatgptAccountId),
 }
 
 #[derive(Debug, Error)]
@@ -175,52 +184,59 @@ impl SourceDesk {
     }
 
     async fn folder(&self, path: &HostPath, login: bool) -> Result<SourceFound, SourceFault> {
-        let facts = self.probe_folder(path).await;
-        match facts {
-            FolderFacts::Missing => Err(SourceFault::FolderMissing(path.clone())),
-            FolderFacts::Unreadable => Err(SourceFault::Unreadable(path.clone())),
+        match self.inspect_folder(path).await {
+            FolderInspection::Missing => Err(SourceFault::FolderMissing(path.clone())),
+            FolderInspection::Unreadable => Err(SourceFault::Unreadable(path.clone())),
             _ if !login => Ok(SourceFound::Folder),
-            FolderFacts::NoCredential => Err(SourceFault::NoLogin(path.clone())),
-            FolderFacts::Malformed => Err(SourceFault::LoginInvalid(path.clone())),
-            FolderFacts::Unrecognised => Err(SourceFault::NotChatgpt(path.clone())),
-            FolderFacts::CodexLogin => {
-                let found = read_chatgpt_login(self.fs.as_ref(), path)
-                    .await
-                    .map_err(SourceFault::Login)?;
-                Ok(SourceFound::Login {
-                    account: found.account_id,
-                })
-            }
+            FolderInspection::NoCredential => Err(SourceFault::NoLogin(path.clone())),
+            FolderInspection::Malformed => Err(SourceFault::LoginInvalid(path.clone())),
+            FolderInspection::Unrecognised => Err(SourceFault::NotChatgpt(path.clone())),
+            FolderInspection::CodexLogin(account) => Ok(SourceFound::Login { account }),
         }
     }
 
     pub async fn probe_folder(&self, path: &HostPath) -> FolderFacts {
-        let folder = match self.fs.canonicalize(path).await {
-            Ok(Some(folder)) => folder,
-            Ok(None) => return FolderFacts::Missing,
-            Err(_) => return FolderFacts::Unreadable,
-        };
-        if !matches!(
-            self.fs.stat_following(&folder).await,
-            Ok(Some(FileKind::Dir))
-        ) {
-            return FolderFacts::Unreadable;
+        match self.inspect_folder(path).await {
+            FolderInspection::Missing => FolderFacts::Missing,
+            FolderInspection::Unreadable => FolderFacts::Unreadable,
+            FolderInspection::NoCredential => FolderFacts::NoCredential,
+            FolderInspection::Malformed => FolderFacts::Malformed,
+            FolderInspection::Unrecognised => FolderFacts::Unrecognised,
+            FolderInspection::CodexLogin(_) => FolderFacts::CodexLogin,
         }
-        match read_chatgpt_login(self.fs.as_ref(), &folder).await {
-            Ok(_) => FolderFacts::CodexLogin,
-            Err(CredentialError::NotAChatgptLogin) => FolderFacts::Unrecognised,
-            Err(CredentialError::AuthJsonInvalid { .. }) => FolderFacts::Malformed,
-            Err(CredentialError::LoginUnreadable { .. }) => FolderFacts::NoCredential,
-            Err(
-                CredentialError::LoginNotRegular { .. }
-                | CredentialError::LoginTooLarge { .. }
-                | CredentialError::KeychainUnavailable
-                | CredentialError::KeychainLoginMissing
-                | CredentialError::Cancelled { .. }
-                | CredentialError::Fs(_)
-                | CredentialError::MissingStaticKey,
-            ) => FolderFacts::Unreadable,
-        }
+    }
+
+    async fn inspect_folder(&self, path: &HostPath) -> FolderInspection {
+        let requested = path.clone();
+        with_credential_preflight(self.fs.as_ref(), path, |io| {
+            Box::pin(async move {
+                let folder = match io.canonicalize(&requested).await {
+                    Ok(Some(folder)) => folder,
+                    Ok(None) => return FolderInspection::Missing,
+                    Err(_) => return FolderInspection::Unreadable,
+                };
+                if !matches!(io.stat_following(&folder).await, Ok(Some(FileKind::Dir))) {
+                    return FolderInspection::Unreadable;
+                }
+                match read_chatgpt_login_in_preflight(io, &folder).await {
+                    Ok(login) => FolderInspection::CodexLogin(login.account_id),
+                    Err(CredentialError::NotAChatgptLogin) => FolderInspection::Unrecognised,
+                    Err(CredentialError::AuthJsonInvalid { .. }) => FolderInspection::Malformed,
+                    Err(CredentialError::LoginUnreadable { .. }) => FolderInspection::NoCredential,
+                    Err(
+                        CredentialError::LoginNotRegular { .. }
+                        | CredentialError::LoginTooLarge { .. }
+                        | CredentialError::KeychainUnavailable
+                        | CredentialError::KeychainLoginMissing
+                        | CredentialError::Cancelled { .. }
+                        | CredentialError::Fs(_)
+                        | CredentialError::MissingStaticKey,
+                    ) => FolderInspection::Unreadable,
+                }
+            })
+        })
+        .await
+        .unwrap_or(FolderInspection::Unreadable)
     }
 
     async fn reference(
