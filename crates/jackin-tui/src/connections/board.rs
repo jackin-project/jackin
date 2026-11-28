@@ -14,7 +14,7 @@ use jackin_usage::dashboard::{
 };
 use jackin_usage::onboarding::OwnedLogin;
 use jackin_usage::presentation::{Level, ReadingText};
-use jackin_usage::view::{self, AccountQuota, ProviderGroup, UsageView, ViewFilter};
+use jackin_usage::view::{self, AccountQuota, Note, ProviderGroup, UsageView, ViewFilter};
 use uuid::Uuid;
 
 use jackin_usage::presentation as display;
@@ -361,6 +361,9 @@ fn account_rows(
             ));
         }
         for note in &account.notes {
+            if matches!(note, Note::RemainingQuota { .. }) {
+                continue;
+            }
             let (name, reading) = display::note_reading(view, account, note);
             let key = display::note_key(note);
             own.push(account_row(
