@@ -1077,14 +1077,14 @@ impl<'a> TypeScopes<'a> {
                 if let Some(argument) = current.arguments.get(slot) {
                     value = argument.clone();
                     applications.truncate(applications.len() - 1);
-                } else {
-                    work.charge(slot + 1 + current.alias.parameters[slot].len())?;
-                    let Some(default) = current.alias.type_parameter_default(tokens, slot) else {
-                        return Ok(None);
-                    };
-                    value = default;
-                    current.available = slot;
+                    continue;
                 }
+                work.charge(slot + 1 + current.alias.parameters[slot].len())?;
+                let Some(default) = current.alias.type_parameter_default(tokens, slot) else {
+                    return Ok(None);
+                };
+                value = default;
+                current.available = slot;
                 continue;
             }
             let Some(TypeBinding::Alias(alias)) = self.binding_at(tokens, end) else {
@@ -1214,17 +1214,13 @@ fn pattern_violations<'a>(
     let tests = test_modules(tokens);
     let generic_ends = generic_ends(tokens);
     (1..tokens.len())
-        .filter(|&index| {
-            buffer_pattern_matches(tokens, index, aliases, &generic_ends, &tests, work_limit)
-                .unwrap_or(false)
-        })
-        .map(|index| {
-            Violation::at_line(
-                CiStep::Screen,
-                path,
-                tokens[index].line,
-                "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
-            )
+        .filter_map(|index| {
+            let message = match buffer_pattern_matches(tokens, index, aliases, &generic_ends, &tests, work_limit) {
+                Ok(true) => "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
+                Ok(false) => return None,
+                Err(AliasWorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
+            };
+            Some(Violation::at_line(CiStep::Screen, path, tokens[index].line, message))
         })
         .collect()
 }
