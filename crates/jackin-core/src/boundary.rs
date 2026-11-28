@@ -89,6 +89,15 @@ pub trait FileSystem: Send + Sync + Debug {
         drop(hold);
         found
     }
+    async fn stat_following_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<FileKind>, FsError> {
+        let found = self.stat_following(path).await;
+        drop(hold);
+        found
+    }
     async fn canonicalize_holding(
         &self,
         path: &HostPath,

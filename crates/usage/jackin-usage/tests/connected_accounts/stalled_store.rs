@@ -42,7 +42,7 @@ fn read_on_thread(
     rx
 }
 
-fn slot_holding(vault: &Vault, value: &[u8]) -> Result<Uuid> {
+pub(super) fn slot_holding(vault: &Vault, value: &[u8]) -> Result<Uuid> {
     vault
         .values
         .lock()
@@ -53,7 +53,7 @@ fn slot_holding(vault: &Vault, value: &[u8]) -> Result<Uuid> {
         .ok_or_else(|| "no slot holds that value".into())
 }
 
-fn wait_for_stalled_read(vault: &Vault) -> Result<()> {
+pub(super) fn wait_for_stalled_read(vault: &Vault) -> Result<()> {
     let started = Instant::now();
     while vault.stalled_reads.load(Ordering::Acquire) == 0 {
         if started.elapsed() > PATIENCE {

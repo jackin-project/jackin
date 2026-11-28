@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::time::Duration;
+
 use jackin_core::{FileMode, FileSystem, HostPath, StdFileSystem};
 use jackin_session::{FolderFacts, OpFault, Source, SourceFault, SourceFound};
 use serde_json::json;
@@ -76,7 +78,7 @@ async fn a_folder_source_reads_the_chatgpt_login_only_when_a_login_is_needed() -
         let good = host("/home/good")?;
         bench.login(&good, &chatgpt_login().to_string()).await?;
         let broken = host("/home/broken")?;
-        bench.login(&broken, "{ not json").await?;
+        bench.login(&broken, "{").await?;
         let apikey = host("/home/apikey")?;
         bench
             .login(&apikey, &json!({"auth_mode": "apikey"}).to_string())
@@ -161,6 +163,30 @@ async fn probing_a_folder_names_what_it_holds() -> TestResult {
         Ok(())
     })
     .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn folder_probes_share_the_credential_deadline() -> TestResult {
+    let bench = Bench::new();
+    let path = host("/home/good")?;
+    bench.login(&path, &chatgpt_login().to_string()).await?;
+    let desk = bench.desk();
+    let source = Source::Folder {
+        path: &path,
+        login: true,
+    };
+    let cancel = token();
+    assert!(matches!(
+        desk.check(source, &cancel).await?,
+        SourceFound::Login { .. }
+    ));
+
+    bench.fs.delay_metadata_at(&path, Duration::from_secs(6));
+    assert!(matches!(
+        desk.check(source, &cancel).await,
+        Err(SourceFault::Unreadable(path_read)) if path_read == path
+    ));
+    Ok(())
 }
 
 #[tokio::test]

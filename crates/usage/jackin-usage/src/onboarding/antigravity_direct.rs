@@ -612,7 +612,7 @@ async fn client_for(
         return file.client().await;
     }
     Err(ProviderError::Unsupported(
-        "Google has not authorized Jackin to use the Antigravity installed-app OAuth client",
+        "Google has not authorized Jackin to use the Antigravity installed-app OAuth client; use jackin account usage connect antigravity --status-line",
     )
     .into())
 }

@@ -97,10 +97,21 @@ pub(super) async fn account(
         provider,
         region,
         auth,
+        status_line,
     } = command
     {
         let provider = providers::connector(&provider)?;
-        return connect(app, provider, auth, region.as_deref(), None).await;
+        if status_line && provider != UsageProvider::Antigravity {
+            return Err(CommandError::Argument(
+                "--status-line applies only to antigravity".into(),
+            ));
+        }
+        if status_line && auth.is_some() {
+            return Err(CommandError::Argument(
+                "--status-line cannot be combined with --auth".into(),
+            ));
+        }
+        return connect(app, provider, auth, region.as_deref(), None, status_line).await;
     }
     let mut db = service(app)?.with_registry(Ok).await.map_err(failure)?;
     match command {
@@ -145,7 +156,7 @@ async fn reconnect(
         .into_iter()
         .find(|row| row.id == id)
         .ok_or_else(|| CommandError::Argument("unknown usage account".into()))?;
-    connect(app, current.provider, auth, region, Some(id)).await
+    connect(app, current.provider, auth, region, Some(id), false).await
 }
 
 fn service(app: &App) -> Result<OwnedLogin, CommandError> {
@@ -171,6 +182,7 @@ async fn connect(
     auth: Option<jackin_usage::onboarding::UsageAuth>,
     region: Option<&str>,
     replace: Option<Uuid>,
+    status_line: bool,
 ) -> Result<(), CommandError> {
     if app.terminal.is_none() {
         return Err(CommandError::NoTerminal);
@@ -186,7 +198,7 @@ async fn connect(
     };
     let id = tokio::select! {
         biased;
-        result=service.connect_with_auth(provider,auth,region,replace,send,&cancel)=>result.map_err(|e|if matches!(e,LoginError::Cancelled){cancelled()}else{failure(e)})?,
+        result=async { if status_line { service.connect_antigravity_statusline(replace,send,&cancel).await } else { service.connect_with_auth(provider,auth,region,replace,send,&cancel).await } }=>result.map_err(|e|if matches!(e,LoginError::Cancelled){cancelled()}else{failure(e)})?,
         result=drive=>{cancel.cancel();return result;}
     };
     app.io.line(&id.to_string())
@@ -261,7 +273,8 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
             reply.send(value).map_err(|_| cancelled())?;
         }
         LoginPrompt::AntigravityStatusLine { command } => {
-            app.io.note("In another terminal, run this command and sign in to Antigravity with the selected Google account:");
+            app.io.note("If your Antigravity CLI status line already runs jackin usage antigravity-statusline with the same usage database, no setup is needed. Keep using Antigravity and the first report connects the account.");
+            app.io.note("Otherwise, in another terminal, run this command and sign in to Antigravity with the selected Google account:");
             app.io.note(&command);
             app.io
                 .note("Waiting for the first quota report. Press Esc to cancel.");
@@ -279,9 +292,6 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
                 }
             }
         }
-        LoginPrompt::Callback { url } => app.io.note(&format!(
-            "Authorize your Google account in the browser: {url}"
-        )),
         LoginPrompt::BrowserUnavailable => {
             app.io.note("Open the displayed URL to continue.");
         }

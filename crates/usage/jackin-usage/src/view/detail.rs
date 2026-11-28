@@ -51,6 +51,7 @@ pub fn meter_lines(
 pub fn note_lines(_account: &AccountQuota, note: &Note, view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     let ctx = *ctx;
     match note {
+        Note::RemainingQuota { .. } => Vec::new(),
         Note::Balance {
             amount,
             unit,

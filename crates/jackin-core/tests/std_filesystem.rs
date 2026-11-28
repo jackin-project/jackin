@@ -393,46 +393,43 @@ fn a_holding_metadata_call_keeps_its_hold_until_the_blocking_work_ends() -> Test
         std::fs::write(dir.path().join("file"), b"data")?;
         let path = HostPath::parse(&std::fs::canonicalize(dir.path().join("file"))?)?;
         let fs = StdFileSystem::default();
-        for call in 0..3 {
+        for call in 0..4 {
             let (release, parked) = std::sync::mpsc::channel::<()>();
-            let blocker = tokio::task::spawn_blocking(move || parked.recv());
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            let hold = std::sync::Arc::new(());
-            let held: jackin_core::Hold = std::sync::Arc::<()>::clone(&hold);
-            let waited = match call {
-                0 => {
-                    tokio::time::timeout(Duration::from_millis(100), async {
-                        fs.stat_holding(&path, held).await.map(drop)
-                    })
-                    .await
+            let (ready, occupied) = tokio::sync::oneshot::channel();
+            let blocker = tokio::task::spawn_blocking(move || {
+                if ready.send(()).is_ok() {
+                    parked.recv()?;
                 }
-                1 => {
-                    tokio::time::timeout(Duration::from_millis(100), async {
-                        fs.canonicalize_holding(&path, held).await.map(drop)
-                    })
-                    .await
-                }
-                _ => {
-                    tokio::time::timeout(Duration::from_millis(100), async {
-                        fs.identity_holding(&path, held).await.map(drop)
-                    })
-                    .await
-                }
-            };
+                Ok::<(), std::sync::mpsc::RecvError>(())
+            });
+            occupied.await?;
+            let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
+            let held: jackin_core::Hold =
+                std::sync::Arc::new(std::sync::Arc::clone(&slots).try_acquire_owned()?);
+            {
+                let mut waiting = std::pin::pin!(async {
+                    match call {
+                        0 => fs.stat_holding(&path, held).await.map(drop),
+                        1 => fs.canonicalize_holding(&path, held).await.map(drop),
+                        2 => fs.identity_holding(&path, held).await.map(drop),
+                        _ => fs.stat_following_holding(&path, held).await.map(drop),
+                    }
+                });
+                let state =
+                    std::future::poll_fn(|cx| std::task::Poll::Ready(waiting.as_mut().poll(cx)))
+                        .await;
+                assert!(
+                    state.is_pending(),
+                    "call {call} finished while the pool was busy"
+                );
+            }
             assert!(
-                waited.is_err(),
-                "call {call} finished while the pool was busy"
+                slots.try_acquire().is_err(),
+                "call {call} released its hold early"
             );
-            assert_eq!(std::sync::Arc::strong_count(&hold), 2, "call {call}");
             release.send(())?;
             blocker.await??;
-            for _ in 0..500 {
-                if std::sync::Arc::strong_count(&hold) == 1 {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-            assert_eq!(std::sync::Arc::strong_count(&hold), 1, "call {call}");
+            let _released = tokio::time::timeout(Duration::from_secs(5), slots.acquire()).await??;
         }
         Ok(())
     })

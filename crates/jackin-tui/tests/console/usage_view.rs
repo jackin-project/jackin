@@ -12,7 +12,9 @@ use jackin_testkit::{
     ConsoleRig, MemoryVault, ProfileAccount, Rig, SeedRow, TestResult, USAGE_VIEW_NOW,
     assert_golden, pin_usage_view_clock, seed_usage_rows, seed_usage_view,
 };
-use jackin_usage::accounts::{AccountRegistry, CredentialVault, DATABASE_PATH, FailureKind};
+use jackin_usage::accounts::{
+    AccountPreferences, AccountRegistry, CredentialVault, DATABASE_PATH, FailureKind,
+};
 use jackin_usage::onboarding::OwnedLogin;
 use jackin_usage::view::text;
 use termrock::core::id::WidgetId;
@@ -532,6 +534,81 @@ async fn priority_rows_follow_the_attention_notices() -> TestResult {
         &dump(&priority),
         &ids(&accounts),
     )
+}
+
+#[tokio::test]
+async fn amount_only_quota_resets_follow_board_settings() -> TestResult {
+    let (lab, cancel) = quiet_lab().await?;
+    pin_usage_view_clock(&lab.rig.world.clock);
+    cancel.cancel();
+    let path = lab
+        .console
+        .config()
+        .path()
+        .as_path()
+        .parent()
+        .ok_or("config dir")?
+        .join(DATABASE_PATH);
+    let accounts = seed_usage_rows(
+        &path,
+        vec![SeedRow {
+            provider: jackin_usage::accounts::UsageProvider::Antigravity,
+            label: "work@example.com",
+            identity: None,
+            fetched_at: USAGE_VIEW_NOW,
+            snapshot: serde_json::json!({
+                "resources": {
+                    "3p-weekly": {
+                        "kind": "quota",
+                        "label": "Claude weekly",
+                        "remaining": 7,
+                        "resets_at": USAGE_VIEW_NOW + 86_400,
+                        "unit": "count"
+                    }
+                }
+            }),
+            failure: None,
+        }],
+    )?;
+    let id = accounts.first().ok_or("seeded account")?.id;
+    let account = id.to_string();
+    let registry = AccountRegistry::with_vault(&path, MemoryVault::shared())?;
+    let mut settings = registry.dashboard_settings()?;
+    let mut preferences = AccountPreferences::default();
+
+    for (priority, exact, expected_reset) in [
+        (false, false, "resets in 1d 0h"),
+        (false, true, "resets at 2026-11-25 15:37 UTC"),
+        (true, true, "resets at 2026-11-25 15:37 UTC"),
+        (true, false, "resets in 1d 0h"),
+    ] {
+        if priority && preferences.pinned.insert("3p-weekly".to_owned()) {
+            registry.set_preferences(id, &preferences)?;
+        }
+        settings.exact_resets = exact;
+        registry.set_dashboard_settings(&settings)?;
+        let usage = board(&lab, priority).await?;
+        let mut rows = usage.rows.iter().filter(|row| {
+            row.account.as_deref() == Some(account.as_str()) && row.metric == "3p-weekly"
+        });
+        let row = rows.next().ok_or("amount-only quota row")?;
+        assert!(rows.next().is_none(), "duplicate amount-only quota row");
+        assert_eq!(row.reset.as_deref(), Some(expected_reset));
+        assert_eq!(row.exact_value, "7 count");
+        assert!(!row.bounded && row.bar.is_none());
+    }
+
+    preferences.hidden.insert("3p-weekly".to_owned());
+    registry.set_preferences(id, &preferences)?;
+    let all = board(&lab, false).await?;
+    assert!(
+        all.providers
+            .iter()
+            .flat_map(|provider| &provider.accounts)
+            .any(|entry| entry.id == account)
+    );
+    assert!(all.rows.iter().all(|row| row.metric != "3p-weekly"));
+    Ok(())
 }
 
 #[tokio::test]

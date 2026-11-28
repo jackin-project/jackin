@@ -36,6 +36,8 @@ struct StatusLine<'a> {
 struct Quota {
     remaining_fraction: Option<f64>,
     #[serde(default, deserialize_with = "optional_reset_field")]
+    remaining_amount: Option<f64>,
+    #[serde(default, deserialize_with = "optional_reset_field")]
     reset_time: Option<String>,
     #[serde(default, deserialize_with = "optional_reset_field")]
     reset_in_seconds: Option<i64>,
@@ -56,10 +58,6 @@ impl Quota {
         if self.disabled == Some(true) {
             return None;
         }
-        let fraction = self
-            .remaining_fraction
-            .filter(|value| value.is_finite())?
-            .clamp(0., 1.);
         let reset = self
             .reset_time
             .as_deref()
@@ -68,10 +66,21 @@ impl Quota {
                 let seconds = self.reset_in_seconds.filter(|&seconds| seconds >= 0)?;
                 observed_at.checked_add(seconds)
             });
-        let mut resource = json!({
-            "label":label, "kind":"quota", "unit":"percent",
-            "remaining_fraction":fraction, "window_seconds":period,
-        });
+        let fraction = self.remaining_fraction.filter(|value| value.is_finite());
+        let amount = self
+            .remaining_amount
+            .filter(|value| value.is_finite() && *value >= 0.);
+        let mut resource = match (fraction, amount) {
+            (Some(fraction), _) => json!({
+                "label":label, "kind":"quota", "unit":"percent",
+                "remaining_fraction":fraction.clamp(0., 1.), "window_seconds":period,
+            }),
+            (None, Some(amount)) => json!({
+                "label":label, "kind":"quota", "unit":"count",
+                "remaining":amount, "window_seconds":period,
+            }),
+            (None, None) => return None,
+        };
         if let Some(reset) = reset {
             resource["resets_at"] = reset.into();
         }

@@ -16,6 +16,7 @@ mod credentials;
 mod errors;
 mod isolation;
 mod kinds;
+mod minimax_login;
 mod norefresh;
 mod omp;
 mod opencode;
