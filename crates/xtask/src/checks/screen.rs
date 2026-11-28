@@ -1020,8 +1020,10 @@ fn enum_named_variants<'a>(
         }
         index += 1;
         while index < end && !tokens[index].is_punct(',') {
-            if matches!(tokens[index].kind, Tok::Punct('(' | '[' | '{' | '<')) {
+            if matches!(tokens[index].kind, Tok::Punct('(' | '[' | '{')) {
                 index = file.group_ends[index]?;
+            } else if let Some(close) = matches_angle_end(file, index, end) {
+                index = close;
             } else {
                 index += 1;
             }

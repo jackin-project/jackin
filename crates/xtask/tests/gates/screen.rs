@@ -1230,11 +1230,11 @@ fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
     workspace.write("Cargo.toml", &workspace_manifest(&["jackin-tui"], &[]))?;
     workspace.write(
         "crates/jackin-tui/Cargo.toml",
-        &member_manifest("jackin-tui", "[[bin]]\nname = \"custom\"\npath = \"src/custom.rs\"\n[[bin]]\nname = \"unicode\"\npath = \"src/cafe\u{301}.rs\"\n"),
+        &member_manifest("jackin-tui", "[lib]\ncrate-type = [\"rlib\"]\n[[bin]]\nname = \"custom\"\npath = \"src/custom.rs\"\n[[bin]]\nname = \"unicode\"\npath = \"src/cafe\u{301}.rs\"\n"),
     )?;
     workspace.write(
         LIB,
-        "mod bridge { pub struct Buffer { pub content: Vec<u8> } }\nmod shared;\n",
+        "mod bridge { pub struct Buffer { pub content: Vec<u8> } }\nmod shared;\nmod special { pub use ratatui::buffer::Buffer; } fn inspect(b: special::Buffer) { let crate::special::Buffer { content, .. } = b; }\n",
     )?;
     workspace.write("crates/jackin-tui/src/main.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nmod shared;\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
     workspace.write("crates/jackin-tui/src/bin/flat.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
@@ -1281,6 +1281,7 @@ fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
         (Path::new("crates/jackin-tui/src/bin/folder/main.rs"), 2),
         (unicode_path, 2),
         (Path::new("crates/jackin-tui/src/custom.rs"), 2),
+        (Path::new(LIB), 3),
         (Path::new("crates/jackin-tui/src/main.rs"), 3),
         (Path::new("crates/jackin-tui/src/shared.rs"), 1),
     ];
@@ -1291,6 +1292,11 @@ fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
         assert!(message.contains("C1: destructures"), "{message}");
     }
     Ok(())
+}
+
+#[test]
+fn nominal_enum_named_buffer_can_be_aliased() -> TestResult {
+    expect("enum Buffer { Packet { value: u8 } }\ntype PacketBuffer = Buffer;\n", &[])
 }
 
 #[test]
