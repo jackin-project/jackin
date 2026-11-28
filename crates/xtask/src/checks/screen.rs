@@ -261,6 +261,7 @@ fn context_violations(
         violations.extend(pattern_violations(source, types, work_limit));
         violations.extend(type_alias_violations(source, types));
         violations.extend(macro_lint_level_violations(source, types));
+        violations.extend(include_violations(source, types));
         occurrences.extend(
             violations
                 .into_iter()
@@ -724,30 +725,34 @@ fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, V
         .iter()
         .enumerate()
         .filter(|(_, token)| token.is_ident("type"))
-        .filter(|(index, _)| {
-            TypeAlias::parse(tokens, *index, source).is_some_and(|alias| {
-                alias.value.clone().any(|target| {
-                    types
-                        .may_be_ratatui_buffer(
-                            source,
-                            target,
-                            BufferReference::Rename,
-                            &mut AliasWork::Unlimited,
-                        )
-                        .unwrap_or(false)
-                        && !associated_argument_name(tokens, target)
-                        && !tokens[target].ident().is_some_and(|name| {
-                            !is_path_separator(tokens, target.wrapping_sub(2))
-                                && alias.type_parameter_slot(tokens, name).is_some()
-                        })
-                })
-            })
-        })
-        .map(|(index, token)| {
-            (
+        .filter_map(|(index, token)| {
+            let alias = TypeAlias::parse(tokens, index, source)?;
+            let message = alias.value.clone().find_map(|target| {
+                if associated_argument_name(tokens, target)
+                    || tokens[target].ident().is_some_and(|name| {
+                        !is_path_separator(tokens, target.wrapping_sub(2))
+                            && alias.type_parameter_slot(tokens, name).is_some()
+                    })
+                {
+                    return None;
+                }
+                match types.may_be_ratatui_buffer(
+                    source,
+                    target,
+                    BufferReference::Rename,
+                    &mut AliasWork::Unlimited,
+                ) {
+                    Ok(true) => Some(BUFFER_RENAME),
+                    Err(AliasResolutionError::ConditionalRoot) => {
+                        Some("C1: conditional module leaves ratatui root provenance uncertain")
+                    }
+                    _ => None,
+                }
+            })?;
+            Some((
                 index,
-                Violation::at_line(CiStep::Screen, file.path, token.line, BUFFER_RENAME),
-            )
+                Violation::at_line(CiStep::Screen, file.path, token.line, message),
+            ))
         })
         .collect()
 }
@@ -1033,6 +1038,7 @@ enum AliasWork {
 enum AliasResolutionError {
     WorkLimit,
     ConditionalParameters,
+    ConditionalRoot,
 }
 
 impl AliasWork {
@@ -1170,6 +1176,7 @@ struct TypeScope<'a> {
     conditional_roots: BTreeSet<&'a str>,
     matches_imported: MatchesImport,
     named_matches_imports: BTreeMap<&'a str, MatchesImport>,
+    named_include_imports: BTreeMap<&'a str, MatchesImport>,
     matches_textual: bool,
     textual_macros: TextualMacros<'a>,
     matches_to_parent: bool,
@@ -1228,6 +1235,8 @@ impl<'a> TypeScope<'a> {
                 let entry = self.named_matches_imports.entry(name).or_default();
                 *entry = entry.include(segments, absolute, macro_attributed);
             }
+            let entry = self.named_include_imports.entry(name).or_default();
+            *entry = entry.include_macro(segments, absolute, macro_attributed, "include");
             let binding = match segments {
                 _ if !macro_attributed => {
                     if let Some(rename) = path.rename {
@@ -1414,10 +1423,17 @@ fn has_outer_attribute(tokens: &[Token], item: usize) -> bool {
 
 fn conditional_attribute(tokens: &[Token], item: usize) -> bool {
     has_macro_attribute(tokens, item, |attribute| {
-        attribute
-            .first()
-            .is_some_and(|token| token.is_keyword("cfg") || token.is_keyword("cfg_attr"))
+        !cfg_always_active(attribute)
+            && attribute
+                .first()
+                .is_some_and(|token| token.is_keyword("cfg") || token.is_keyword("cfg_attr"))
     })
+}
+
+fn cfg_always_active(attribute: &[Token]) -> bool {
+    matches!(attribute, [cfg, outer, all, inner, inner_end, outer_end]
+        if cfg.is_keyword("cfg") && outer.is_punct('(') && all.is_keyword("all")
+            && inner.is_punct('(') && inner_end.is_punct(')') && outer_end.is_punct(')'))
 }
 
 fn has_macro_attribute(
@@ -1561,8 +1577,20 @@ enum MatchesImport {
 
 impl MatchesImport {
     fn include(self, segments: &[&str], absolute: bool, attributed: bool) -> Self {
+        self.include_macro(segments, absolute, attributed, "matches")
+    }
+
+    fn include_macro(
+        self,
+        segments: &[&str],
+        absolute: bool,
+        attributed: bool,
+        macro_name: &str,
+    ) -> Self {
         let root = match (segments, attributed) {
-            ([name, "matches"], false) => StandardMacroRoot::from_name(name),
+            ([name, terminal], false) if *terminal == macro_name => {
+                StandardMacroRoot::from_name(name)
+            }
             _ => None,
         };
         let observed = match (root, absolute) {
@@ -2082,6 +2110,69 @@ fn macro_lint_level_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(us
     violations
 }
 
+fn include_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
+    let file = &types.files[source];
+    let mut violations = Vec::new();
+    for (index, token) in file.tokens.iter().enumerate() {
+        let Some(name) = token.ident() else {
+            continue;
+        };
+        if !file
+            .tokens
+            .get(index + 1)
+            .is_some_and(|token| token.is_punct('!'))
+            || macro_arm_group_end(file, index + 2, file.tokens.len()).is_none()
+        {
+            continue;
+        }
+        let mut work = AliasWork::Unlimited;
+        let Ok(Some(scope)) = types.proven_field_pattern_scope(source, index, &mut work) else {
+            continue;
+        };
+        let qualified = is_path_separator(&file.tokens, index.wrapping_sub(2));
+        let visible = if qualified {
+            let Some(root_index) = index.checked_sub(3) else {
+                continue;
+            };
+            let Some(root) = file.tokens[root_index]
+                .ident()
+                .and_then(StandardMacroRoot::from_name)
+            else {
+                continue;
+            };
+            if name != "include" {
+                continue;
+            }
+            if is_path_separator(&file.tokens, root_index.wrapping_sub(2)) {
+                expression_path_boundary(file.tokens.get(root_index.wrapping_sub(3)))
+                    && types
+                        .matches_absolute_root_visible(scope, root, &mut work)
+                        .unwrap_or(false)
+            } else {
+                types
+                    .matches_standard_root_visible(scope, root, &mut work)
+                    .unwrap_or(false)
+            }
+        } else {
+            types
+                .include_name_visible(scope, index, name, &mut work)
+                .unwrap_or(false)
+        };
+        if visible {
+            violations.push((
+                index,
+                Violation::at_line(
+                    CiStep::Screen,
+                    file.path,
+                    token.line,
+                    "C1: include! source coverage is uncertain at this site",
+                ),
+            ));
+        }
+    }
+    violations
+}
+
 fn literal_macro_transcribers<'a>(
     file: &'a ScreenFile<'_>,
     definition: Range<usize>,
@@ -2437,6 +2528,7 @@ struct TypeScopes<'a> {
     scopes: Vec<TypeScope<'a>>,
     sources: Vec<SourceScopes>,
     crate_root: Option<usize>,
+    guard_pending: Vec<(usize, Range<usize>, usize, MatchesMacro)>,
 }
 
 impl<'a> TypeScopes<'a> {
@@ -2468,6 +2560,7 @@ impl<'a> TypeScopes<'a> {
             scopes,
             sources: (0..files.len()).map(|_| SourceScopes::default()).collect(),
             crate_root,
+            guard_pending: Vec::new(),
         };
         if let Some(root) = graph.crate_root {
             graph.sources[root].connected = true;
@@ -2506,6 +2599,25 @@ impl<'a> TypeScopes<'a> {
             graph.scopes[scope]
                 .bindings
                 .insert(name, TypeBinding::RatatuiBuffer);
+        }
+        for (source, arguments, origin, kind) in std::mem::take(&mut graph.guard_pending) {
+            let work = &mut AliasWork::Unlimited;
+            let visible = match kind {
+                MatchesMacro::Prelude => graph.matches_prelude_visible(origin, work),
+                MatchesMacro::Absolute(root) => {
+                    graph.matches_absolute_root_visible(origin, root, work)
+                }
+                MatchesMacro::Relative(root) => {
+                    graph.matches_standard_root_visible(origin, root, work)
+                }
+                MatchesMacro::Named(name) => graph.matches_named_visible(origin, name, work),
+            }
+            .unwrap_or(false);
+            if visible {
+                let mut enclosing = std::mem::take(&mut graph.sources[source].enclosing);
+                graph.collect_matches_guard(source, arguments, origin, kind, paths, &mut enclosing);
+                graph.sources[source].enclosing = enclosing;
+            }
         }
         graph
     }
@@ -2651,14 +2763,7 @@ impl<'a> TypeScopes<'a> {
                         scope_state.self_receiver.is_some(),
                         &mut enclosing,
                     );
-                    self.collect_matches_guard(
-                        source,
-                        open..end,
-                        scope,
-                        kind,
-                        paths,
-                        &mut enclosing,
-                    );
+                    self.guard_pending.push((source, open..end, scope, kind));
                 }
                 index = end;
                 continue;
@@ -2733,7 +2838,7 @@ impl<'a> TypeScopes<'a> {
             || !tokens[declaration].is_ident("mod")
             || !tokens.get(declaration + 2)?.is_punct(';')
             || has_macro_attribute(tokens, declaration, |attribute| {
-                !inert_lint_attribute(attribute)
+                !inert_lint_attribute(attribute) && !cfg_always_active(attribute)
             })
         {
             return None;
@@ -2791,7 +2896,7 @@ impl<'a> TypeScopes<'a> {
                 self.scopes[parent].conditional_roots.insert(name);
             }
             let attributed = has_macro_attribute(tokens, declaration, |attribute| {
-                !inert_lint_attribute(attribute)
+                !inert_lint_attribute(attribute) && !cfg_always_active(attribute)
             });
             let binding = if attributed {
                 TypeBinding::Unresolved
@@ -3130,13 +3235,20 @@ impl<'a> TypeScopes<'a> {
         {
             return false;
         }
-        let Some(mut scope) = self.sources[source].use_enclosing[index].or_else(|| {
+        let Some(scope) = self.sources[source].use_enclosing[index].or_else(|| {
             self.proven_field_pattern_scope(source, index, &mut AliasWork::Unlimited)
                 .ok()
                 .flatten()
         }) else {
             return false;
         };
+        self.conditional_root_in_scope(scope, name)
+    }
+
+    fn conditional_root_in_scope(&self, mut scope: usize, name: &str) -> bool {
+        if !self.roots.get(name).copied().unwrap_or(false) {
+            return false;
+        }
         loop {
             let current = &self.scopes[scope];
             if current.bindings.contains_key(name) {
@@ -3193,6 +3305,18 @@ impl<'a> TypeScopes<'a> {
             work.charge(1)?;
             let edge = state.take();
             if let Some((start, absolute, edge_len)) = edge {
+                if !absolute
+                    && edge_len == 3
+                    && path
+                        .iter()
+                        .skip(1)
+                        .take(2)
+                        .copied()
+                        .eq(["buffer", "Buffer"])
+                    && self.conditional_root_in_scope(start, path[0])
+                {
+                    return Err(AliasResolutionError::ConditionalRoot);
+                }
                 if edge_len == 3
                     && path
                         .iter()
@@ -3693,6 +3817,42 @@ impl<'a> TypeScopes<'a> {
         })
     }
 
+    fn include_name_visible(
+        &self,
+        mut scope: usize,
+        invocation: usize,
+        name: &str,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        if !self.textual_name_visible(scope, invocation, name, work)? {
+            return Ok(false);
+        }
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            match current
+                .named_include_imports
+                .get(name)
+                .copied()
+                .unwrap_or_default()
+            {
+                MatchesImport::Standard(root) => {
+                    return self.matches_absolute_root_visible(scope, root, work);
+                }
+                MatchesImport::RelativeStandard(root) => {
+                    return self.matches_standard_root_visible(scope, root, work);
+                }
+                MatchesImport::Unknown => return Ok(false),
+                MatchesImport::Absent if current.glob_import => return Ok(false),
+                MatchesImport::Absent => {}
+            }
+            let Some(parent) = current.parent else {
+                return Ok(name == "include");
+            };
+            scope = parent;
+        }
+    }
+
     fn matches_named_visible(
         &self,
         mut scope: usize,
@@ -3878,10 +4038,11 @@ impl<'a> TypeScopes<'a> {
         let mut violations = Vec::new();
         for scope in self.source_scopes(source) {
             for leaf in &self.scopes[scope].imports {
-                let conditional = leaf
-                    .segments
-                    .first()
-                    .is_some_and(|root| self.conditional_root_at(source, leaf.root, root));
+                let conditional = !leaf.absolute
+                    && leaf
+                        .segments
+                        .first()
+                        .is_some_and(|root| self.conditional_root_at(source, leaf.root, root));
                 let rest = leaf.segments.get(1..).unwrap_or_default();
                 if conditional
                     && (!RATATUI_ALLOWED
@@ -4070,6 +4231,7 @@ fn pattern_violations(
                 Ok(false) => return None,
                 Err(AliasResolutionError::WorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
                 Err(AliasResolutionError::ConditionalParameters) => "C1: conditional alias parameters leave Buffer provenance unresolved for this pattern",
+                Err(AliasResolutionError::ConditionalRoot) => "C1: conditional module leaves ratatui root provenance uncertain",
             };
             Some((index, Violation::at_line(CiStep::Screen, file.path, tokens[index].line, message)))
         })

@@ -148,7 +148,13 @@ fn conditional_canonical_root_reports_uncertainty() -> TestResult {
          fn allowed() { let _: Option<ratatui::Frame> = None; }\n\
          }\n\
          mod active { #[cfg(all())] mod ratatui { pub mod widgets { pub struct Block; } pub mod buffer { pub struct Buffer { pub content: u8 } } } fn view(value: ratatui::buffer::Buffer) { let ratatui::buffer::Buffer { content } = value; let _: Option<ratatui::widgets::Block> = None; } }\n",
-        &[("C1", 1, "widgets"), ("C1", 4, "uncertain"), ("C1", 5, "uncertain"), ("C1", 6, "uncertain"), ("C1", 7, "widgets")],
+        &[
+            ("C1", 1, "widgets"),
+            ("C1", 4, "uncertain"),
+            ("C1", 5, "uncertain"),
+            ("C1", 6, "uncertain"),
+            ("C1", 7, "widgets"),
+        ],
     )
 }
 
@@ -179,10 +185,19 @@ fn builtin_include_reports_unchecked_source() -> TestResult {
         }\n\
         fn shadow() { macro_rules! include { ($t:tt) => { () } } include!(\"fragment.inc\"); }\n\
         fn inert() { ::core::stringify!(include!(\"fragment.inc\")); }\n")?;
-    workspace.write("crates/jackin-tui/src/fragment.inc", "const ITEM: u8 = 0;\n")?;
-    workspace.write("crates/jackin-tui/src/fragment.rs", "const ITEM: u8 = 0;\n")?;
-    expect_workspace(ScreenCheck::with_allowed(&["fragment.inc", "fragment.rs"]), &workspace,
-        &[("C1", 2, "include"), ("C1", 3, "include")])
+    workspace.write(
+        "crates/jackin-tui/src/fragment.inc",
+        "const FIRST_ITEM: u8 = 0;\n",
+    )?;
+    workspace.write(
+        "crates/jackin-tui/src/fragment.rs",
+        "const SECOND_ITEM: u8 = 0;\n",
+    )?;
+    expect_workspace(
+        ScreenCheck::with_allowed(&["fragment.inc", "fragment.rs"]),
+        &workspace,
+        &[("C1", 2, "include"), ("C1", 3, "include")],
+    )
 }
 
 #[test]
