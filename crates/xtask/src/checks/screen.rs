@@ -170,7 +170,7 @@ impl<'a> ScreenFile<'a> {
         }
     }
 
-    fn is_empty_macro_group(&self, group: &Range<usize>) -> bool {
+    fn is_empty_macro_invocation(&self, group: &Range<usize>) -> bool {
         group.len() == 2 && !self.doc_before[group.start + 1]
     }
 }
@@ -1365,7 +1365,7 @@ impl<'a> LocalMacroTemplates<'a> {
             }
             return None;
         }
-        if !file.is_empty_macro_group(&group) {
+        if !file.is_empty_macro_invocation(&group) {
             return None;
         }
         let template = self.active.get_mut(tokens[invoked].ident()?)?;
@@ -1457,9 +1457,7 @@ fn first_empty_macro_transcriber(
     let limit = definition.end - 1;
     let matcher = definition.start + 1;
     let arrow = macro_arm_group_end(file, matcher, limit)?;
-    if !file.is_empty_macro_group(&(matcher..arrow))
-        || !tokens[arrow].is_punct('=')
-        || !tokens.get(arrow + 1)?.is_punct('>')
+    if arrow != matcher + 2 || !tokens[arrow].is_punct('=') || !tokens.get(arrow + 1)?.is_punct('>')
     {
         return None;
     }
