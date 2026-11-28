@@ -49,7 +49,15 @@ fn expect(source: &str, expected: &[(&str, u32, &str)]) -> TestResult {
 }
 
 fn expect_with(check: ScreenCheck, source: &str, expected: &[(&str, u32, &str)]) -> TestResult {
-    let violations = found(check, &tui(source)?)?;
+    expect_workspace(check, &tui(source)?, expected)
+}
+
+fn expect_workspace(
+    check: ScreenCheck,
+    workspace: &Workspace,
+    expected: &[(&str, u32, &str)],
+) -> TestResult {
+    let violations = found(check, workspace)?;
     let shape: Vec<(&str, Option<u32>)> = violations
         .iter()
         .map(|(rule, line, _)| (rule.as_str(), *line))
@@ -564,6 +572,50 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
             ("C1", 26, "destructures"),
             ("C1", 32, "destructures"),
         ],
+    )
+}
+
+#[test]
+fn self_patterns_follow_trait_impl_receivers() -> TestResult {
+    expect(
+        "mod model { pub struct Buffer { pub value: u8 } }\n\
+         trait View { fn inspect(&self); }\n\
+         impl View for ratatui::buffer::Buffer {\n\
+         \x20   fn inspect(&self) { let Self { content, .. } = self; }\n\
+         }\n\
+         impl View for crate::model::Buffer {\n\
+         \x20   fn inspect(&self) { let Self { value } = self; }\n\
+         }\n",
+        &[("C1", 4, "destructures")],
+    )
+}
+
+#[test]
+fn out_of_line_buffer_reexports_preserve_provenance() -> TestResult {
+    let workspace = tui("mod bridge;\n\
+         mod model;\n\
+         mod relay;\n\
+         fn check(a: bridge::Buffer, b: model::Buffer, c: relay::Buffer) {\n\
+         \x20   let bridge::Buffer { content, .. } = a;\n\
+         \x20   let model::Buffer { value } = b;\n\
+         \x20   let relay::Buffer { content, .. } = c;\n\
+         }\n")?;
+    workspace.write(
+        "crates/jackin-tui/src/bridge.rs",
+        "pub use ratatui::buffer::Buffer;\n",
+    )?;
+    workspace.write(
+        "crates/jackin-tui/src/model.rs",
+        "pub struct Buffer { pub value: u8 }\n",
+    )?;
+    workspace.write(
+        "crates/jackin-tui/src/relay/mod.rs",
+        "pub use crate::bridge::Buffer;\n",
+    )?;
+    expect_workspace(
+        ScreenCheck::with_allowed(&[]),
+        &workspace,
+        &[("C1", 5, "destructures"), ("C1", 7, "destructures")],
     )
 }
 
