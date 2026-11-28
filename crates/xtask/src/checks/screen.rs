@@ -209,12 +209,26 @@ fn target_root_indices(repo: &Repo, files: &[ScreenFile<'_>]) -> BTreeSet<usize>
     roots
 }
 
-type ContextHits = BTreeMap<(Option<PathBuf>, Option<u32>, String), (usize, Violation)>;
+struct ScreenOccurrence {
+    source: usize,
+    token: usize,
+    violation: Violation,
+}
 
-fn merge_context_hits(merged: &mut ContextHits, violations: Vec<Violation>) {
+type ContextHits =
+    BTreeMap<(usize, usize, Option<PathBuf>, Option<u32>, String), (usize, Violation)>;
+
+fn merge_context_hits(merged: &mut ContextHits, occurrences: Vec<ScreenOccurrence>) {
     let mut counts = BTreeMap::new();
-    for violation in violations {
+    for ScreenOccurrence {
+        source,
+        token,
+        violation,
+    } in occurrences
+    {
         let key = (
+            source,
+            token,
             violation.path.clone(),
             violation.line,
             violation.message.clone(),
@@ -233,20 +247,30 @@ fn context_violations(
     types: &TypeScopes<'_>,
     selected: &[bool],
     work_limit: usize,
-) -> Vec<Violation> {
-    let mut violations = Vec::new();
+) -> Vec<ScreenOccurrence> {
+    let mut occurrences = Vec::new();
     for (source, _) in files
         .iter()
         .enumerate()
         .filter(|(source, _)| selected[*source])
     {
+        let mut violations = Vec::new();
         violations.extend(import_violations(source, types));
         violations.extend(types.direct_import_violations(source));
         violations.extend(types.renamed_imports(source));
         violations.extend(pattern_violations(source, types, work_limit));
         violations.extend(type_alias_violations(source, types));
+        occurrences.extend(
+            violations
+                .into_iter()
+                .map(|(token, violation)| ScreenOccurrence {
+                    source,
+                    token,
+                    violation,
+                }),
+        );
     }
-    violations
+    occurrences
 }
 
 struct ScreenFile<'a> {
@@ -492,6 +516,7 @@ struct PathLeaf<'a> {
     segments: Vec<&'a str>,
     rename: Option<(&'a str, u32)>,
     root: usize,
+    terminal: usize,
     absolute: bool,
 }
 
@@ -513,6 +538,7 @@ fn path_tree<'a>(
         absolute = true;
     }
     let mut rename = None;
+    let mut terminal = None;
     while let Some(token) = tokens.get(*position) {
         if token.is_punct('{') {
             *position += 1;
@@ -536,6 +562,7 @@ fn path_tree<'a>(
             break;
         };
         root.get_or_insert(*position);
+        terminal = Some(*position);
         path.push(segment);
         *position += 1;
         if segment != "*" && is_path_separator(tokens, *position) {
@@ -556,12 +583,13 @@ fn path_tree<'a>(
             segments: path,
             rename,
             root: root.unwrap_or(*position),
+            terminal: terminal.unwrap_or(*position),
             absolute,
         });
     }
 }
 
-fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
+fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
     let file = &types.files[source];
     let path = file.path;
     let tokens = &file.tokens;
@@ -594,7 +622,7 @@ fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
                 .iter()
                 .any(|prefix| rest.starts_with(prefix));
             if !allowed {
-                violations.push(Violation::at_line(
+                violations.push((leaf.terminal, Violation::at_line(
                     CiStep::Screen,
                     path,
                     token.line,
@@ -602,7 +630,7 @@ fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
                         "C1: imports {}; jackin-tui may import only Frame, Rect, Buffer and crossterm::event from ratatui",
                         leaf.segments.join("::")
                     ),
-                ));
+                )));
             }
         }
     }
@@ -663,7 +691,7 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
-fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
+fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
     let file = &types.files[source];
     let tokens = &file.tokens;
     tokens
@@ -689,7 +717,12 @@ fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation
                 })
             })
         })
-        .map(|(_, token)| Violation::at_line(CiStep::Screen, file.path, token.line, BUFFER_RENAME))
+        .map(|(index, token)| {
+            (
+                index,
+                Violation::at_line(CiStep::Screen, file.path, token.line, BUFFER_RENAME),
+            )
+        })
         .collect()
 }
 
@@ -1085,7 +1118,7 @@ struct TypeScope<'a> {
     directory: Option<usize>,
     self_receiver: Option<ImplReceiver>,
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
-    renamed: Vec<(&'a str, u32)>,
+    renamed: Vec<(&'a str, u32, usize)>,
     imports: Vec<PathLeaf<'a>>,
     glob_import: bool,
     matches_imported: MatchesImport,
@@ -1139,7 +1172,7 @@ impl<'a> TypeScope<'a> {
             let binding = match segments {
                 _ if !macro_attributed => {
                     if let Some(rename) = path.rename {
-                        self.renamed.push(rename);
+                        self.renamed.push((rename.0, rename.1, path.terminal));
                     }
                     if matches!(segments, [_, .., "self"]) {
                         path.segments.pop();
@@ -3285,7 +3318,7 @@ impl<'a> TypeScopes<'a> {
         })
     }
 
-    fn direct_import_violations(&self, source: usize) -> Vec<Violation> {
+    fn direct_import_violations(&self, source: usize) -> Vec<(usize, Violation)> {
         let file = &self.files[source];
         let mut violations = Vec::new();
         for scope in self.source_scopes(source) {
@@ -3297,33 +3330,31 @@ impl<'a> TypeScopes<'a> {
                 if rest == ["buffer", "Buffer"]
                     && let Some((_, line)) = leaf.rename
                 {
-                    violations.push(Violation::at_line(
-                        CiStep::Screen,
-                        file.path,
-                        line,
-                        BUFFER_RENAME,
+                    violations.push((
+                        leaf.terminal,
+                        Violation::at_line(CiStep::Screen, file.path, line, BUFFER_RENAME),
                     ));
                 }
                 if !RATATUI_ALLOWED
                     .iter()
                     .any(|prefix| rest.starts_with(prefix))
                 {
-                    violations.push(Violation::at_line(CiStep::Screen, file.path, file.tokens[leaf.root].line,
-                        format!("C1: imports {}; jackin-tui may import only Frame, Rect, Buffer and crossterm::event from ratatui", leaf.segments.join("::"))));
+                    violations.push((leaf.terminal, Violation::at_line(CiStep::Screen, file.path, file.tokens[leaf.root].line,
+                        format!("C1: imports {}; jackin-tui may import only Frame, Rect, Buffer and crossterm::event from ratatui", leaf.segments.join("::")))));
                 }
             }
         }
         violations
     }
 
-    fn renamed_imports(&self, source: usize) -> Vec<Violation> {
+    fn renamed_imports(&self, source: usize) -> Vec<(usize, Violation)> {
         let path = self.files[source].path;
         self.source_scopes(source)
             .flat_map(|scope| {
                 self.scopes[scope]
                     .renamed
                     .iter()
-                    .filter(move |&&(name, _)| {
+                    .filter(move |&&(name, _, _)| {
                         if self.scopes[scope].imports.iter().any(|leaf| {
                             leaf.rename.is_some_and(|(renamed, _)| renamed == name)
                                 && leaf
@@ -3339,8 +3370,11 @@ impl<'a> TypeScopes<'a> {
                             Ok(Some(TypeBinding::RatatuiBuffer))
                         )
                     })
-                    .map(move |&(_, line)| {
-                        Violation::at_line(CiStep::Screen, path, line, BUFFER_RENAME)
+                    .map(move |&(_, line, token)| {
+                        (
+                            token,
+                            Violation::at_line(CiStep::Screen, path, line, BUFFER_RENAME),
+                        )
                     })
             })
             .collect()
@@ -3446,7 +3480,7 @@ fn pattern_violations(
     source: usize,
     aliases: &TypeScopes<'_>,
     work_limit: usize,
-) -> Vec<Violation> {
+) -> Vec<(usize, Violation)> {
     let file = &aliases.files[source];
     let tokens = &file.tokens;
     let patterns = FieldPatternIndex::new(file);
@@ -3458,7 +3492,7 @@ fn pattern_violations(
                 Err(AliasResolutionError::WorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
                 Err(AliasResolutionError::ConditionalParameters) => "C1: conditional alias parameters leave Buffer provenance unresolved for this pattern",
             };
-            Some(Violation::at_line(CiStep::Screen, file.path, tokens[index].line, message))
+            Some((index, Violation::at_line(CiStep::Screen, file.path, tokens[index].line, message)))
         })
         .collect()
 }
