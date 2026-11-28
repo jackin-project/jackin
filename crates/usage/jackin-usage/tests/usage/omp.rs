@@ -832,3 +832,59 @@ async fn a_credential_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unr
     })
     .await
 }
+
+const REAL_TABLE: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, credential_type TEXT NOT NULL, data TEXT NOT NULL);";
+const SORTING_TABLE: &str =
+    "CREATE TABLE auth_credentials (id INTEGER, provider TEXT, credential_type TEXT, data TEXT);";
+
+fn omp_rows(table: &str, rows: &[(i64, String)]) -> String {
+    let mut sql = table.to_owned();
+    for (id, data) in rows {
+        sql.push_str(&format!(
+            "INSERT INTO auth_credentials (id, provider, credential_type, data) VALUES ({id}, 'zai', 'api_key', '{}');",
+            data.replace('\'', "''")
+        ));
+    }
+    sql
+}
+
+#[tokio::test]
+async fn an_oversized_row_the_selection_skips_does_not_hide_the_selected_credential() -> TestResult
+{
+    guard(async {
+        for (name, table) in [("real", REAL_TABLE), ("sorting", SORTING_TABLE)] {
+            for stale in [100_000_usize, 200_000, 4_000_000] {
+                let rows = [(1, "x".repeat(stale)), (2, key_json(KEY))];
+                let outcome = schema_report(&omp_rows(table, &rows)).await?;
+                assert_eq!(
+                    windows_of(&outcome).len(),
+                    2,
+                    "{name} schema, {stale} bytes: {outcome:?}"
+                );
+            }
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_oversized_selected_row_is_refused_and_never_replaced_by_an_older_one() -> TestResult {
+    guard(async {
+        for (name, table) in [("real", REAL_TABLE), ("sorting", SORTING_TABLE)] {
+            for newest in [64 * 1024 + 1, 100_000, 200_000] {
+                let rows = [
+                    (1, key_json("SECRET_TOKEN_OMP_STALE")),
+                    (2, "x".repeat(newest)),
+                ];
+                let outcome = schema_report(&omp_rows(table, &rows)).await?;
+                assert!(
+                    is_unreadable(&outcome),
+                    "{name} schema, {newest} bytes: {outcome:?}"
+                );
+            }
+        }
+        Ok(())
+    })
+    .await
+}

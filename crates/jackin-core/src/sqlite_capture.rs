@@ -10,6 +10,7 @@ use zeroize::Zeroizing;
 
 use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError, Hold, RegularFileProblem};
 use crate::paths::{HostPath, RepoPath};
+use crate::preflight::{Slot, preflight_slot};
 
 pub const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
@@ -17,7 +18,6 @@ const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
 const ATTEMPTS: usize = 5;
 const RETRY_PAUSE: Duration = Duration::from_millis(40);
 const CAPTURE_SLOTS: usize = 2;
-const PREFLIGHT_SLOTS: usize = 4;
 const WAL_HEADER: usize = 32;
 const WAL_FRAME_HEADER: usize = 24;
 const WAL_MAGIC: u32 = 0x377f_0682;
@@ -48,6 +48,8 @@ pub const STORE_QUERY_STEP: i32 = 1000;
 const STORE_QUERY_GRACE: Duration = Duration::from_secs(1);
 pub const STORE_QUERY_MAX_STEPS: usize = 200_000;
 pub const STORE_LENGTH_LIMIT: i32 = 128 * 1024;
+pub const OMP_API_KEY_QUERY: &str = "SELECT id, CASE WHEN octet_length(data) > ?2 THEN NULL ELSE data END FROM auth_credentials \
+     WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CaptureProblem {
@@ -96,16 +98,9 @@ enum Read {
     Absent,
 }
 
-type Slot = Arc<OwnedSemaphorePermit>;
-
 fn capture_slots() -> &'static Arc<Semaphore> {
     static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
     SLOTS.get_or_init(|| Arc::new(Semaphore::new(CAPTURE_SLOTS)))
-}
-
-fn preflight_slots() -> &'static Arc<Semaphore> {
-    static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    SLOTS.get_or_init(|| Arc::new(Semaphore::new(PREFLIGHT_SLOTS)))
 }
 
 fn is_wal_mode(header: &[u8]) -> bool {
@@ -185,17 +180,12 @@ async fn capture_pinned(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
-    let preflight: Slot = Arc::new(
-        Arc::clone(preflight_slots())
-            .acquire_owned()
-            .await
-            .map_err(|_| CaptureProblem::Unreadable)?,
-    );
+    let preflight = preflight_slot().await.ok_or(CaptureProblem::Unreadable)?;
     match fs
         .stat_holding(database, Arc::<OwnedSemaphorePermit>::clone(&preflight))
         .await
     {
-        Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
+        Ok(Some(FileKind::Symlink)) => return Err(classify_link(fs, database, &preflight).await),
         Ok(_) => {}
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
@@ -286,6 +276,39 @@ async fn capture_pinned(
         });
     }
     Err(CaptureProblem::Changed)
+}
+
+async fn classify_link(fs: &dyn FileSystem, link: &HostPath, slot: &Slot) -> CaptureProblem {
+    let target = match fs
+        .canonicalize_holding(link, Arc::<OwnedSemaphorePermit>::clone(slot))
+        .await
+    {
+        Ok(Some(target)) => target,
+        Ok(None) => return CaptureProblem::NotSqlite,
+        Err(_) => return CaptureProblem::Unreadable,
+    };
+    let (Some(dir), Some(name)) = (
+        target.parent(),
+        target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| RepoPath::parse(name).ok()),
+    ) else {
+        return CaptureProblem::NotSqlite;
+    };
+    let hold: Hold = Arc::<OwnedSemaphorePermit>::clone(slot);
+    match fs
+        .read_regular_holding(&dir, &name, SQLITE_MAGIC.len(), hold)
+        .await
+    {
+        Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC) => CaptureProblem::Symlink,
+        Ok(_)
+        | Err(FsError::Io {
+            kind: std::io::ErrorKind::NotFound,
+            ..
+        }) => CaptureProblem::NotSqlite,
+        Err(_) => CaptureProblem::Unreadable,
+    }
 }
 
 type Pair = (Zeroizing<Vec<u8>>, Option<Zeroizing<Vec<u8>>>);
