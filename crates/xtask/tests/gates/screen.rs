@@ -104,9 +104,27 @@ fn local_wildcard_reexports_preserve_buffer_provenance() -> TestResult {
          fn drawing(value: bridge::Buffer) { let bridge::Buffer { content, .. } = value; }\n\
          mod nominal { pub struct Buffer { pub value: u8 } }\n\
          mod local { use super::nominal::*; fn view(value: Buffer) { let Buffer { value } = value; } }\n\
-         mod explicit { use super::source::*; struct Buffer { value: u8 } fn view(value: Buffer) { let Buffer { value } = value; } }\n",
-        &[("C1", 3, "Buffer"), ("C1", 4, "Buffer")],
+         mod explicit { use super::source::*; struct Buffer { value: u8 } fn view(value: Buffer) { let Buffer { value } = value; } }\n\
+         mod first { pub use super::source::*; }\n\
+         mod second { pub use super::source::*; }\n\
+         mod both { pub use super::first::*; pub use super::second::*; }\n\
+         fn combined(value: both::Buffer) { let both::Buffer { content, .. } = value; }\n\
+         mod values { pub fn ratatui() {} }\n\
+         mod value_scope { use super::values::*; fn view() { let _: Option<ratatui::widgets::Block> = None; } }\n",
+        &[("C1", 3, "Buffer"), ("C1", 4, "Buffer"), ("C1", 11, "Buffer"), ("C1", 13, "widgets")],
     )
+}
+
+#[test]
+fn wildcard_super_obeys_file_module_policy() -> TestResult {
+    let workspace = tui("mod source { pub use ratatui::buffer::Buffer; }\nmod wildcard;\n")?;
+    workspace.write("crates/jackin-tui/src/wildcard.rs", "use super::source::*;\nuse self::Buffer as Cells;\nfn view(value: Buffer) { let Buffer { content, .. } = value; }\n")?;
+    let violations = ScreenCheck::with_allowed(&[]).run(&workspace.repo()?);
+    assert_eq!(violations.len(), 1, "{violations:#?}");
+    assert_eq!(violations[0].path.as_deref(), Some(Path::new("crates/jackin-tui/src/wildcard.rs")));
+    assert_eq!(violations[0].line, Some(3));
+    assert!(violations[0].message.contains("destructures"));
+    Ok(())
 }
 
 #[test]
