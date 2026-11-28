@@ -124,15 +124,11 @@ impl Token {
 }
 
 fn is_ident_start(c: char) -> bool {
-    c == '_' || c.is_alphabetic()
+    c == '_' || is_xid_start(c)
 }
 
 fn is_ident_continue(c: char) -> bool {
-    c == '_' || c.is_alphanumeric()
-}
-
-fn is_lifetime_start(c: char) -> bool {
-    c == '_' || is_xid_start(c)
+    is_xid_continue(c) && !matches!(c, '\u{200c}' | '\u{200d}')
 }
 
 pub(crate) fn lex_rust(text: &str) -> Lexed {
@@ -260,8 +256,7 @@ impl Lexer {
     }
 
     fn quote(&mut self, line: u32) {
-        let mut kind = Tok::Other;
-        match (self.cur.peek(1), self.cur.peek(2)) {
+        let kind = match (self.cur.peek(1), self.cur.peek(2)) {
             (Some('\\'), _) => {
                 self.cur.skip(3);
                 while let Some(c) = self.cur.bump() {
@@ -269,31 +264,44 @@ impl Lexer {
                         break;
                     }
                 }
+                Tok::Other
             }
-            (Some(c), Some('\'')) if c != '\'' => self.cur.skip(3),
-            _ => {
-                self.cur.bump();
-                let is_lifetime = self.cur.peek(0).is_some_and(is_lifetime_start);
-                if is_lifetime {
-                    kind = Tok::Lifetime;
-                    if self.cur.peek(0) == Some('r')
-                        && self.cur.peek(1) == Some('#')
-                        && self.cur.peek(2).is_some_and(is_lifetime_start)
-                    {
-                        self.cur.skip(2);
-                    }
-                }
-                let continuation: fn(char) -> bool = if is_lifetime {
-                    is_xid_continue
-                } else {
-                    is_ident_continue
-                };
-                while self.cur.peek(0).is_some_and(continuation) {
-                    self.cur.bump();
-                }
+            (Some(c), Some('\'')) if c != '\'' => {
+                self.cur.skip(3);
+                Tok::Other
             }
-        }
+            _ => self.lifetime_or_opaque(),
+        };
         self.push(kind, line);
+    }
+
+    fn lifetime_or_opaque(&mut self) -> Tok {
+        self.cur.bump();
+        let valid_start = self.cur.peek(0).is_some_and(is_ident_start);
+        let raw = self.cur.peek(0) == Some('r')
+            && self.cur.peek(1) == Some('#')
+            && self.cur.peek(2).is_some_and(is_ident_start);
+        if raw {
+            self.cur.skip(2);
+        }
+        let start = self.cur.pos;
+        while self.cur.peek(0).is_some_and(is_ident_continue) {
+            self.cur.bump();
+        }
+        if self.cur.peek(0) == Some('\'') {
+            self.cur.bump();
+            return Tok::Other;
+        }
+        let name = &self.cur.chars[start..self.cur.pos];
+        let reserved = raw
+            && ["_", "crate", "self", "Self", "super"]
+                .iter()
+                .any(|reserved| name.iter().copied().eq(reserved.chars()));
+        if valid_start && !reserved {
+            Tok::Lifetime
+        } else {
+            Tok::Other
+        }
     }
 
     fn word(&mut self, line: u32) {
