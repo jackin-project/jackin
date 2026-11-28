@@ -1,0 +1,6 @@
+Branch fix/p01-residuals, head 4e7ca3348418bc469676835dc78612662924c39c, draft PR: https://github.com/jackin-project/jackin/pull/1331 (rebased on main f03c444f3, after #1317 merged).
+Done A: read_credential_file takes a preflight slot, 10 s deadline, holding calls; capture classifies symlinked store in-slot; usage links_to_sqlite removed; MiniMax reads via bounded reader. Red/green: core credential_file bounded::*, sqlite_capture a_link_*, usage minimax_login::*, opencode a_link_at_the_store_*.
+Done B: OMP_API_KEY_QUERY in core; OpenCode query guards id/value/integration_id with octet_length and a rank rule. Red/green: usage opencode/omp *oversized*, session omp_credentials *oversized*.
+Reviews: plan review x2 (Sonnet high) applied; code+security review APPROVE with items 1,2,5,6 fixed (item 3 out of scope: session source.rs/credentials.rs canonicalize; item 4 index scan accepted).
+Left: green G-FAST (EXIT=0), re-review of final diff, CI, threads, gh pr ready, append "<pr> p01-residuals" to merge-queue.txt.
+G-FAST reruns: #1 fmt, #2 clippy (fixed), #3 and #4 and #5 hit SIGTERM from outside (nextest cancelled by signal, not a test failure); #5 stopped by coordinator. Affected nextest: 1965/1966 passed, a_128_mib_line test timed out under load, passed alone.

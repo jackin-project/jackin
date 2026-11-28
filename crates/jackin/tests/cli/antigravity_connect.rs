@@ -123,6 +123,36 @@ async fn the_flag_is_rejected_for_every_other_provider() -> TestResult {
 }
 
 #[tokio::test]
+async fn status_line_connect_rejects_auth_before_opening_the_usage_database() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let (cli, path, _) = lab(&world)?;
+        let ran = cli
+            .run(&[
+                "account",
+                "usage",
+                "connect",
+                "antigravity",
+                "--status-line",
+                "--auth",
+                "device",
+            ])
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Usage, "{}", ran.stderr);
+        assert!(
+            ran.stderr
+                .contains("--status-line cannot be combined with --auth"),
+            "{}",
+            ran.stderr
+        );
+        assert!(ran.stdout.is_empty());
+        assert!(!path.exists());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_direct_row_without_a_credential_becomes_the_status_line_row() -> TestResult {
     guard(async {
         let world = World::builder().build()?;

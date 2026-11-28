@@ -106,6 +106,11 @@ pub(super) async fn account(
                 "--status-line applies only to antigravity".into(),
             ));
         }
+        if status_line && auth.is_some() {
+            return Err(CommandError::Argument(
+                "--status-line cannot be combined with --auth".into(),
+            ));
+        }
         return connect(app, provider, auth, region.as_deref(), None, status_line).await;
     }
     let mut db = service(app)?.with_registry(Ok).await.map_err(failure)?;
@@ -268,7 +273,7 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
             reply.send(value).map_err(|_| cancelled())?;
         }
         LoginPrompt::AntigravityStatusLine { command } => {
-            app.io.note("If your Antigravity CLI settings already run jackin usage antigravity-statusline as the status line, no setup is needed: keep using Antigravity and the first report connects the account.");
+            app.io.note("If your Antigravity CLI status line already runs jackin usage antigravity-statusline with the same usage database, no setup is needed. Keep using Antigravity and the first report connects the account.");
             app.io.note("Otherwise, in another terminal, run this command and sign in to Antigravity with the selected Google account:");
             app.io.note(&command);
             app.io
