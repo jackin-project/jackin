@@ -1350,3 +1350,20 @@ fn grouped_standard_macro_alias_is_visible_before_its_import() -> TestResult {
         &[("C1", 5, "destructures")],
     )
 }
+
+#[test]
+fn shared_file_deduplicates_by_pattern_occurrence() -> TestResult {
+    let workspace = Workspace::empty()?;
+    workspace.write("Cargo.toml", &workspace_manifest(&["jackin-tui"], &[]))?;
+    workspace.write("crates/jackin-tui/Cargo.toml", &member_manifest("jackin-tui", ""))?;
+    workspace.write(LIB, "mod left { pub use ratatui::buffer::Buffer; } mod right { pub struct Buffer { pub content: Vec<u8> } } mod both { pub use ratatui::buffer::Buffer; } mod shared;\n")?;
+    workspace.write("crates/jackin-tui/src/main.rs", "mod left { pub struct Buffer { pub content: Vec<u8> } } mod right { pub use ratatui::buffer::Buffer; } mod both { pub use ratatui::buffer::Buffer; } mod shared; fn main() {}\n")?;
+    workspace.write("crates/jackin-tui/src/shared.rs", "fn inspect(a: crate::left::Buffer, b: crate::right::Buffer) { let crate::left::Buffer { content, .. } = a; let crate::right::Buffer { content, .. } = b; }\nfn both(b: crate::both::Buffer) { let crate::both::Buffer { content, .. } = b; }\n")?;
+    let violations = ScreenCheck::with_allowed(&[]).run(&workspace.repo()?);
+    let actual: Vec<_> = violations.iter().map(|violation| (violation.path.as_deref(), violation.line, violation.message.as_str())).collect();
+    let shared = Some(Path::new("crates/jackin-tui/src/shared.rs"));
+    assert_eq!(actual.len(), 3, "{actual:#?}");
+    assert_eq!(actual.iter().filter(|(path, line, message)| *path == shared && *line == Some(1) && message.contains("C1: destructures")).count(), 2, "{actual:#?}");
+    assert_eq!(actual.iter().filter(|(path, line, message)| *path == shared && *line == Some(2) && message.contains("C1: destructures")).count(), 1, "{actual:#?}");
+    Ok(())
+}
