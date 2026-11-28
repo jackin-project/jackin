@@ -587,6 +587,29 @@ fn destructuring_through_composed_identity_aliases_preserves_provenance() -> Tes
 }
 
 #[test]
+fn omitted_alias_type_arguments_use_the_declaration_defaults() -> TestResult {
+    expect(
+        "mod defaults {\n\
+         \x20   use ratatui::buffer::Buffer;\n\
+         \x20   pub type Default<const N: usize, T = Buffer> = T;\n\
+         \x20   pub type Forward<const N: usize> = Default<N>;\n\
+         }\n\
+         mod model {\n\
+         \x20   pub struct Buffer { pub value: u8 }\n\
+         \x20   pub type Local<const N: usize, T = Buffer> = T;\n\
+         }\n\
+         use model::Buffer;\n\
+         fn check(a: ratatui::buffer::Buffer, b: Buffer) {\n\
+         \x20   let defaults::Default::<7> { content, .. } = a;\n\
+         \x20   let defaults::Default::<7, Buffer> { value } = b;\n\
+         \x20   let model::Local::<7> { value } = b;\n\
+         \x20   let defaults::Forward::<7> { content, .. } = a;\n\
+         }\n",
+        &[("C1", 12, "destructures"), ("C1", 15, "destructures")],
+    )
+}
+
+#[test]
 fn associated_type_binding_names_are_not_buffer_references() -> TestResult {
     expect(
         "trait Source { type Buffer; }\n\
