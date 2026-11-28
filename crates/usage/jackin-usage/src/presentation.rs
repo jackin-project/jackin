@@ -415,7 +415,9 @@ pub fn meter_reading(view: &UsageView, account: &AccountQuota, meter: &Meter) ->
 
 pub fn note_key(note: &Note) -> &str {
     match note {
-        Note::Balance { key, .. } | Note::Daily { key, .. } => key,
+        Note::RemainingQuota { key, .. } | Note::Balance { key, .. } | Note::Daily { key, .. } => {
+            key
+        }
         Note::Resets(_) => "rateLimitResets",
         Note::Tokens { .. } => "history",
         Note::Spend { .. } => "spend",
@@ -426,7 +428,10 @@ pub fn covered_keys(account: &AccountQuota) -> Vec<&str> {
     let mut keys: Vec<&str> = account.meters().map(|meter| meter.key.as_str()).collect();
     for note in &account.notes {
         match note {
-            Note::Balance { .. } | Note::Resets(_) | Note::Daily { .. } => {
+            Note::RemainingQuota { .. }
+            | Note::Balance { .. }
+            | Note::Resets(_)
+            | Note::Daily { .. } => {
                 keys.push(note_key(note));
             }
             Note::Tokens { .. } => keys.extend(["today", "yesterday", "last30", "prior30"]),

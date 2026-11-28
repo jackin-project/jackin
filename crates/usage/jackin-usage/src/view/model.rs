@@ -122,6 +122,13 @@ pub enum TodayTokens {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Note {
+    RemainingQuota {
+        key: String,
+        label: String,
+        amount: f64,
+        resets_at: Option<Timestamp>,
+        rolled_over: bool,
+    },
     Balance {
         key: String,
         label: String,

@@ -7,7 +7,9 @@ use std::time::Duration;
 use jackin::ExitClass;
 use jackin_core::{Clock, SecretBytes};
 use jackin_testkit::{MemoryVault, TestResult, World, guard};
-use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, CredentialVault, UsageProvider};
+use jackin_usage::accounts::{
+    AccountRegistry, CandidateIdentity, CredentialVault, MetricEdit, MetricState, UsageProvider,
+};
 use jackin_usage::onboarding::receive_antigravity_statusline;
 use serde_json::json;
 
@@ -94,6 +96,69 @@ async fn status_line_connect_prints_the_agy_command_and_waits_for_a_report() -> 
             .find(|line| line.contains("cached@example.com"))
             .ok_or("missing row")?;
         assert!(row.contains("status-line"), "{row}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn details_shows_the_remaining_count_until_the_metric_is_hidden() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let (cli, path, vault) = lab(&world)?;
+        let email = "amount@example.com";
+        let input = serde_json::to_vec(&json!({
+            "product": "antigravity",
+            "email": email,
+            "quota": {"gemini-5h": {"remaining_amount": 42.25, "reset_in_seconds": 300}}
+        }))?;
+        let run = cli.command(&CONNECT).terminal(terminal(email)?).run();
+        let (ran, delivered) =
+            tokio::join!(run, deliver(&path, &vault, &input, world.clock.now().0));
+        delivered?;
+        let ran = ran?;
+        ran.ok()?;
+        let id: uuid::Uuid = ran.stdout.trim().parse()?;
+        let selected = id.to_string();
+        let details = ["usage", "details", "--account", selected.as_str()];
+        let shown = cli.run(&details).await?;
+        shown.ok()?;
+        let line = shown
+            .stdout
+            .lines()
+            .find(|line| line.contains("Gemini 5h"))
+            .ok_or("missing quota")?;
+        assert!(line.contains("42.25 left"), "{line}");
+        assert!(line.contains("resets in 5m"), "{line}");
+        assert!(!line.contains('%'), "{line}");
+
+        world.clock.advance(Duration::from_secs(360));
+        let rolled_over = cli.run(&details).await?;
+        rolled_over.ok()?;
+        assert!(
+            rolled_over.stdout.contains("42.25 left at fetch"),
+            "{}",
+            rolled_over.stdout
+        );
+        assert!(
+            rolled_over.stdout.contains("reset 1m ago"),
+            "{}",
+            rolled_over.stdout
+        );
+
+        AccountRegistry::with_vault(&path, vault)?.edit_metric(
+            "gemini-5h",
+            &[MetricEdit {
+                account: id,
+                before: MetricState::Visible,
+                after: MetricState::Hidden,
+            }],
+        )?;
+        let hidden = cli.run(&details).await?;
+        hidden.ok()?;
+        assert!(hidden.stdout.contains(&selected), "{}", hidden.stdout);
+        assert!(!hidden.stdout.contains("Gemini 5h"), "{}", hidden.stdout);
+        assert!(!hidden.stdout.contains("42.25"), "{}", hidden.stdout);
         Ok(())
     })
     .await

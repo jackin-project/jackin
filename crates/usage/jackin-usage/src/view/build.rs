@@ -208,7 +208,15 @@ fn quota(
         main,
         secondary: meters,
         notes: body
-            .map(|body| notes(body, source.account.provider, now, hidden))
+            .map(|body| {
+                notes(
+                    body,
+                    source.account.provider,
+                    source.fetched_at,
+                    now,
+                    hidden,
+                )
+            })
             .unwrap_or_default(),
         facts: body.map(facts).unwrap_or_default(),
     }
@@ -290,13 +298,20 @@ fn meters(
     now: Timestamp,
     hidden: &BTreeSet<String>,
 ) -> Vec<Meter> {
+    visible_resources(body, hidden)
+        .filter_map(|(key, resource)| meter(key, resource, provider, fetched_at, now))
+        .collect()
+}
+
+fn visible_resources<'a>(
+    body: &'a Value,
+    hidden: &'a BTreeSet<String>,
+) -> impl Iterator<Item = (&'a String, &'a Value)> {
     body["resources"]
         .as_object()
         .into_iter()
         .flatten()
         .filter(|(key, _)| !hidden.contains(key.as_str()))
-        .filter_map(|(key, resource)| meter(key, resource, provider, fetched_at, now))
-        .collect()
 }
 
 fn meter(
@@ -315,10 +330,6 @@ fn meter(
         .or_else(|| resource["resetsAt"].as_i64())
         .map(Timestamp);
     let (name, role) = identify(key, resource);
-    let rolled_over = matches!(
-        (fetched_at, resets_at),
-        (Some(fetched), Some(at)) if fetched < at.0 && at <= now
-    );
     Some(Meter {
         key: plain(key),
         name,
@@ -327,8 +338,15 @@ fn meter(
         resets_at: resets_at
             .filter(|_| visible_resource_reset(provider, key, resource, now.0).is_some()),
         used,
-        rolled_over,
+        rolled_over: rolled_over(fetched_at, resets_at, now),
     })
+}
+
+fn rolled_over(fetched_at: Option<i64>, resets_at: Option<Timestamp>, now: Timestamp) -> bool {
+    matches!(
+        (fetched_at, resets_at),
+        (Some(fetched), Some(at)) if fetched < at.0 && at <= now
+    )
 }
 
 fn identify(key: &str, resource: &Value) -> (String, Role) {
@@ -385,10 +403,7 @@ fn unit_of(resource: &Value) -> Option<Unit> {
 }
 
 fn used_of(resource: &Value) -> Option<Used> {
-    if matches!(
-        resource["status"].as_str(),
-        Some("unlimited" | "not_in_plan")
-    ) {
+    if unavailable(resource) {
         return None;
     }
     if let Some(left) = float(&resource["remaining_fraction"]) {
@@ -417,13 +432,26 @@ fn used_of(resource: &Value) -> Option<Used> {
     }
 }
 
+fn unavailable(resource: &Value) -> bool {
+    matches!(
+        resource["status"].as_str(),
+        Some("unlimited" | "not_in_plan")
+    )
+}
+
 fn notes(
     body: &Value,
     provider: UsageProvider,
+    fetched_at: Option<i64>,
     now: Timestamp,
     hidden: &BTreeSet<String>,
 ) -> Vec<Note> {
     let mut notes = balances(body, hidden);
+    notes.extend(
+        visible_resources(body, hidden).filter_map(|(key, resource)| {
+            remaining_quota(key, resource, provider, fetched_at, now)
+        }),
+    );
     notes.extend(cap(body, hidden));
     notes.extend(daily(body, hidden));
     if !hidden.contains("rateLimitResets") {
@@ -432,6 +460,34 @@ fn notes(
     notes.extend(tokens(body, hidden));
     notes.extend(spend(body, hidden));
     notes
+}
+
+fn remaining_quota(
+    key: &str,
+    resource: &Value,
+    provider: UsageProvider,
+    fetched_at: Option<i64>,
+    now: Timestamp,
+) -> Option<Note> {
+    if resource["kind"] != "quota"
+        || resource["unit"] != "count"
+        || unavailable(resource)
+        || used_of(resource).is_some()
+    {
+        return None;
+    }
+    let amount = float(&resource["remaining"])? / scale_of(resource);
+    if !amount.is_finite() || amount < 0.0 {
+        return None;
+    }
+    let resets_at = visible_resource_reset(provider, key, resource, now.0).map(Timestamp);
+    Some(Note::RemainingQuota {
+        key: plain(key),
+        label: identify(key, resource).0,
+        amount,
+        resets_at,
+        rolled_over: rolled_over(fetched_at, resets_at, now),
+    })
 }
 
 fn cap(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
@@ -475,11 +531,7 @@ fn daily(body: &Value, hidden: &BTreeSet<String>) -> Vec<Note> {
 }
 
 fn balances(body: &Value, hidden: &BTreeSet<String>) -> Vec<Note> {
-    let mut found: Vec<(&String, Note)> = body["resources"]
-        .as_object()
-        .into_iter()
-        .flatten()
-        .filter(|(key, _)| !hidden.contains(key.as_str()))
+    let mut found: Vec<(&String, Note)> = visible_resources(body, hidden)
         .filter_map(|(key, resource)| Some((key, balance(key, resource)?)))
         .collect();
     found.sort_by_key(|(key, _)| (key.as_str() != "credits", wallet_rank(key)));
