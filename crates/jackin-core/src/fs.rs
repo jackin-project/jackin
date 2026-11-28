@@ -20,7 +20,7 @@ use rustix::io::Errno;
 use rustix::process::geteuid;
 
 use crate::boundary::{
-    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, Hold,
     LinkProblem, RegularFile, RegularFileProblem,
 };
 use crate::paths::{HostPath, RepoPath};
@@ -432,6 +432,8 @@ fn open_parent<'a>(
     Ok(Err(RegularFileProblem::Missing))
 }
 
+const RESERVE_CEILING: u64 = 1 << 30;
+
 fn read_below(
     root: &Path,
     file: &RepoPath,
@@ -441,7 +443,7 @@ fn read_below(
         Ok(parent) => parent,
         Err(problem) => return Ok(Err(problem)),
     };
-    let leaf = match open_below(&dir, name, OFlags::NONBLOCK, true)? {
+    let leaf = match open_below(&dir, name, OFlags::NONBLOCK | OFlags::NOCTTY, true)? {
         Ok(leaf) => leaf,
         Err(problem) => return Ok(Err(problem)),
     };
@@ -450,10 +452,18 @@ fn read_below(
     if !meta.is_file() {
         return Ok(Err(RegularFileProblem::NotARegularFile));
     }
-    let mut bytes = Vec::new();
     let limit = u64::try_from(max_bytes)
         .unwrap_or(u64::MAX)
         .saturating_add(1);
+    let sized = meta
+        .len()
+        .saturating_add(meta.len() / 16 + 4096)
+        .min(limit)
+        .min(RESERVE_CEILING);
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(usize::try_from(sized).unwrap_or(0))
+        .map_err(|_| io::Error::from(ErrorKind::OutOfMemory))?;
     (&mut opened).take(limit).read_to_end(&mut bytes)?;
     Ok(Ok(RegularFile {
         bytes,
@@ -501,6 +511,38 @@ impl FileSystem for StdFileSystem {
 
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
         blocking(path, identity_of).await
+    }
+
+    async fn stat_holding(&self, path: &HostPath, hold: Hold) -> Result<Option<FileKind>, FsError> {
+        blocking(path, move |p| {
+            let _hold = hold;
+            stat_kind(p)
+        })
+        .await
+    }
+
+    async fn canonicalize_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<HostPath>, FsError> {
+        blocking(path, move |p| {
+            let _hold = hold;
+            canonical_target(p)
+        })
+        .await
+    }
+
+    async fn identity_holding(
+        &self,
+        path: &HostPath,
+        hold: Hold,
+    ) -> Result<Option<FileIdentity>, FsError> {
+        blocking(path, move |p| {
+            let _hold = hold;
+            identity_of(p)
+        })
+        .await
     }
 
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
@@ -572,6 +614,21 @@ impl FileSystem for StdFileSystem {
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let file = file.clone();
         blocking(root, move |p| read_below(p, &file, max_bytes)).await
+    }
+
+    async fn read_regular_holding(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+        hold: Hold,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let file = file.clone();
+        blocking(root, move |p| {
+            let _hold = hold;
+            read_below(p, &file, max_bytes)
+        })
+        .await
     }
 
     async fn read_link(

@@ -119,6 +119,17 @@ impl AccountError {
     }
 
     #[must_use]
+    pub fn leaves_provider_unsettled(&self) -> bool {
+        match self {
+            AccountError::ProviderWriteUncertain { .. } | AccountError::RollbackFailed { .. } => {
+                true
+            }
+            AccountError::ProviderWrite(write) => write.effect() == ProviderWriteEffect::Existing,
+            _ => false,
+        }
+    }
+
+    #[must_use]
     pub fn is_cancelled(&self) -> bool {
         match self {
             AccountError::Lock(LockError::Cancelled)

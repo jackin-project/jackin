@@ -361,11 +361,15 @@ impl Fake {
         {
             return Err(Status::not_found("provider not found"));
         }
-        state
+        let removed = state
             .refresh
             .remove(&(workspace, request.provider, request.credential_key));
         Ok(Response::new(DeleteProviderRefreshResponse {
-            outcome: DeletionOutcome::Completed as i32,
+            outcome: if removed.is_some() {
+                DeletionOutcome::Completed as i32
+            } else {
+                DeletionOutcome::AlreadyAbsent as i32
+            },
         }))
     }
 

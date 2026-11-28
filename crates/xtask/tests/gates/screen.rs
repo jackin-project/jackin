@@ -217,11 +217,21 @@ fn ratatui_allowed_imports_pass() -> TestResult {
     expect(
         "use ratatui::Frame;\n\
          use ratatui::layout::Rect;\n\
-         use ratatui::buffer::Buffer;\n\
          use ratatui::crossterm::event::{KeyCode, KeyEvent};\n\
-         use ratatui::{Frame as Surface, buffer::Buffer as Cells};\n\
+         use ratatui::{Frame as Surface, buffer::Buffer};\n\
          fn draw(frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {}\n",
         &[],
+    )
+}
+
+#[test]
+fn ratatui_buffer_renames_preserve_path_provenance() -> TestResult {
+    expect(
+        "use ratatui::{Frame as Surface, buffer::Buffer as Cells};\n\
+         use crate::model::Buffer as Domain;\n\
+         use crate::model::{Buffer as Other};\n\
+         type Grid = crate::model::Buffer;\n",
+        &[("C1", 1, "renames")],
     )
 }
 

@@ -55,6 +55,8 @@ const RATATUI_ALLOWED: [&[&str]; 4] = [
     &["crossterm", "event"],
 ];
 
+const BUFFER_RENAME: &str = "C1: renames a ratatui Buffer; jackin-tui names the type as Buffer so the drawing gate can see it";
+
 #[derive(Clone, Copy, Debug)]
 pub struct ScreenCheck {
     allowed: &'static [&'static str],
@@ -91,7 +93,7 @@ impl Check for ScreenCheck {
             violations.extend(index_violations(file.path(), &tokens));
             violations.extend(silencing_violations(file.path(), &tokens));
             violations.extend(pattern_violations(file.path(), &tokens));
-            violations.extend(alias_violations(file.path(), &tokens));
+            violations.extend(type_alias_violations(file.path(), &tokens));
             violations.extend(literal_violations(
                 file.path(),
                 &tokens,
@@ -290,13 +292,19 @@ fn literal_violations<'a>(
     violations
 }
 
-fn path_tree(
-    tokens: &[Token],
+struct PathLeaf<'a> {
+    segments: Vec<&'a str>,
+    rename_line: Option<u32>,
+}
+
+fn path_tree<'a>(
+    tokens: &'a [Token],
     position: &mut usize,
-    prefix: &[String],
-    out: &mut Vec<Vec<String>>,
+    prefix: &[&'a str],
+    out: &mut Vec<PathLeaf<'a>>,
 ) {
     let mut path = prefix.to_vec();
+    let mut rename_line = None;
     while let Some(token) = tokens.get(*position) {
         if token.is_punct('{') {
             *position += 1;
@@ -319,19 +327,23 @@ fn path_tree(
         } else {
             break;
         };
-        path.push(segment.to_owned());
+        path.push(segment);
         *position += 1;
         if segment != "*" && is_path_separator(tokens, *position) {
             *position += 2;
             continue;
         }
         if tokens.get(*position).is_some_and(|t| t.is_ident("as")) {
+            rename_line = Some(token.line);
             *position += 2;
         }
         break;
     }
     if path.len() > prefix.len() || prefix.is_empty() {
-        out.push(path);
+        out.push(PathLeaf {
+            segments: path,
+            rename_line,
+        });
     }
 }
 
@@ -350,11 +362,21 @@ fn import_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         let mut position = index;
         let mut paths = Vec::new();
         path_tree(tokens, &mut position, &[], &mut paths);
-        for full in paths {
-            let rest: Vec<&str> = full.iter().skip(1).map(String::as_str).collect();
+        for leaf in paths {
+            let rest = &leaf.segments[1..];
             let allowed = RATATUI_ALLOWED
                 .iter()
                 .any(|prefix| rest.starts_with(prefix));
+            if rest == ["buffer", "Buffer"]
+                && let Some(line) = leaf.rename_line
+            {
+                violations.push(Violation::at_line(
+                    CiStep::Screen,
+                    path,
+                    line,
+                    BUFFER_RENAME,
+                ));
+            }
             if !allowed {
                 violations.push(Violation::at_line(
                     CiStep::Screen,
@@ -362,7 +384,7 @@ fn import_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
                     token.line,
                     format!(
                         "C1: imports {}; jackin-tui may import only Frame, Rect, Buffer and crossterm::event from ratatui",
-                        full.join("::")
+                        leaf.segments.join("::")
                     ),
                 ));
             }
@@ -425,23 +447,20 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
-fn alias_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
-    let message = "C1: renames a ratatui Buffer; jackin-tui names the type as Buffer so the drawing gate can see it";
+fn type_alias_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
     tokens
         .iter()
         .enumerate()
         .filter(|(index, token)| {
-            let renamed =
-                token.is_ident("Buffer") && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"));
-            let aliased = token.is_ident("type")
+            token.is_ident("type")
                 && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
-                && tokens[index + 3..]
-                    .iter()
-                    .take_while(|t| !t.is_punct(';'))
-                    .any(|t| t.is_ident("Buffer"));
-            renamed || aliased
+                && (*index + 3..tokens.len())
+                    .take_while(|&target| !tokens[target].is_punct(';'))
+                    .any(|target| {
+                        tokens[target].is_ident("Buffer") && is_ratatui_path(tokens, target)
+                    })
         })
-        .map(|(index, _)| Violation::at_line(CiStep::Screen, path, tokens[index].line, message))
+        .map(|(_, token)| Violation::at_line(CiStep::Screen, path, token.line, BUFFER_RENAME))
         .collect()
 }
 
