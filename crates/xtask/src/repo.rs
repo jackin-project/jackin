@@ -317,10 +317,12 @@ fn member_of(package: MetaPackage, workspace_root: &Path) -> Result<Member, CiEr
         .targets
         .into_iter()
         .filter(|target| {
-            target
-                .kind
-                .iter()
-                .any(|kind| kind == "lib" || kind == "bin")
+            target.kind.iter().any(|kind| {
+                matches!(
+                    kind.as_str(),
+                    "bin" | "lib" | "rlib" | "dylib" | "cdylib" | "staticlib" | "proc-macro"
+                )
+            })
         })
         .filter_map(|target| {
             target

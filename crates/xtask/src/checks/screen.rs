@@ -1044,6 +1044,12 @@ enum TypeBinding<'a> {
     Unresolved,
 }
 
+impl TypeBinding<'_> {
+    fn is_nominal(&self) -> bool {
+        matches!(self, Self::Nominal | Self::NominalEnum(_))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BufferReference {
     Rename,
@@ -2793,10 +2799,9 @@ impl<'a> TypeScopes<'a> {
         if index + 1 != range.end {
             return Ok(false);
         }
-        Ok(matches!(
-            self.binding_at(source, index, work)?,
-            Some(TypeBinding::Nominal)
-        ))
+        Ok(self
+            .binding_at(source, index, work)?
+            .is_some_and(TypeBinding::is_nominal))
     }
 
     fn conditional_parameter_resolution(
@@ -3030,7 +3035,7 @@ impl<'a> TypeScopes<'a> {
             .is_some();
         Ok(match self.binding_at(source, index, work)? {
             Some(TypeBinding::RatatuiBuffer) => true,
-            Some(TypeBinding::Nominal) if rust_scope => false,
+            Some(binding) if binding.is_nominal() && rust_scope => false,
             Some(TypeBinding::Alias(alias))
                 if reference == BufferReference::FieldPattern
                     && rust_scope
