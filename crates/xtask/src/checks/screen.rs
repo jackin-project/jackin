@@ -1366,37 +1366,44 @@ mod tests {
         fs::write(
             root.join(SCREEN_LIB),
             "use ratatui::buffer::Buffer;\n\
-             type Identity<T> = T;\n\
-             fn view(buf: Buffer) {\n\
+             pub type Identity<T> = T;\n\
+             mod aliases { pub use super::Identity as Forward; }\n\
+             fn view(buf: Buffer, imported: Buffer) {\n\
              \x20   let _: Option<Identity::<Buffer>> = None;\n\
              \x20   let Identity::<Buffer> { content, .. } = buf;\n\
+             \x20   let aliases::Forward::<Buffer> { content, .. } = imported;\n\
              }\n",
         )?;
         let repo = Repo::open(root.to_owned())?;
         let normal = ScreenCheck::with_allowed(&[]);
+        let import_limited = ScreenCheck {
+            alias_work_limit: 48,
+            ..normal
+        };
         let capacity_limited = ScreenCheck {
             alias_work_limit: 3,
             ..normal
         };
         let path = Path::new(SCREEN_LIB);
-        assert_eq!(
-            normal.run(&repo),
-            [Violation::at_line(
+        let destructures = |line| {
+            Violation::at_line(
                 CiStep::Screen,
                 path,
-                5,
+                line,
                 "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
-            )]
-        );
-        assert_eq!(
-            capacity_limited.run(&repo),
-            [Violation::at_line(
+            )
+        };
+        let exhausted = |line| {
+            Violation::at_line(
                 CiStep::Screen,
                 path,
-                5,
+                line,
                 "C1: Screen alias resolution exceeded its work limit for this pattern",
-            )]
-        );
+            )
+        };
+        assert_eq!(normal.run(&repo), [destructures(6), destructures(7)]);
+        assert_eq!(import_limited.run(&repo), [destructures(6), exhausted(7)]);
+        assert_eq!(capacity_limited.run(&repo), [exhausted(6), exhausted(7)]);
         Ok(())
     }
 }
