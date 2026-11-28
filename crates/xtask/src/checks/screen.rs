@@ -516,19 +516,26 @@ fn projected_slot(tokens: &[Token], index: usize) -> Option<usize> {
     })
 }
 
+#[derive(Clone, Copy)]
+enum TypeBinding {
+    Projection(usize),
+    RatatuiBuffer,
+    Other,
+}
+
 #[derive(Default)]
 struct TypeScope<'a> {
     parent: Option<usize>,
-    bindings: BTreeMap<&'a str, Option<usize>>,
+    bindings: BTreeMap<&'a str, TypeBinding>,
     glob_import: bool,
 }
 
 impl<'a> TypeScope<'a> {
-    fn bind(&mut self, name: &'a str, slot: Option<usize>) {
+    fn bind(&mut self, name: &'a str, binding: TypeBinding) {
         self.bindings
             .entry(name)
-            .and_modify(|existing| *existing = None)
-            .or_insert(slot);
+            .and_modify(|existing| *existing = TypeBinding::Other)
+            .or_insert(binding);
     }
 
     fn import(&mut self, tokens: &'a [Token], mut position: usize) {
@@ -538,10 +545,16 @@ impl<'a> TypeScope<'a> {
         let mut paths = Vec::new();
         path_tree(tokens, &mut position, &[], &mut paths);
         for path in paths {
-            match (path.rename, path.segments.as_slice()) {
-                (Some((name, _)), _) => self.bind(name, None),
+            let segments = path.segments.as_slice();
+            let binding = if segments == ["ratatui", "buffer", "Buffer"] {
+                TypeBinding::RatatuiBuffer
+            } else {
+                TypeBinding::Other
+            };
+            match (path.rename, segments) {
+                (Some((name, _)), _) => self.bind(name, binding),
                 (None, [.., "*"]) => self.glob_import = true,
-                (None, [.., name, "self"] | [.., name]) => self.bind(name, None),
+                (None, [.., name, "self"] | [.., name]) => self.bind(name, binding),
                 _ => {}
             }
         }
@@ -583,18 +596,21 @@ impl<'a> TypeScopes<'a> {
                     .is_ident("type")
                     .then(|| projected_slot(tokens, index))
                     .flatten();
-                scopes[scope].bind(name, slot);
+                scopes[scope].bind(
+                    name,
+                    slot.map_or(TypeBinding::Other, TypeBinding::Projection),
+                );
             }
         }
         Self { scopes, enclosing }
     }
 
-    fn slot(&self, index: usize, name: &str) -> Option<usize> {
+    fn binding(&self, index: usize, name: &str) -> Option<TypeBinding> {
         let mut scope = self.enclosing[index];
         loop {
             let current = &self.scopes[scope];
-            if let Some(slot) = current.bindings.get(name) {
-                return *slot;
+            if let Some(binding) = current.bindings.get(name) {
+                return Some(*binding);
             }
             if current.glob_import {
                 return None;
@@ -611,16 +627,25 @@ fn buffer_pattern_open(tokens: &[Token], index: usize, aliases: &TypeScopes<'_>)
     if is_path_separator(tokens, index.wrapping_sub(2)) || !is_path_separator(tokens, index + 1) {
         return None;
     }
-    let slot = aliases.slot(index, tokens[index].ident()?)?;
+    let TypeBinding::Projection(slot) = aliases.binding(index, tokens[index].ident()?)? else {
+        return None;
+    };
     let (slots, open) = generic_slots(tokens, index + 3)?;
     let argument = &tokens[slots.get(slot)?.clone()];
+    if let [buffer] = argument {
+        return (buffer.is_ident("Buffer")
+            && matches!(
+                aliases.binding(index, "Buffer"),
+                Some(TypeBinding::RatatuiBuffer)
+            ))
+        .then_some(open);
+    }
     let arg = if is_path_separator(argument, 0) {
         &argument[2..]
     } else {
         argument
     };
     match arg {
-        [buffer] if buffer.is_ident("Buffer") => Some(open),
         [root, _, _, module, _, _, buffer]
             if root.is_ident("ratatui")
                 && module.is_ident("buffer")
