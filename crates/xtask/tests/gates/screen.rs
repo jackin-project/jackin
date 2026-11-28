@@ -1079,7 +1079,8 @@ fn cargo_alias_import_trees_keep_root_provenance() -> TestResult {
          mod attributed {\n\
          \x20   #[cfg(unix)] use rt::buffer::Buffer as Cells;\n\
          }\n\
-         fn value(rt: u8) -> u8 { rt }\n",
+         fn value(rt: u8) -> u8 { rt }\n\
+         mod bare { use rt; }\n",
     )?;
     expect_workspace(
         ScreenCheck::with_allowed(&[]),
@@ -1094,6 +1095,7 @@ fn cargo_alias_import_trees_keep_root_provenance() -> TestResult {
             ("C1", 16, "style"),
             ("C1", 17, "widgets"),
             ("C1", 20, "renames"),
+            ("C1", 23, "imports rt"),
         ],
     )
 }
@@ -1114,6 +1116,16 @@ fn explicit_extern_self_precedes_cargo_alias() -> TestResult {
     )?;
     workspace.write("crates/ratatui/Cargo.toml", &member_manifest("ratatui", ""))?;
     workspace.write("crates/ratatui/src/lib.rs", "")?;
-    workspace.write(LIB, "extern crate self as rt;\nmod widgets { pub struct Paragraph; }\nuse {::rt::widgets::Paragraph};\n")?;
+    workspace.write(LIB, "extern crate self as rt;\nmod widgets { pub struct Paragraph; }\nuse {::rt::widgets::Paragraph};\nmod nested { use rt::widgets::Paragraph; }\n")?;
     expect_workspace(ScreenCheck::with_allowed(&[]), &workspace, &[])
+}
+
+#[test]
+fn canonical_ratatui_paths_survive_unrelated_glob_imports() -> TestResult {
+    expect(
+        "mod other { pub struct X; }\n\
+         use other::*;\n\
+         fn inspect(b: ratatui::buffer::Buffer) { let ratatui::buffer::Buffer { content, .. } = b; let _ = ratatui::widgets::Paragraph; }\n",
+        &[("C1", 3, "destructures"), ("C1", 3, "widgets")],
+    )
 }
