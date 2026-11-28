@@ -16,7 +16,7 @@ mod terminal;
 mod views;
 
 use std::ffi::OsString;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
@@ -43,6 +43,7 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         cache_dir,
         env,
         cancel,
+        abandon,
     } = env;
     let mut io = Io::new(
         stdout,
@@ -68,11 +69,26 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         env,
         cancel,
         gateway: cli.gateway,
+        unsettled: Mutex::new(None),
     };
-    let result = match cli.command {
-        Some(command) => commands::dispatch(&mut app, command).await,
-        None if app.terminal.is_some() => commands::console::run(&mut app).await,
-        None => app.io.data(&Cli::command().render_help().to_string()),
+    let finished = {
+        let command = async {
+            match cli.command {
+                Some(command) => commands::dispatch(&mut app, command).await,
+                None if app.terminal.is_some() => commands::console::run(&mut app).await,
+                None => app.io.data(&Cli::command().render_help().to_string()),
+            }
+        };
+        tokio::pin!(command);
+        tokio::select! {
+            biased;
+            result = &mut command => Some(result),
+            () = abandon.cancelled() => None,
+        }
+    };
+    let Some(result) = finished else {
+        app.io.note(&report::abandoned(app.take_unsettled()));
+        return ExitClass::Cancelled;
     };
     match result {
         Ok(()) => ExitClass::Ok,

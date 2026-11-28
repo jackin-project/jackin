@@ -42,6 +42,10 @@ pub fn sandbox_missing(sandbox: &SandboxName) -> String {
     format!("sandbox {sandbox} was not found")
 }
 
+pub fn sandbox_unmanaged(sandbox: &SandboxName) -> String {
+    format!("sandbox {sandbox} exists but is not a jackin sandbox; jackin does not act on it")
+}
+
 pub fn env_file_problem(sandbox: &SandboxName, problem: &EnvFileProblem) -> String {
     match problem {
         EnvFileProblem::NoLaunchLabel => {

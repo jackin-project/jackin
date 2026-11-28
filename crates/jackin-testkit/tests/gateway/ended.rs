@@ -43,7 +43,9 @@ async fn assert_exec_not_ready(
         .err(),
         fake.read_files(name, &[path("/sandbox/kept")?]).await.err(),
         fake.write_file(name, &file).await.err(),
-        fake.open_terminal(&shell).await.err(),
+        fake.open_terminal(&shell, &CancellationToken::new())
+            .await
+            .err(),
     ];
     for error in errors {
         assert!(
@@ -60,7 +62,10 @@ async fn assert_main_not_ready(
     expected: Phase,
 ) -> TestResult {
     for mode in [InputMode::Owner, InputMode::Viewer] {
-        let error = fake.open_terminal(&main_request(name, mode)?).await.err();
+        let error = fake
+            .open_terminal(&main_request(name, mode)?, &CancellationToken::new())
+            .await
+            .err();
         assert!(
             matches!(&error, Some(GatewayError::NotReady { phase }) if *phase == expected),
             "{mode:?}: {error:?}"

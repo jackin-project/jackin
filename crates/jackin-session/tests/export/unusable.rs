@@ -7,6 +7,7 @@ use jackin_session::{ExportError, PurgeError, PurgeMode, Unexported, WorkState};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 
 use super::support::{branch_with_commit, export, exports, ref_of, snapshot, state};
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn a_sandbox_branch_under_jackin_fails_the_export_and_is_never_exported() -> TestResult {
@@ -32,7 +33,9 @@ async fn a_sandbox_branch_under_jackin_fails_the_export_and_is_never_exported() 
         let after = snapshot(&rig).await?;
         assert!(exports(&after).is_empty());
         assert_eq!(after.rest, before.rest);
-        let state = session.work_state(&rig.config, &name).await;
+        let state = session
+            .work_state(&rig.config, &name, &CancellationToken::new())
+            .await;
         assert_eq!(
             state,
             WorkState::Unexported(Unexported {
@@ -203,7 +206,12 @@ async fn a_branch_name_with_a_control_or_format_character_is_unusable_and_plain_
             let purge = rig
                 .world
                 .session
-                .purge(&rig.config, &sandbox, PurgeMode::Guarded)
+                .purge(
+                    &rig.config,
+                    &sandbox,
+                    PurgeMode::Guarded,
+                    &CancellationToken::new(),
+                )
                 .await;
             assert!(
                 matches!(purge, Err(PurgeError::WorkNotExported { .. })),

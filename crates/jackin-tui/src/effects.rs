@@ -803,7 +803,7 @@ impl Inputs {
             let (gateway, name) = self.sandbox(instance)?;
             let config = self.config.load().await?;
             self.session(&gateway)?
-                .purge(&config, &name, PurgeMode::Guarded)
+                .purge(&config, &name, PurgeMode::Guarded, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             self.after_lifecycle().await

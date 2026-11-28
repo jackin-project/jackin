@@ -306,6 +306,7 @@ pub(crate) struct Invocation<'a> {
     args: Vec<String>,
     terminal: Option<ScriptedTerminal>,
     cancel: CancellationToken,
+    abandon: CancellationToken,
 }
 
 impl Harness {
@@ -441,6 +442,7 @@ impl Harness {
             args: owned,
             terminal: None,
             cancel: CancellationToken::new(),
+            abandon: CancellationToken::new(),
         }
     }
 
@@ -457,6 +459,11 @@ impl Invocation<'_> {
 
     pub(crate) fn cancel(mut self, cancel: CancellationToken) -> Self {
         self.cancel = cancel;
+        self
+    }
+
+    pub(crate) fn abandon(mut self, abandon: CancellationToken) -> Self {
+        self.abandon = abandon;
         self
     }
 
@@ -480,6 +487,7 @@ impl Invocation<'_> {
             cache_dir: harness.cache_dir.clone(),
             env: EnvSnapshot::from_pairs(harness.env.iter().cloned()),
             cancel: self.cancel,
+            abandon: self.abandon,
         };
         let connect: Arc<dyn GatewayConnector> = match &harness.custom {
             Some(custom) => Arc::clone(custom),

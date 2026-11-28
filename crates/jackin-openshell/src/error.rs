@@ -75,6 +75,8 @@ pub enum GatewayError {
     HostKeyMismatch,
     #[error("the terminal was refused: {}", plain(.reason))]
     TerminalRefused { reason: String },
+    #[error("terminal attach was cancelled, but SSH session revocation was not confirmed")]
+    TerminalCleanupUnconfirmed,
     #[error("refused to write {}: a directory on its path below /sandbox is a symlink, or the target is a directory", plain(.path.as_str()))]
     UnsafePath { path: SandboxPath },
     #[error("the write of {} may have taken effect, its outcome is unknown: {cause}", plain(.path.as_str()))]
@@ -282,6 +284,7 @@ impl GatewayError {
             | GatewayError::NotRegularFile { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
+            | GatewayError::TerminalCleanupUnconfirmed
             | GatewayError::UnsafePath { .. }
             | GatewayError::WriteNotDurable { .. }
             | GatewayError::Protocol { .. } => false,

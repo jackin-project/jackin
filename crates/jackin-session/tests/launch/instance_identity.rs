@@ -6,13 +6,14 @@ use std::time::Duration;
 
 use jackin_core::{
     Account, AccountName, Agent, AgentInstance, AgentInstances, ConfigEdit, CredentialSource,
-    EnvName, FileMode, HostPath, Provider, SandboxPath, Sha256,
+    EnvName, FileMode, HostPath, Provider, SandboxPath, Sha256, sandbox_layout,
 };
 use jackin_openshell::{GatewayError, TermSize};
 use jackin_session::{
-    AttachError, AttachRequest, IntegrateError, LaunchError, LaunchRequest, plan_launch,
+    AgentNamesError, AttachError, AttachRequest, IntegrateError, LaunchError, LaunchRequest,
+    SecondaryAttachError, plan_launch,
 };
-use jackin_testkit::{Outcome, ProgramScript, Rig, SandboxHandle};
+use jackin_testkit::{Fault, Outcome, ProgramScript, Rig, SandboxHandle, Trigger, launch_id};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
@@ -755,10 +756,17 @@ async fn public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead
                 handle.shells(),
                 handle.attachments(),
             );
-            let names = rig.world.session.sandbox_agent_names(&target.sandbox).await;
+            let names = rig
+                .world
+                .session
+                .sandbox_agent_names(&target.sandbox, &CancellationToken::new())
+                .await;
             match expected {
                 Some(expected) => assert_eq!(names?, expected),
-                None => assert!(matches!(names, Err(GatewayError::Protocol { .. }))),
+                None => assert!(matches!(
+                    names,
+                    Err(AgentNamesError::Gateway(GatewayError::Protocol { .. }))
+                )),
             }
             assert_eq!(
                 before,
@@ -1086,6 +1094,109 @@ async fn secondary_attach_refuses_a_record_that_names_no_process() -> TestResult
                 .join(".jackin/run/codex/instance.pid")
                 .exists()
         );
+        assert!(handle.shells().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+fn script_secondary_stop(rig: &Rig) {
+    for (program, exit_code) in [("/usr/bin/kill", 0), ("/usr/bin/ps", 1)] {
+        rig.gateway().script_program(
+            &SandboxPath::from_static(program),
+            ProgramScript {
+                exit_code,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+    }
+}
+
+#[tokio::test]
+async fn secondary_attach_settles_a_sent_stop_when_cancelled_before_opening() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let target = ready(
+            run(
+                &rig,
+                rig.request(51)?.instances(members(Agent::ClaudeCode)?),
+            )
+            .await?,
+        )?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let live = LiveInstance::spawn()?;
+        let record = handle.root().join(".jackin/run/codex/instance.pid");
+        std::fs::write(&record, live.record().await?)?;
+        script_secondary_stop(&rig);
+        let hold = Trigger::Program(SandboxPath::from_static("/usr/bin/ps"));
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        let cancel = CancellationToken::new();
+        let driver = async {
+            let reached =
+                tokio::time::timeout(Duration::from_secs(10), rig.gateway().until_held(&hold))
+                    .await;
+            cancel.cancel();
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+            rig.gateway().release(&hold);
+            reached
+        };
+        let (result, reached) =
+            tokio::join!(rig.world.session.attach(request.clone(), &cancel), driver);
+        assert_eq!(reached, Ok(true));
+        assert!(
+            matches!(&result, Err(AttachError::Secondary {
+                sandbox,
+                agent: Agent::Codex,
+                failure: SecondaryAttachError::CancelledAfterStop,
+                ..
+            }) if *sandbox == target.sandbox),
+            "{result:?}"
+        );
+        assert!(!record.exists());
+        assert!(handle.shells().is_empty());
+        let attached = rig
+            .world
+            .session
+            .attach(request, &CancellationToken::new())
+            .await?;
+        attached.detach().await?;
+        assert_eq!(handle.shells().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn secondary_attach_checks_the_launch_environment_before_stopping() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let target = ready(run(&rig, rig.request(52)?.instances(members(Agent::ClaudeCode)?)).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let live = LiveInstance::spawn()?;
+        let record = handle.root().join(".jackin/run/codex/instance.pid");
+        let identity = live.record().await?;
+        std::fs::write(&record, &identity)?;
+        script_secondary_stop(&rig);
+        let path = sandbox_layout::env_file(&launch_id(52));
+        let env = path.as_str().strip_prefix("/sandbox/").ok_or("env path")?;
+        std::fs::remove_file(handle.root().join(env))?;
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+
+        let result = rig.world.session.attach(request, &CancellationToken::new()).await;
+
+        assert!(
+            matches!(&result, Err(AttachError::EnvFile { sandbox, .. }) if *sandbox == target.sandbox),
+            "{result:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&record)?, identity);
         assert!(handle.shells().is_empty());
         Ok(())
     })

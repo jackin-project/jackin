@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use jackin_core::{EnvName, Labels, Phase, SandboxName, SandboxPath, sandbox_layout};
-use jackin_openshell::{GatewayError, PowerAction, TerminalEvent};
+use jackin_openshell::{GatewayError, GatewayOp, PowerAction, TerminalEvent};
 use jackin_session::{AttachError, EnvFileProblem, LaunchStep, ShellRequest};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard, launch_id};
 use tokio_util::sync::CancellationToken;
@@ -33,7 +34,7 @@ async fn a_shell_sees_the_role_env_untouched_and_starts_in_the_project_without_t
         let mut shell = rig
             .world
             .session
-            .open_shell(request(&handle.name())?)
+            .open_shell(request(&handle.name())?, &CancellationToken::new())
             .await?;
         shell
             .input(b"printf '%s' \"$GREETING\" > greeting.txt; touch marker; exit\n".to_vec())
@@ -72,7 +73,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         );
         let name = rig.sandbox_name(1)?;
         let session = &rig.world.session;
-        let missing = session.open_shell(request(&name)?).await;
+        let missing = session
+            .open_shell(request(&name)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 missing,
@@ -88,7 +91,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         rig.world
             .gateway
             .install_file(&env_path, b"not an env file\n".to_vec());
-        let invalid = session.open_shell(request(&name)?).await;
+        let invalid = session
+            .open_shell(request(&name)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 invalid,
@@ -105,7 +110,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         rig.world
             .gateway
             .insert_unmanaged(&unlabelled, managed, Phase::Ready)?;
-        let bare = session.open_shell(request(&unlabelled)?).await;
+        let bare = session
+            .open_shell(request(&unlabelled)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 bare,
@@ -121,7 +128,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         session
             .power(&name, PowerAction::Stop, &CancellationToken::new())
             .await?;
-        let stopped = session.open_shell(request(&name)?).await;
+        let stopped = session
+            .open_shell(request(&name)?, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 stopped,
@@ -149,7 +158,11 @@ async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -
             Phase::Error { exit_code: None },
         ] {
             rig.world.gateway.force_phase(&name, ended);
-            let refused = rig.world.session.open_shell(request(&name)?).await;
+            let refused = rig
+                .world
+                .session
+                .open_shell(request(&name)?, &CancellationToken::new())
+                .await;
             match refused {
                 Err(AttachError::MainProcessEnded { sandbox, phase }) => {
                     assert_eq!((sandbox, phase), (name.clone(), ended));
@@ -157,6 +170,49 @@ async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -
                 other => return Err(format!("{ended:?}: saw {other:?}").into()),
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancelling_a_held_shell_open_returns_without_starting_a_shell() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.sandbox_name(1)?;
+        let shell = request(&name)?;
+        let handle = rig.handle(1).await?;
+        let hold = Trigger::Op(GatewayOp::Terminal);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let cancel = CancellationToken::new();
+        let opening = rig.world.session.open_shell(shell, &cancel);
+        tokio::pin!(opening);
+        let wait = Duration::from_secs(10);
+        let driver = async {
+            let reached = tokio::time::timeout(wait, rig.gateway().until_held(&hold)).await;
+            cancel.cancel();
+            reached
+        };
+        let (reached, result) =
+            tokio::join!(driver, tokio::time::timeout(wait + wait, &mut opening));
+        assert!(rig.gateway().release(&hold));
+        let Ok(result) = result else {
+            drop(tokio::time::timeout(wait, &mut opening).await);
+            return Err("shell opening still waited for the gateway after cancellation".into());
+        };
+
+        assert_eq!(reached, Ok(true));
+        assert!(matches!(
+            result,
+            Err(AttachError::Gateway(GatewayError::Cancelled {
+                op: GatewayOp::Terminal,
+                ..
+            }))
+        ));
+        assert!(handle.shells().is_empty());
         Ok(())
     })
     .await

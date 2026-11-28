@@ -16,7 +16,7 @@ use jackin_console::launch::{
     EnvAnswer, EnvQuestion, FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, ReadyInstance,
     TypedKey,
 };
-use jackin_console::world::{Msg, World};
+use jackin_console::world::{LaunchLeft, Msg, World};
 use jackin_core::{
     AccountName, Config, ConfigEdit, ConfigError, EntropyError, EnvName, GatewayName, HostPath,
     IdError, LaunchId, PathError, PlainEnvValue, ProjectRoot, RoleName, SandboxName, Workspace,
@@ -27,9 +27,9 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, RestoreFinding, RoleError, Session,
-    StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events,
-    lookup_workspace, plan_launch,
+    LineDelivery, PlanError, Prompting, RECOVERY_LOOKUP_BUDGET, RestoreCandidate, RestoreFinding,
+    RoleError, Session, StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain,
+    launch_events, lookup_workspace, plan_launch,
 };
 use termrock::widgets::steps::StepState;
 use thiserror::Error;
@@ -686,24 +686,44 @@ impl Run {
                 ..
             } => sandbox,
             RestoreFinding::Absent { .. } => return,
-            RestoreFinding::Ambiguous(_)
-            | RestoreFinding::Unconfirmed {
+            RestoreFinding::Ambiguous(names) => {
+                self.left(LaunchLeft::Ambiguous {
+                    sandboxes: names.iter().map(ToString::to_string).collect(),
+                });
+                return;
+            }
+            RestoreFinding::Unconfirmed {
                 last_observed: None,
-                ..
+                planned,
             } => {
-                self.backend.refresh();
+                self.left(LaunchLeft::Unconfirmed {
+                    sandbox: planned.to_string(),
+                });
                 return;
             }
         };
-        match self
-            .record(session, config, gateway, &sandbox, &Origins::new())
-            .await
-        {
-            Ok(instance) => self.backend.bridge.send(Msg::LaunchCancelled {
+        let fresh = CancellationToken::new();
+        let budget = self.backend.inputs.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
+        let origins = Origins::new();
+        let record = self.record(session, config, gateway, &sandbox, &origins, &fresh);
+        let recorded = tokio::select! {
+            biased;
+            recorded = record => Some(recorded),
+            () = budget => None,
+        };
+        match recorded {
+            Some(Ok(instance)) => self.backend.bridge.send(Msg::LaunchCancelled {
                 instance: Box::new(instance),
             }),
-            Err(_) => self.backend.refresh(),
+            Some(Err(_)) | None => self.left(LaunchLeft::Unread {
+                sandbox: sandbox.to_string(),
+            }),
         }
+    }
+
+    fn left(&self, left: LaunchLeft) {
+        self.backend.bridge.send(Msg::LaunchLeft { left });
+        self.backend.refresh();
     }
 
     async fn record(
@@ -713,9 +733,10 @@ impl Run {
         gateway: &GatewayName,
         sandbox: &SandboxName,
         origins: &Origins,
+        cancel: &CancellationToken,
     ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
-        let inspected = session.inspect(sandbox).await?;
-        let work = session.work_state(config, sandbox).await;
+        let inspected = session.inspect(sandbox, cancel).await?;
+        let work = session.work_state(config, sandbox, cancel).await;
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
             summary: inspected.summary,
@@ -746,8 +767,15 @@ impl Run {
             .map(|origin| (name.clone(), origin))
             .into_iter()
             .collect();
-        self.record(session, config, gateway, sandbox, &origins)
-            .await
+        self.record(
+            session,
+            config,
+            gateway,
+            sandbox,
+            &origins,
+            &CancellationToken::new(),
+        )
+        .await
     }
 }
 

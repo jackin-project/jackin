@@ -11,7 +11,10 @@ use crate::views::VIEW_SCHEMA;
 pub(crate) async fn run(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
-    let listing = session.list().await.map_err(CommandError::Lifecycle)?;
+    let listing = session
+        .list(&app.cancel)
+        .await
+        .map_err(CommandError::Lifecycle)?;
     for unreadable in &listing.unreadable {
         app.io.note(&format!(
             "warning: sandbox {} has unreadable labels and is not listed: {}",

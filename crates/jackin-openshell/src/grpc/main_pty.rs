@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use jackin_core::{SandboxName, TerminalText};
 use openshell_sdk::raw::proto::{
-    CreateSshSessionRequest, CreateSshSessionResponse, RevokeSshSessionRequest, SshRelayTarget,
-    TcpForwardFrame, TcpForwardInit, tcp_forward_frame, tcp_forward_init,
+    CreateSshSessionRequest, CreateSshSessionResponse, DeletionOutcome, RevokeSshSessionRequest,
+    SshRelayTarget, TcpForwardFrame, TcpForwardInit, tcp_forward_frame, tcp_forward_init,
 };
 use russh::client::{self, Handle, Msg};
 use russh::keys::HashAlg;
@@ -19,6 +19,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Instant;
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
 use tonic::Status;
 
 use super::Inner;
@@ -47,6 +48,10 @@ const CTRL_C: u8 = 0x03;
 const CTRL_D: u8 = 0x04;
 const DETACH_PREFIX: u8 = 0x10;
 const DETACH_KEY: u8 = 0x11;
+const OPEN_CANCELLED: GatewayError = GatewayError::Cancelled {
+    op: GatewayOp::Terminal,
+    group: None,
+};
 
 struct PinnedKey {
     expected: String,
@@ -243,30 +248,42 @@ impl Inner {
     pub(super) async fn open_main(
         self: &Arc<Self>,
         request: &TerminalRequest,
+        cancel: &CancellationToken,
     ) -> Result<TerminalSession, GatewayError> {
         let TerminalKind::MainProcess { input, repaint } = &request.kind else {
             return Err(GatewayError::Protocol {
                 message: "not a main-process terminal".to_owned(),
             });
         };
+        if cancel.is_cancelled() {
+            return Err(OPEN_CANCELLED);
+        }
         let session = self.create_ssh_session(&request.sandbox).await?;
         let mut guard = RevokeOnDrop::new(self, &session.token);
-        let opened =
-            tokio::time::timeout(self.call_timeout, self.handshake(request, &session, *input))
-                .await;
-        let result = match opened {
-            Ok(result) => result,
-            Err(_) => Err(GatewayError::Timeout {
-                op: GatewayOp::Terminal,
-                after: self.call_timeout,
-                group: None,
-            }),
+        let result = tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(OPEN_CANCELLED),
+            opened = tokio::time::timeout(self.call_timeout, self.handshake(request, &session, *input)) => match opened {
+                Ok(result) => result,
+                Err(_) => Err(GatewayError::Timeout {
+                    op: GatewayOp::Terminal,
+                    after: self.call_timeout,
+                    group: None,
+                }),
+            },
         };
         let (attach, early) = match result {
             Ok(opened) => opened,
             Err(error) => {
-                self.revoke(&session.token).await;
+                let revoked = self.revoke(&session.token).await;
                 guard.disarm();
+                if matches!(error, GatewayError::Cancelled { .. }) {
+                    return Err(if revoked {
+                        error
+                    } else {
+                        GatewayError::TerminalCleanupUnconfirmed
+                    });
+                }
                 return Err(self.refine_not_ready(&request.sandbox, error).await);
             }
         };
@@ -327,13 +344,19 @@ impl Inner {
         }
     }
 
-    async fn revoke(&self, token: &str) {
+    async fn revoke(&self, token: &str) -> bool {
         let mut grpc = self.grpc();
         let call = grpc.revoke_ssh_session(RevokeSshSessionRequest {
             token: token.to_owned(),
             allow_missing: true,
         });
-        drop(tokio::time::timeout(REVOKE_TIMEOUT, call).await);
+        matches!(
+            tokio::time::timeout(REVOKE_TIMEOUT, call).await,
+            Ok(Ok(response)) if matches!(
+                DeletionOutcome::try_from(response.get_ref().outcome),
+                Ok(DeletionOutcome::Completed | DeletionOutcome::AlreadyAbsent)
+            )
+        )
     }
 
     async fn handshake(
@@ -630,7 +653,7 @@ impl Pump {
                 .await,
         );
         attach.bridge.abort_all();
-        inner.revoke(&token).await;
+        let _revoked = inner.revoke(&token).await;
     }
 }
 

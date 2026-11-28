@@ -9,13 +9,19 @@ use std::time::Duration;
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::instance::{InstanceId, InstanceStatus};
 use jackin_console::domain::vocabulary::{PaneWords, fill_in};
-use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
+use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest, PaneSpawn};
 use jackin_console::screens::Go;
-use jackin_core::{AttemptId, SupervisorState};
+use jackin_core::{
+    AGENTS_LABEL, AccountName, Agent as CoreAgent, AgentInstance, AgentInstances, AttemptId,
+    Provider, SandboxPath, SupervisorState,
+};
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_openshell::{InputMode, TermSize};
 use jackin_session::AttachRequest;
-use jackin_testkit::{ConsoleRig, Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
+use jackin_testkit::{
+    ConsoleRig, Fault, ProgramScript, Rig, SandboxHandle, TestResult, Trigger, guard,
+};
+use ratatui::layout::Rect;
 use tokio_util::sync::CancellationToken;
 
 use super::support::Lab;
@@ -1122,4 +1128,127 @@ async fn an_unreachable_gateway_fails_the_pane_with_the_doctor_step() -> TestRes
         Ok(())
     }))
     .await
+}
+
+async fn pane_with_secondary_instance()
+-> Result<(Lab, SandboxHandle, std::path::PathBuf), Box<dyn Error>> {
+    let rig = Rig::new().await?;
+    rig.launch(1).await?;
+    let handle = rig.handle(1).await?;
+    let account = AccountName::parse("work")?;
+    let agents = AgentInstances::new(vec![
+        AgentInstance::new(
+            CoreAgent::Codex,
+            Provider::Zai,
+            account.clone(),
+            "glm-5.3".to_owned(),
+        ),
+        AgentInstance::new(
+            CoreAgent::ClaudeCode,
+            Provider::Zai,
+            account,
+            "glm-5.3".to_owned(),
+        ),
+    ])?;
+    handle.add_label(AGENTS_LABEL, &agents.agents_label())?;
+    std::fs::write(
+        handle.root().join(".jackin/agents.json"),
+        agents.agents_json(),
+    )?;
+    let record = handle
+        .root()
+        .join(".jackin/run")
+        .join(CoreAgent::ClaudeCode.as_str())
+        .join("instance.pid");
+    std::fs::create_dir_all(record.parent().ok_or("instance directory")?)?;
+    std::fs::write(&record, "123 record-identity")?;
+    for (program, exit_code, stdout) in [
+        ("/bin/sh", 0, "record-identity"),
+        ("/usr/bin/kill", 0, ""),
+        ("/usr/bin/ps", 1, ""),
+    ] {
+        rig.gateway().script_program(
+            &SandboxPath::from_static(program),
+            ProgramScript {
+                exit_code,
+                stdout: stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+            },
+        );
+    }
+    Ok((Lab::with(rig).await?, handle, record))
+}
+
+#[derive(Clone, Copy, Debug)]
+enum StartupClose {
+    Detach,
+    Drop,
+}
+
+async fn close_during_secondary_stop(mode: StartupClose) -> TestResult {
+    let (mut lab, handle, record) = pane_with_secondary_instance().await?;
+    let instance = lab
+        .world()
+        .instances
+        .first()
+        .ok_or("no instance")?
+        .id()
+        .clone();
+    let backend = Arc::clone(&lab.world().backend);
+    let request = PaneRequest::new(&instance, Some(Agent::ClaudeCode), None);
+    let gateway = Arc::clone(lab.rig.gateway());
+    let held = Trigger::Program(SandboxPath::from_static("/usr/bin/ps"));
+    gateway.inject(Fault::HoldAt {
+        trigger: held.clone(),
+    });
+    let mut body = backend.spawn_pane(
+        &request,
+        PaneSpawn {
+            id: 10,
+            workspace: "platform-backend".to_owned(),
+            now_ms: 0,
+        },
+    );
+    body.sync_size(Rect::new(0, 0, GRID_COLS, GRID_ROWS));
+    if tokio::time::timeout(Duration::from_secs(10), gateway.until_held(&held)).await != Ok(true) {
+        gateway.release(&held);
+        return Err("secondary pane never reached post-stop verification".into());
+    }
+    let remaining = match mode {
+        StartupClose::Detach => {
+            backend.capsule_left(lab.world(), &instance);
+            Some(body)
+        }
+        StartupClose::Drop => {
+            drop(body);
+            None
+        }
+    };
+    gateway.release(&held);
+    until("secondary pane task settled", || {
+        lab.console.console().pane_tasks() == 0
+    })
+    .await?;
+    if let Some(mut body) = remaining {
+        body.tick(1);
+        let words = PaneWords::openshell();
+        let expected = fill_in(&words.detached, &[("agent", "Claude Code")]);
+        assert_eq!(body.note(&words).map(|note| note.text), Some(expected));
+    }
+    assert!(
+        !record.exists(),
+        "{mode:?} left the stopped instance record"
+    );
+    assert!(handle.shells().is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn detaching_a_secondary_pane_settles_the_dispatched_stop() -> TestResult {
+    guard(Box::pin(close_during_secondary_stop(StartupClose::Detach))).await
+}
+
+#[tokio::test]
+async fn dropping_a_secondary_pane_settles_the_dispatched_stop() -> TestResult {
+    guard(Box::pin(close_during_secondary_stop(StartupClose::Drop))).await
 }

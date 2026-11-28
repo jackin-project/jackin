@@ -12,6 +12,7 @@ use jackin_session::{
 
 use crate::app::App;
 use crate::error::CommandError;
+use crate::report::sandbox_recovery;
 use crate::terminal::TerminalInput;
 
 const WATCH: Duration = Duration::from_secs(1);
@@ -102,57 +103,61 @@ pub(crate) async fn pump(
     };
     let mut reads = remote.supervisor_reads();
     let mut tick = pin!(clock.sleep(WATCH));
-    let (reason, interrupted) = loop {
-        tokio::select! {
-            input = terminal.next_input() => match input {
-                TerminalInput::Bytes(bytes) => {
-                    let bytes = clipboard.from_operator(&bytes);
-                    if !bytes.is_empty() && remote.input(bytes).await.is_err() {
-                        break (EndReason::StreamClosed, false);
+    let drive = async {
+        let reason = loop {
+            tokio::select! {
+                input = terminal.next_input() => match input {
+                    TerminalInput::Bytes(bytes) => {
+                        let bytes = clipboard.from_operator(&bytes);
+                        if !bytes.is_empty() && remote.input(bytes).await.is_err() {
+                            break EndReason::StreamClosed;
+                        }
+                    }
+                    TerminalInput::Resized(size) => {
+                        if remote.resize(size).await.is_err() {
+                            break EndReason::StreamClosed;
+                        }
+                    }
+                    TerminalInput::Closed => {
+                        remote.detach().await;
+                        break EndReason::Detached;
+                    }
+                },
+                event = remote.next() => match event {
+                    None => break EndReason::StreamClosed,
+                    Some(TerminalEvent::Output(bytes)) => {
+                        let bytes = clipboard.from_sandbox(&bytes);
+                        if !bytes.is_empty() {
+                            io.bytes(&bytes)?;
+                        }
+                    }
+                    Some(TerminalEvent::Notice(text)) => io.raw_note(&text),
+                    Some(TerminalEvent::Ended(reason)) => break reason,
+                    Some(TerminalEvent::Exited(code)) => exit = code,
+                    Some(TerminalEvent::Attached | TerminalEvent::Lease(_)) => {}
+                },
+                () = &mut tick, if watching => {
+                    tick.set(clock.sleep(WATCH));
+                    reads.begin();
+                }
+                reading = reads.finished(), if watching => {
+                    if let SupervisorReading::Reported(state) = reading {
+                        if let SupervisorState::Exited { code, .. } = state
+                            && codex != Some(state)
+                        {
+                            io.raw_note(&exited_note(sandbox, code));
+                        }
+                        codex = Some(state);
                     }
                 }
-                TerminalInput::Resized(size) => {
-                    if remote.resize(size).await.is_err() {
-                        break (EndReason::StreamClosed, false);
-                    }
-                }
-                TerminalInput::Closed => {
-                    remote.detach().await;
-                    break (EndReason::Detached, false);
-                }
-            },
-            event = remote.next() => match event {
-                None => break (EndReason::StreamClosed, false),
-                Some(TerminalEvent::Output(bytes)) => {
-                    let bytes = clipboard.from_sandbox(&bytes);
-                    if !bytes.is_empty() {
-                        io.bytes(&bytes)?;
-                    }
-                }
-                Some(TerminalEvent::Notice(text)) => io.raw_note(&text),
-                Some(TerminalEvent::Ended(reason)) => break (reason, false),
-                Some(TerminalEvent::Exited(code)) => exit = code,
-                Some(TerminalEvent::Attached | TerminalEvent::Lease(_)) => {}
-            },
-            () = &mut tick, if watching => {
-                tick.set(clock.sleep(WATCH));
-                reads.begin();
             }
-            reading = reads.finished(), if watching => {
-                if let SupervisorReading::Reported(state) = reading {
-                    if let SupervisorState::Exited { code, .. } = state
-                        && codex != Some(state)
-                    {
-                        io.raw_note(&exited_note(sandbox, code));
-                    }
-                    codex = Some(state);
-                }
-            }
-            () = cancel.cancelled() => {
-                remote.detach().await;
-                break (EndReason::Detached, true);
-            }
-        }
+        };
+        Ok::<_, CommandError>(reason)
+    };
+    let (reason, interrupted) = tokio::select! {
+        biased;
+        () = cancel.cancelled() => (EndReason::Detached, true),
+        reason = drive => (reason?, false),
     };
     drop(raw);
     Ok(Ended {
@@ -168,7 +173,18 @@ pub(crate) async fn attach(
     request: AttachRequest,
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
-    let attached = session.attach(request, &app.cancel).await?;
+    if let Some(agent) = request.agent {
+        let recovery = sandbox_recovery(&sandbox, session.gateway_name());
+        app.unsettled(format!(
+            "The attach for {} in sandbox {sandbox} may have stopped its previous instance. {recovery}", agent.as_str()
+        ));
+    }
+    let named = request.agent.is_some();
+    let attached = session.attach(request, &app.cancel).await;
+    if named {
+        app.settled();
+    }
+    let attached = attached?;
     if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
         attached.supervisor_at_attach()
     {
@@ -218,7 +234,7 @@ pub(crate) async fn shell(
     request: ShellRequest,
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
-    let mut remote = Remote::Shell(session.open_shell(request).await?);
+    let mut remote = Remote::Shell(session.open_shell(request, &app.cancel).await?);
     let ended = pump(app, &mut remote, &sandbox).await?;
     if ended.interrupted {
         return Err(CommandError::Cancelled(format!(

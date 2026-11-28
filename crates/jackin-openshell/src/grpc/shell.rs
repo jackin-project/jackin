@@ -10,6 +10,7 @@ use openshell_sdk::raw::proto::{
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
 use tonic::Streaming;
 
 use super::Inner;
@@ -40,12 +41,15 @@ impl Inner {
     pub(crate) async fn open_terminal(
         self: &Arc<Self>,
         request: &TerminalRequest,
+        cancel: &CancellationToken,
     ) -> Result<TerminalSession, GatewayError> {
         match &request.kind {
-            TerminalKind::Shell { .. } | TerminalKind::Exec { .. } => {
-                self.open_shell(request).await
-            }
-            TerminalKind::MainProcess { .. } => self.open_main(request).await,
+            TerminalKind::Shell { .. } | TerminalKind::Exec { .. } => tokio::select! {
+                biased;
+                () = cancel.cancelled() => Err(GatewayError::Cancelled { op: GatewayOp::Terminal, group: None }),
+                opened = self.open_shell(request) => opened,
+            },
+            TerminalKind::MainProcess { .. } => self.open_main(request, cancel).await,
         }
     }
 

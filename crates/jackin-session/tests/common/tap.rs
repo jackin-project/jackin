@@ -51,6 +51,7 @@ struct Hooks {
     failing_git: Option<(&'static str, &'static str)>,
     stalled_all: bool,
     stalled_listing: bool,
+    relabel_after_failed_delete: Option<(String, String)>,
     stalled_only: Vec<SandboxName>,
     pause: Duration,
     active: BTreeMap<SandboxName, usize>,
@@ -116,6 +117,10 @@ impl Tap {
             config: world.config.clone(),
             limits,
         })
+    }
+
+    pub(crate) fn relabel_after_failed_delete(&self, key: &str, value: &str) {
+        self.hooks().relabel_after_failed_delete = Some((key.to_owned(), value.to_owned()));
     }
 
     pub(crate) fn replace_next_download(&self, bytes: Vec<u8>) {
@@ -368,7 +373,18 @@ impl Gateway for Tap {
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
-        self.inner.delete_sandbox(name).await
+        let result = self.inner.delete_sandbox(name).await;
+        if result.is_err()
+            && let Some((key, value)) = self.hooks().relabel_after_failed_delete.take()
+            && let Some(sandbox) = self.inner.sandbox(name)
+        {
+            sandbox
+                .add_label(&key, &value)
+                .map_err(|error| GatewayError::Protocol {
+                    message: error.to_string(),
+                })?;
+        }
+        result
     }
 
     async fn run_program(
@@ -455,7 +471,8 @@ impl Gateway for Tap {
     async fn open_terminal(
         &self,
         request: &TerminalRequest,
+        cancel: &CancellationToken,
     ) -> Result<TerminalSession, GatewayError> {
-        self.inner.open_terminal(request).await
+        self.inner.open_terminal(request, cancel).await
     }
 }

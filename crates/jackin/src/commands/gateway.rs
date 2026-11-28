@@ -89,6 +89,9 @@ async fn rm(app: &mut App, arg: GatewayRmArgs) -> Result<(), CommandError> {
             plan.apply(&app.cancel).await?;
         }
         GatewayRemoval::Online(plan) => {
+            app.unsettled(
+                "the gateway removal may have deleted account providers on that gateway but not yet removed the gateway from the config; run the same command again".to_owned(),
+            );
             plan.apply(app.deps.connect.as_ref(), &app.cancel).await?;
         }
     }
