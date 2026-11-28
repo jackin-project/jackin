@@ -3141,6 +3141,14 @@
               "manifest": null
             },
             {
+              "name": "unicode-normalization",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "std"
+              ]
+            },
+            {
               "name": "zeroize",
               "kind": "normal",
               "manifest": null,
@@ -3256,7 +3264,7 @@
     "crates/usage/jackin-usage-provider-openrouter/Cargo.toml": "be1a7c49fcb5964c7e90a271020a206a4cfb4dfc6faa4f6526e7f2ff7da062aa",
     "crates/usage/jackin-usage-provider-zai/Cargo.toml": "96721af941ffee4a68c58efbc6bd0473921a6fa73edc1bd80a9ed4e54bc84381",
     "crates/usage/jackin-usage/Cargo.toml": "d2f38eff19a1d8fdb59357d822759a9871c7b5b0932cf60a4746b13aebe750dd",
-    "crates/xtask/Cargo.toml": "78145da1ec70a4d3d9cd7f5d00433e70c541e6af5366a1661cf2fee49f847298"
+    "crates/xtask/Cargo.toml": "e217101d9818122d7dd6056ad57f3d644b213c7c1dcc048125f68957624dcb6d"
   },
   "layout": "7701cc9508da4f40a1f15e0a6b4ba57d0d90c328f0bc4498af1e71ee8f9802d1"
 }

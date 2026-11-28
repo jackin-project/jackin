@@ -3095,6 +3095,7 @@ dependencies = [
  "tokio-util",
  "toml 1.2.0+spec-1.1.0",
  "unicode-ident",
+ "unicode-normalization",
  "zeroize",
 ]
 
