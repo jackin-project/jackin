@@ -976,3 +976,39 @@ fn inert_attributes_preserve_file_module_provenance() -> TestResult {
         &[("C1", 2, "destructures")],
     )
 }
+
+#[test]
+fn cargo_aliases_preserve_ratatui_provenance() -> TestResult {
+    let workspace = Workspace::empty()?;
+    workspace.write(
+        "Cargo.toml",
+        &workspace_manifest(
+            &["jackin-tui", "ratatui"],
+            &["rt = { package = \"ratatui\", path = \"crates/ratatui\" }".to_owned()],
+        ),
+    )?;
+    workspace.write(
+        "crates/jackin-tui/Cargo.toml",
+        &member_manifest("jackin-tui", "[target.'cfg(unix)'.dev-dependencies]\nrt.workspace = true\n"),
+    )?;
+    workspace.write("crates/ratatui/Cargo.toml", &member_manifest("ratatui", ""))?;
+    workspace.write("crates/ratatui/src/lib.rs", "")?;
+    workspace.write(
+        LIB,
+        "use rt::buffer::Buffer as Cells;\n\
+         use rt::widgets::Paragraph;\n\
+         trait Inspect { fn inspect(&self); }\n\
+         impl Inspect for rt::buffer::Buffer {\n\
+         \x20   fn inspect(&self) { let Self { content, .. } = self; }\n\
+         }\n\
+         mod local {\n\
+         \x20   mod rt { pub mod buffer { pub struct Buffer { pub value: u8 } } }\n\
+         \x20   fn inspect(buf: rt::buffer::Buffer) { let rt::buffer::Buffer { value } = buf; }\n\
+         }\n",
+    )?;
+    expect_workspace(
+        ScreenCheck::with_allowed(&[]),
+        &workspace,
+        &[("C1", 1, "renames"), ("C1", 2, "widgets"), ("C1", 5, "destructures")],
+    )
+}
