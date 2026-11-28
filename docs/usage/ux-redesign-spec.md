@@ -16,7 +16,7 @@ For example, a limit fetched before midnight that resets at midnight becomes a p
 
 ## Terminal width
 
-The card renderer measures terminal display width, truncates the plan and account label when needed, and selects shorter meter text when a line does not fit. The detail view also omits optional text when it cannot fit. These rules keep narrow terminals readable without removing the account hierarchy. The implementation is in [card.rs](../../crates/usage/jackin-usage/src/view/card.rs).
+The card renderer measures terminal display width and truncates the plan and account label when needed. On narrow terminals, card meters omit the reset clock and can drop the previous reading caption if the line still does not fit. The detail view wraps exact quantities, splits reset rows, and truncates daily history text to fit. See [card.rs](../../crates/usage/jackin-usage/src/view/card.rs) and [detail.rs](../../crates/usage/jackin-usage/src/view/detail.rs).
 
 ## Current examples
 
