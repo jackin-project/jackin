@@ -1095,6 +1095,17 @@ struct ImportPath<'a> {
     absolute: bool,
 }
 
+struct GlobPath<'a> {
+    path: ImportPath<'a>,
+    public: Option<bool>,
+}
+
+#[derive(Default)]
+struct GlobPaths<'a> {
+    known: Vec<GlobPath<'a>>,
+    unknown: bool,
+}
+
 #[derive(Clone, Copy)]
 struct FileModule {
     source: usize,
@@ -1122,6 +1133,9 @@ struct TypeScope<'a> {
     renamed: Vec<(&'a str, u32, usize)>,
     imports: Vec<PathLeaf<'a>>,
     glob_import: bool,
+    glob_paths: GlobPaths<'a>,
+    public_bindings: BTreeSet<&'a str>,
+    uncertain_visibility: BTreeSet<&'a str>,
     matches_imported: MatchesImport,
     named_matches_imports: BTreeMap<&'a str, MatchesImport>,
     matches_textual: bool,
@@ -1157,6 +1171,18 @@ impl<'a> TypeScope<'a> {
                 (Some((name, _)), _) => name,
                 (None, [.., "*"]) => {
                     self.glob_import = true;
+                    if attributed {
+                        self.glob_paths.unknown = true;
+                    } else {
+                        path.segments.pop();
+                        self.glob_paths.known.push(GlobPath {
+                            path: ImportPath {
+                                segments: path.segments,
+                                absolute,
+                            },
+                            public: glob_visibility(tokens, index),
+                        });
+                    }
                     continue;
                 }
                 (None, [.., name, "self"] | [.., name]) => *name,
@@ -1185,6 +1211,11 @@ impl<'a> TypeScope<'a> {
                 }
                 _ => TypeBinding::Unresolved,
             };
+            if glob_visible(tokens, index) && !attributed {
+                self.public_bindings.insert(name);
+            } else if glob_visibility(tokens, index).is_none() || attributed {
+                self.uncertain_visibility.insert(name);
+            }
             self.bind(name, binding);
         }
         position
@@ -1243,6 +1274,11 @@ impl<'a> TypeScope<'a> {
             }
             _ => return,
         };
+        if glob_visible(tokens, index) && !has_outer_attribute(tokens, index) {
+            self.public_bindings.insert(name);
+        } else if glob_visibility(tokens, index).is_none() || has_outer_attribute(tokens, index) {
+            self.uncertain_visibility.insert(name);
+        }
         self.bind(name, binding);
     }
 
@@ -1305,6 +1341,27 @@ fn before_visibility(tokens: &[Token], item: usize) -> usize {
         end -= 1;
     }
     end
+}
+
+fn glob_visible(tokens: &[Token], item: usize) -> bool {
+    glob_visibility(tokens, item) == Some(true)
+}
+
+fn glob_visibility(tokens: &[Token], item: usize) -> Option<bool> {
+    let start = before_visibility(tokens, item);
+    if start == item {
+        Some(false)
+    } else if tokens[start].is_keyword("pub")
+        && (start + 1 == item
+            || (start + 4 == item
+                && tokens[start + 1].is_punct('(')
+                && tokens[start + 2].is_keyword("crate")
+                && tokens[start + 3].is_punct(')')))
+    {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 fn outer_attribute_before(tokens: &[Token], end: usize) -> Option<Range<usize>> {
@@ -2623,6 +2680,13 @@ impl<'a> TypeScopes<'a> {
             } else {
                 TypeBinding::InlineModule(child)
             };
+            if glob_visible(tokens, declaration) && !has_outer_attribute(tokens, declaration) {
+                self.scopes[parent].public_bindings.insert(name);
+            } else if glob_visibility(tokens, declaration).is_none()
+                || has_outer_attribute(tokens, declaration)
+            {
+                self.scopes[parent].uncertain_visibility.insert(name);
+            }
             self.scopes[parent].bind(name, binding);
             if attributed {
                 return None;
@@ -2659,6 +2723,147 @@ impl<'a> TypeScopes<'a> {
         child
     }
 
+    fn glob_module_binding(
+        &self,
+        mut owner: usize,
+        name: &str,
+        first: bool,
+        budget: &mut usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasResolutionError> {
+        loop {
+            let local = &self.scopes[owner];
+            if let Some(binding) = local.bindings.get(name) {
+                return Ok(Some((owner, binding)));
+            }
+            if !first || local.glob_import {
+                return Ok(None);
+            }
+            let Some(parent) = local.parent else {
+                return Ok(None);
+            };
+            *budget = budget
+                .checked_sub(1)
+                .ok_or(AliasResolutionError::WorkLimit)?;
+            work.charge(1)?;
+            owner = parent;
+        }
+    }
+
+    fn glob_module(
+        &self,
+        scope: usize,
+        path: &ImportPath<'a>,
+        budget: &mut usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<usize>, AliasResolutionError> {
+        if path.absolute || path.segments.is_empty() {
+            return Ok(None);
+        }
+        let mut current = scope;
+        let mut first = true;
+        for name in &path.segments {
+            *budget = budget
+                .checked_sub(name.len() + 1)
+                .ok_or(AliasResolutionError::WorkLimit)?;
+            work.charge_name(name)?;
+            if first && *name == "crate" {
+                let source = self.scopes[current].source;
+                let Some(root) = self.crate_root.filter(|root| {
+                    source == *root || self.sources[source].connected && work.permits_file_modules()
+                }) else {
+                    return Ok(None);
+                };
+                current = root;
+            } else if first && *name == "self" {
+                current = self.scopes[current].module;
+            } else if first && *name == "super" {
+                let Some(parent) = self.scopes[self.scopes[current].module].module_parent else {
+                    return Ok(None);
+                };
+                current = parent;
+            } else {
+                let Some((owner, binding)) =
+                    self.glob_module_binding(current, name, first, budget, work)?
+                else {
+                    return Ok(None);
+                };
+                match binding {
+                    TypeBinding::InlineModule(child) => current = *child,
+                    TypeBinding::FileModule(child)
+                        if work.permits_file_modules()
+                            && self.scopes[child.source].module_parent == Some(owner)
+                            && self.scopes[child.source].directory == Some(child.directory) =>
+                    {
+                        current = child.source;
+                    }
+                    _ => return Ok(None),
+                }
+            }
+            first = false;
+        }
+        Ok(Some(current))
+    }
+
+    fn glob_binding(
+        &self,
+        scope: usize,
+        name: &str,
+        export: bool,
+        work: &mut AliasWork,
+    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasResolutionError> {
+        let mut budget = 4096usize;
+        let mut pending = vec![(scope, export)];
+        let mut visited = BTreeSet::new();
+        let mut found = None;
+        while let Some((current, export)) = pending.pop() {
+            budget = budget
+                .checked_sub(name.len() + 1)
+                .ok_or(AliasResolutionError::WorkLimit)?;
+            work.charge_name(name)?;
+            if !visited.insert((current, export)) {
+                return Ok(None);
+            }
+            let entry = &self.scopes[current];
+            if current != scope && entry.uncertain_visibility.contains(name) {
+                return Ok(None);
+            }
+            if current != scope
+                && let Some(binding) = entry.bindings.get(name)
+            {
+                if entry.public_bindings.contains(name)
+                    && found.is_some_and(|(owner, _)| owner != current)
+                {
+                    return Ok(None);
+                }
+                if entry.public_bindings.contains(name) {
+                    found = Some((current, binding));
+                }
+                continue;
+            }
+            if entry.glob_paths.unknown {
+                return Ok(None);
+            }
+            for glob in &entry.glob_paths.known {
+                budget = budget
+                    .checked_sub(1)
+                    .ok_or(AliasResolutionError::WorkLimit)?;
+                work.charge(1)?;
+                if export && glob.public == Some(false) {
+                    continue;
+                }
+                if export && glob.public.is_none() {
+                    return Ok(None);
+                }
+                let Some(target) = self.glob_module(current, &glob.path, &mut budget, work)? else {
+                    return Ok(None);
+                };
+                pending.push((target, true));
+            }
+        }
+        Ok(found)
+    }
+
     fn lexical_binding(
         &self,
         mut scope: usize,
@@ -2672,7 +2877,7 @@ impl<'a> TypeScopes<'a> {
                 return Ok(Some((scope, binding)));
             }
             if current.glob_import {
-                return Ok(None);
+                return self.glob_binding(scope, name, false, work);
             }
             let Some(parent) = current.parent else {
                 return Ok(None);
@@ -2720,6 +2925,12 @@ impl<'a> TypeScopes<'a> {
                 return Ok(
                     source.is_some_and(|source| self.roots.get(source).copied().unwrap_or(false))
                 );
+            }
+            if current.glob_import
+                && name == "ratatui"
+                && self.glob_binding(scope, name, false, work)?.is_some()
+            {
+                return Ok(false);
             }
             if current.bindings.contains_key(name)
                 || current.glob_import && !ignore_globs && name != "ratatui"
@@ -2858,10 +3069,15 @@ impl<'a> TypeScopes<'a> {
                 }
                 (None, name) => {
                     work.charge_name(name)?;
-                    let Some(binding) = self.scopes[current].bindings.get(name) else {
+                    if let Some(binding) = self.scopes[current].bindings.get(name) {
+                        ((current, name), binding)
+                    } else if let Some((owner, binding)) =
+                        self.glob_binding(current, name, true, work)?
+                    {
+                        ((owner, name), binding)
+                    } else {
                         return Ok(None);
-                    };
-                    ((current, name), binding)
+                    }
                 }
             };
             match binding {
