@@ -753,7 +753,7 @@ enum TypeBinding<'a> {
     RatatuiBuffer,
     Nominal,
     InlineModule(usize),
-    FileModule(usize),
+    FileModule(FileModule),
     Import(ImportPath<'a>),
     Unresolved,
 }
@@ -761,6 +761,12 @@ enum TypeBinding<'a> {
 struct ImportPath<'a> {
     segments: Vec<&'a str>,
     absolute: bool,
+}
+
+#[derive(Clone, Copy)]
+struct FileModule {
+    source: usize,
+    directory: usize,
 }
 
 #[derive(Default)]
@@ -825,7 +831,7 @@ impl<'a> TypeScope<'a> {
         position
     }
 
-    fn bind_item(&mut self, tokens: &'a [Token], index: usize, file_module: Option<usize>) {
+    fn bind_item(&mut self, tokens: &'a [Token], index: usize, file_module: Option<FileModule>) {
         let Some(name) = tokens.get(index + 1).and_then(Token::ident) else {
             return;
         };
@@ -1009,11 +1015,11 @@ fn concrete_impl_receiver(file: &ScreenFile<'_>, declaration: usize, body: usize
         return None;
     }
     let receiver_start = separator + 1;
-    let (receiver, boundary) = impl_path(&tokens[..body], ends, receiver_start, false)?;
+    let (receiver, boundary, bare) = impl_receiver_path(&tokens[..body], ends, receiver_start)?;
     if boundary != body && !tokens.get(boundary)?.is_ident("where") {
         return None;
     }
-    if receiver == receiver_start && trait_start != generic_start {
+    if bare && trait_start != generic_start {
         let (parameters, _) = generic_slots(&tokens[..trait_start], generic_start)?;
         let name = tokens[receiver].ident()?;
         if parameters.iter().any(|range| {
@@ -1023,6 +1029,29 @@ fn concrete_impl_receiver(file: &ScreenFile<'_>, declaration: usize, body: usize
         }
     }
     Some(receiver)
+}
+
+fn impl_receiver_path(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    start: usize,
+) -> Option<(usize, usize, bool)> {
+    if !tokens.get(start)?.is_punct('(') {
+        let (receiver, end) = impl_path(tokens, ends, start, false)?;
+        return Some((receiver, end, receiver == start));
+    }
+    let boundary = ends[start]?;
+    if boundary > tokens.len() {
+        return None;
+    }
+    let mut inner = start;
+    let mut end = boundary;
+    while inner < end && tokens[inner].is_punct('(') && ends[inner] == Some(end) {
+        inner += 1;
+        end -= 1;
+    }
+    let (receiver, inner_end) = impl_path(&tokens[..end], ends, inner, false)?;
+    (inner_end == end).then_some((receiver, boundary, receiver == inner))
 }
 
 fn impl_path(
@@ -1087,21 +1116,28 @@ impl<'a> ModulePaths<'a> {
     fn include(&mut self, file: &'a Path, source: usize) -> Option<usize> {
         let relative = file.strip_prefix(SCREEN_SOURCE).ok()?;
         let mut directory = 0;
-        for part in relative.parent()?.iter() {
+        for part in relative.parent()? {
             directory = self.include_child(directory, part.to_str()?);
         }
         if file == Path::new(SCREEN_LIB) {
             return Some(directory);
         }
-        if relative.file_name()?.to_str()? != "mod.rs" {
-            directory = self.include_child(directory, relative.file_stem()?.to_str()?);
+        let direct = self.include_child(directory, relative.file_stem()?.to_str()?);
+        self.claim(direct, source);
+        if relative.file_name()?.to_str()? == "mod.rs" {
+            self.claim(directory, source);
+            Some(directory)
+        } else {
+            Some(direct)
         }
+    }
+
+    fn claim(&mut self, directory: usize, source: usize) {
         let candidate = &mut self.directories[directory].file;
         *candidate = match candidate {
             ModuleFile::Missing => ModuleFile::Unique(source),
             _ => ModuleFile::Ambiguous,
         };
-        Some(directory)
     }
 
     fn include_child(&mut self, directory: usize, name: &'a str) -> usize {
@@ -1118,10 +1154,10 @@ impl<'a> ModulePaths<'a> {
         self.directories[directory].children.get(name).copied()
     }
 
-    fn file(&self, directory: usize, name: &str) -> Option<usize> {
-        let child = self.child(directory, name)?;
-        match self.directories[child].file {
-            ModuleFile::Unique(source) => Some(source),
+    fn file(&self, directory: usize, name: &str) -> Option<FileModule> {
+        let directory = self.child(directory, name)?;
+        match self.directories[directory].file {
+            ModuleFile::Unique(source) => Some(FileModule { source, directory }),
             ModuleFile::Missing | ModuleFile::Ambiguous => None,
         }
     }
@@ -1198,10 +1234,11 @@ impl<'a> TypeScopes<'a> {
             })
             .collect();
         for (scope, child) in links {
-            if !self.sources[child].connected {
-                self.scopes[child].module_parent = Some(scope);
-                self.sources[child].connected = true;
-                pending.push_back(child);
+            if !self.sources[child.source].connected {
+                self.scopes[child.source].module_parent = Some(scope);
+                self.scopes[child.source].directory = Some(child.directory);
+                self.sources[child.source].connected = true;
+                pending.push_back(child.source);
             }
         }
     }
@@ -1246,7 +1283,7 @@ impl<'a> TypeScopes<'a> {
         scope: usize,
         declaration: usize,
         paths: &ModulePaths<'a>,
-    ) -> Option<usize> {
+    ) -> Option<FileModule> {
         let tokens = &self.files[source].tokens;
         let module = &self.scopes[scope];
         if !self.sources[source].connected
@@ -1445,9 +1482,10 @@ impl<'a> TypeScopes<'a> {
                 TypeBinding::InlineModule(child) => current = *child,
                 TypeBinding::FileModule(child)
                     if work.permits_file_modules()
-                        && self.scopes[*child].module_parent == Some(owner.0) =>
+                        && self.scopes[child.source].module_parent == Some(owner.0)
+                        && self.scopes[child.source].directory == Some(child.directory) =>
                 {
-                    current = *child
+                    current = child.source;
                 }
                 _ => return Ok(None),
             }
@@ -1609,11 +1647,8 @@ impl<'a> TypeScopes<'a> {
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         work.charge(1)?;
-        let Some(position) = self.sources[source].enclosing[index] else {
+        let Some(ScopePosition::Rust(scope)) = self.sources[source].enclosing[index] else {
             return Ok(false);
-        };
-        let scope = match position {
-            ScopePosition::Rust(scope) | ScopePosition::Opaque(scope) => scope,
         };
         let Some(receiver) = self.scopes[scope].self_receiver else {
             return Ok(false);
