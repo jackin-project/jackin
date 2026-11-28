@@ -396,10 +396,10 @@ Operator note: `wt/p03`, `wt/p07`, `wt/mv1` track their own branch and are clean
 
 **Dirty (8):**
 - `<workspace>/jackin` (main): 2 entries
-- `/private/tmp/jackin-browser-review.pFc38B/copy` (detached): 83
-- `/private/tmp/jackin-provider-cli-check` (detached): 10
-- `/private/tmp/jackin-registry-review.AESk6T` (detached): 81
-- `/private/tmp/jackin-usage-ux-preview` (detached): 12
+- `<scratchpad>/jackin-browser-review/copy` (detached): 83
+- `<scratchpad>/jackin-provider-cli-check` (detached): 10
+- `<scratchpad>/jackin-registry-review` (detached): 81
+- `<scratchpad>/jackin-usage-ux-preview` (detached): 12
 - `<workspace>/wt/p01` (fix/p01-store-capture, open PR #1317): 1
 - `<workspace>/wt/p03-residuals` (fix/p03-residuals, no upstream): 1
 - `<workspace>/wt/p15-final-image-paths` (fix/p15-final-image-paths, open PR #1316): 1
