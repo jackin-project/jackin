@@ -584,6 +584,13 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20   fn inspect(&self) {\n\
          \x20       let _ = ::core::stringify!(Self { content, .. });\n\
          \x20       let Self { content, .. } = self;\n\
+         \x20       let _ = matches!(self, Self { content, .. } if {\n\
+         \x20           let _ = ::core::stringify!(Self { content, .. });\n\
+         \x20           !content.is_empty()\n\
+         \x20       });\n\
+         \x20       macro_rules! matches { ($($tokens:tt)*) => { false }; }\n\
+         \x20       let _ = matches!(self, Self { content, .. });\n\
+         \x20       let _ = ::core::matches!(self, Self { content, .. });\n\
          \x20   }\n\
          }\n\
          impl View for crate::model::Buffer {\n\
@@ -608,8 +615,10 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          }\n",
         &[
             ("C1", 6, "destructures"),
-            ("C1", 17, "destructures"),
-            ("C1", 27, "destructures"),
+            ("C1", 7, "destructures"),
+            ("C1", 13, "destructures"),
+            ("C1", 24, "destructures"),
+            ("C1", 34, "destructures"),
         ],
     )
 }
