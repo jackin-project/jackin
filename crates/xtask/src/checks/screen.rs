@@ -1293,7 +1293,7 @@ struct ImplReceiver {
 
 struct LocalMacroTemplate {
     receiver: ImplReceiver,
-    arms: Option<Range<usize>>,
+    transcriber: Option<Range<usize>>,
 }
 
 #[derive(Default)]
@@ -1331,7 +1331,7 @@ impl<'a> LocalMacroTemplates<'a> {
         &mut self,
         file: &'a ScreenFile<'_>,
         bang: usize,
-        arms: Range<usize>,
+        group: Range<usize>,
         receiver: Option<ImplReceiver>,
     ) -> Option<Range<usize>> {
         let tokens = &file.tokens;
@@ -1341,21 +1341,22 @@ impl<'a> LocalMacroTemplates<'a> {
         }
         if tokens[invoked].is_keyword("macro_rules") {
             if !macro_item_disabled(tokens, invoked) {
-                self.define(file, invoked, arms, receiver);
+                self.define(file, invoked, group, receiver);
             }
             return None;
         }
-        if is_path_separator(tokens, invoked.wrapping_sub(2)) {
+        if group.len() != 2 {
             return None;
         }
         let template = self.active.get_mut(tokens[invoked].ident()?)?;
         if Some(template.receiver) == receiver
             && template
-                .arms
+                .transcriber
                 .as_ref()
-                .is_some_and(|arms| arms.start > self.last_import)
+                .is_some_and(|transcriber| transcriber.start > self.last_import)
+            && is_direct_template_invocation(tokens, invoked)
         {
-            template.arms.take()
+            template.transcriber.take()
         } else {
             None
         }
@@ -1365,7 +1366,7 @@ impl<'a> LocalMacroTemplates<'a> {
         &mut self,
         file: &'a ScreenFile<'_>,
         declaration: usize,
-        arms: Range<usize>,
+        definition: Range<usize>,
         receiver: Option<ImplReceiver>,
     ) {
         let tokens = &file.tokens;
@@ -1379,9 +1380,12 @@ impl<'a> LocalMacroTemplates<'a> {
                     !inert_lint_attribute(attribute)
                 })
             })
-            .map(|receiver| LocalMacroTemplate {
-                receiver,
-                arms: Some(arms),
+            .and_then(|receiver| {
+                let transcriber = first_empty_macro_transcriber(file, definition)?;
+                Some(LocalMacroTemplate {
+                    receiver,
+                    transcriber: Some(transcriber),
+                })
             });
         if current.is_some() || previous.is_some() {
             self.undo.push((name, previous));
@@ -1392,6 +1396,19 @@ impl<'a> LocalMacroTemplates<'a> {
     }
 }
 
+fn is_direct_template_invocation(tokens: &[Token], name: usize) -> bool {
+    let mut start = name;
+    while let Some(attribute) = outer_attribute_before(tokens, start) {
+        if !inert_lint_attribute(&tokens[attribute.start + 2..attribute.end - 1]) {
+            return false;
+        }
+        start = attribute.start;
+    }
+    tokens
+        .get(start.wrapping_sub(1))
+        .is_none_or(|token| matches!(token.kind, Tok::Punct('{' | '}' | ';')))
+}
+
 fn macro_arm_group_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Option<usize> {
     if !matches!(file.tokens.get(open)?.kind, Tok::Punct('(' | '[' | '{')) {
         return None;
@@ -1399,33 +1416,21 @@ fn macro_arm_group_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Opti
     file.group_ends[open].filter(|&end| end <= limit)
 }
 
-fn mark_local_macro_templates(
+fn first_empty_macro_transcriber(
     file: &ScreenFile<'_>,
-    arms: Range<usize>,
-    scope: usize,
-    enclosing: &mut [Option<ScopePosition>],
-) {
+    definition: Range<usize>,
+) -> Option<Range<usize>> {
     let tokens = &file.tokens;
-    let limit = arms.end - 1;
-    let mut index = arms.start + 1;
-    while let Some(arrow) = macro_arm_group_end(file, index, limit) {
-        if !tokens[arrow].is_punct('=')
-            || !tokens
-                .get(arrow + 1)
-                .is_some_and(|token| token.is_punct('>'))
-        {
-            return;
-        }
-        let open = arrow + 2;
-        let Some(end) = macro_arm_group_end(file, open, limit) else {
-            return;
-        };
-        mark_local_macro_arm(file, open + 1..end - 1, scope, enclosing);
-        index = end;
-        if index < limit && tokens[index].is_punct(';') {
-            index += 1;
-        }
+    let limit = definition.end - 1;
+    let matcher = definition.start + 1;
+    let arrow = macro_arm_group_end(file, matcher, limit)?;
+    if arrow != matcher + 2 || !tokens[arrow].is_punct('=') || !tokens.get(arrow + 1)?.is_punct('>')
+    {
+        return None;
     }
+    let open = arrow + 2;
+    let end = macro_arm_group_end(file, open, limit)?;
+    Some(open + 1..end - 1)
 }
 
 fn mark_local_macro_arm(
@@ -1829,10 +1834,10 @@ impl<'a> TypeScopes<'a> {
                     && tokens[index + 1].is_ident("matches")
                     && !macro_item_disabled(tokens, index - 1);
                 if file.group_ends[open].is_some()
-                    && let Some(arms) =
+                    && let Some(transcriber) =
                         local_macros.observe(file, index, open..end, scope_state.self_receiver)
                 {
-                    mark_local_macro_templates(file, arms, scope, &mut enclosing);
+                    mark_local_macro_arm(file, transcriber, scope, &mut enclosing);
                 }
                 if scope_state.self_receiver.is_some()
                     && let Some(kind) = matches_macro(tokens, index)
