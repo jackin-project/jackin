@@ -472,6 +472,33 @@ fn destructuring_a_buffer_fails() -> TestResult {
 }
 
 #[test]
+fn bare_buffer_checks_use_provenance() -> TestResult {
+    expect(
+        "mod model { pub struct Buffer { pub value: u8 } }\n\
+         use crate::model::Buffer;\n\
+         type Local = Buffer;\n\
+         fn local(b: Local) { let Buffer { value } = b; }\n\
+         mod direct {\n\
+         \x20   use ratatui::buffer::Buffer;\n\
+         \x20   type Screen = Buffer;\n\
+         \x20   fn check(b: Buffer) { let Buffer { content, .. } = b; }\n\
+         }\n\
+         mod bridge { pub use ratatui::buffer::Buffer; }\n\
+         mod unproven {\n\
+         \x20   use crate::bridge::*;\n\
+         \x20   type Screen = Buffer;\n\
+         \x20   fn check(b: Buffer) { let Buffer { content, .. } = b; }\n\
+         }\n",
+        &[
+            ("C1", 7, "renames"),
+            ("C1", 8, "destructures"),
+            ("C1", 13, "renames"),
+            ("C1", 14, "destructures"),
+        ],
+    )
+}
+
+#[test]
 fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
     expect(
         "use ratatui::buffer::Buffer;\n\
@@ -493,8 +520,13 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
          fn local(buf: crate::model::Buffer) {\n\
          \x20   use crate::model::Buffer;\n\
          \x20   let Identity::<Buffer> { value } = buf;\n\
-         }\n",
-        &[("C1", 6, "destructures"), ("C1", 14, "destructures")],
+         }\n\
+         fn in_macro(buf: Buffer) -> bool { matches!(buf, Identity::<Buffer> { .. }) }\n",
+        &[
+            ("C1", 6, "destructures"),
+            ("C1", 14, "destructures"),
+            ("C1", 21, "destructures"),
+        ],
     )
 }
 
