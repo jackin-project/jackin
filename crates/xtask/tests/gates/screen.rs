@@ -632,7 +632,8 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20       let _ = ::core::stringify!(Self { content, .. });\n\
          \x20       let Self { content, .. } = self;\n\
          \x20       macro_rules! read_fields {\n\
-         \x20           () => {{\n\
+         \x20           (/// matcher documentation\n\
+         \x20           ) => {{\n\
          \x20               let _ = ::core::stringify!(Self { content, .. });\n\
          \x20               let Self { content, .. } = self;\n\
          \x20           }};\n\
@@ -702,13 +703,13 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          }\n",
         &[
             ("C1", 6, "destructures"),
-            ("C1", 10, "destructures"),
-            ("C1", 37, "destructures"),
-            ("C1", 44, "destructures"),
-            ("C1", 48, "destructures"),
+            ("C1", 11, "destructures"),
+            ("C1", 38, "destructures"),
+            ("C1", 45, "destructures"),
             ("C1", 49, "destructures"),
-            ("C1", 64, "destructures"),
-            ("C1", 74, "destructures"),
+            ("C1", 50, "destructures"),
+            ("C1", 65, "destructures"),
+            ("C1", 75, "destructures"),
         ],
     )
 }
