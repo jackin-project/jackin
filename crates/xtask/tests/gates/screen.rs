@@ -98,8 +98,8 @@ fn uncertain_macro_drawing_lint_level_is_reported() -> TestResult {
 #[test]
 fn local_wildcard_reexports_preserve_buffer_provenance() -> TestResult {
     expect(
-        "mod source { pub use ratatui::buffer::Buffer; }\n\
-         mod bridge { pub use super::source::*; }\n\
+        "mod source { #[allow(unused_imports)] pub use ratatui::buffer::Buffer; }\n\
+         mod bridge { #[allow(unused_imports)] pub use super::source::*; }\n\
          use bridge::Buffer as Cells;\n\
          fn drawing(value: bridge::Buffer) { let bridge::Buffer { content, .. } = value; }\n\
          mod nominal { pub struct Buffer { pub value: u8 } }\n\
