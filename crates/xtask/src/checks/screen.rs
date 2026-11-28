@@ -728,6 +728,18 @@ fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, V
         .filter_map(|(index, token)| {
             let alias = TypeAlias::parse(tokens, index, source)?;
             let message = alias.value.clone().find_map(|target| {
+                let message = match types.may_be_ratatui_buffer(
+                    source,
+                    target,
+                    BufferReference::Rename,
+                    &mut AliasWork::Unlimited,
+                ) {
+                    Ok(true) => BUFFER_RENAME,
+                    Err(AliasResolutionError::ConditionalRoot) => {
+                        "C1: conditional module leaves ratatui root provenance uncertain"
+                    }
+                    _ => return None,
+                };
                 if associated_argument_name(tokens, target)
                     || tokens[target].ident().is_some_and(|name| {
                         !is_path_separator(tokens, target.wrapping_sub(2))
@@ -736,18 +748,7 @@ fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, V
                 {
                     return None;
                 }
-                match types.may_be_ratatui_buffer(
-                    source,
-                    target,
-                    BufferReference::Rename,
-                    &mut AliasWork::Unlimited,
-                ) {
-                    Ok(true) => Some(BUFFER_RENAME),
-                    Err(AliasResolutionError::ConditionalRoot) => {
-                        Some("C1: conditional module leaves ratatui root provenance uncertain")
-                    }
-                    _ => None,
-                }
+                Some(message)
             })?;
             Some((
                 index,
@@ -2158,7 +2159,10 @@ fn include_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Viol
                 .include_name_visible(scope, index, name, &mut work)
                 .unwrap_or(false)
         };
-        if visible {
+        let (start, absolute) =
+            path_start(&file.tokens, index, &mut work).unwrap_or((index, false));
+        let invocation = start.saturating_sub(usize::from(absolute) * 2);
+        if visible && !macro_item_disabled(&file.tokens, invocation) {
             violations.push((
                 index,
                 Violation::at_line(
@@ -2690,6 +2694,17 @@ impl<'a> TypeScopes<'a> {
             let scope = *stack.last().unwrap_or(&root);
             let token = &file.tokens[index];
             if let Some(open) = opaque_group_open(&file.tokens, index) {
+                if token.is_punct('!')
+                    && file.tokens[index - 1].is_keyword("macro_rules")
+                    && !macro_item_disabled(&file.tokens, index - 1)
+                    && let Some(name) = file.tokens.get(index + 1).and_then(Token::ident)
+                {
+                    self.scopes[scope]
+                        .textual_macros
+                        .first_names
+                        .entry(name)
+                        .or_insert(index);
+                }
                 index = file.group_ends[open].unwrap_or(limit).min(limit);
                 continue;
             }
