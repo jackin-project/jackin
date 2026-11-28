@@ -1099,6 +1099,38 @@ async fn a_cancel_before_the_commit_point_discards_the_edit_and_the_next_edit_su
     Ok(())
 }
 
+#[tokio::test]
+async fn a_check_sees_the_edited_candidate() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let store = plain(&path);
+    store
+        .edit(vec![gateway("g1")?], &CancellationToken::new())
+        .await?;
+    let g1 = GatewayName::parse("g1")?;
+    let mut seen = None;
+
+    let config = store
+        .edit_checked(
+            vec![role("a")?, ConfigEdit::RemoveGateway(g1.clone())],
+            &CancellationToken::new(),
+            |candidate| {
+                seen = Some((
+                    has_role(candidate, "a").ok(),
+                    candidate.gateway(&g1).is_some(),
+                ));
+                Ok::<(), Rejected>(())
+            },
+        )
+        .await
+        .map_err(|error| format!("{error:?}"))?;
+
+    assert_eq!(seen, Some((Some(true), false)));
+    assert!(has_role(&config, "a")?);
+    assert!(config.gateway(&g1).is_none());
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum CancelAt {
     WriteNew,

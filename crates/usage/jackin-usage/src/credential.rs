@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, CaptureLimits, CaptureProblem, CredentialFileProblem, CredentialSource, FileIdentity,
-    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath,
-    SQLITE_MAGIC, STORE_LENGTH_LIMIT, STORE_PRAGMAS, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
+    HostPath, OMP_CAPTURE_LIMITS, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    STORE_LENGTH_LIMIT, STORE_PRAGMAS, STORE_QUERY_DEADLINE, STORE_QUERY_STEP,
     STORE_VALUE_MAX_BYTES, Secret, StoreImage, capture, lookup_tuple, read_credential_file,
     run_bounded,
 };
@@ -34,8 +34,21 @@ const KIMI_GLOBAL_BASE: &str = "https://api.kimi.ai/coding/v1";
 const KIMI_MAINLAND_BASE: &str = "https://api.kimi.com/coding/v1";
 const OPENCODE_INTEGRATION: &str = "opencode";
 const OPENCODE_OAUTH: &str = "oauth";
-const OPENCODE_CREDENTIAL_QUERY: &str = "SELECT id, value, time_updated, time_created FROM credential \
-     WHERE integration_id = ?1 AND (active = 1 OR active IS NULL)";
+macro_rules! unloadable {
+    () => {
+        "(octet_length(id) > ?2 OR octet_length(value) > ?2)"
+    };
+}
+const OPENCODE_CREDENTIAL_QUERY: &str = concat!(
+    "SELECT CASE WHEN ",
+    unloadable!(),
+    " THEN NULL ELSE id END, CASE WHEN ",
+    unloadable!(),
+    " THEN NULL ELSE value END, time_updated, time_created, ",
+    unloadable!(),
+    " FROM credential WHERE CASE WHEN octet_length(integration_id) > ?2 THEN 0 \
+     ELSE integration_id = ?1 END AND (active = 1 OR active IS NULL)"
+);
 const KIMI_GLOBAL_OAUTH: &str = "https://auth.kimi.ai";
 const KIMI_MAINLAND_OAUTH: &str = "https://auth.kimi.com";
 const HEX: [char; 16] = [
@@ -341,14 +354,8 @@ async fn minimax_host_login(
             root,
         )
         .map_err(|_| Unresolved::Unreadable("the MiniMax credential path is not usable"))?;
-        if deps
-            .fs
-            .canonicalize(&path)
-            .await
-            .map_err(|_| Unresolved::Missing)?
-            .is_some()
-        {
-            found.push(read_credential(deps, &path).await?);
+        if let Some(login) = present_credential(deps, &path).await? {
+            found.push(login);
         }
     }
     match found.len() {
@@ -364,7 +371,6 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
     let captured = match capture(deps.fs.as_ref(), path, OPENCODE_LIMITS).await {
         Ok(captured) => captured,
         Err(CaptureProblem::NotSqlite | CaptureProblem::NotARegularFile) => return Ok(None),
-        Err(CaptureProblem::Symlink) if !links_to_sqlite(deps, path).await => return Ok(None),
         Err(CaptureProblem::Missing) => return Err(Unresolved::Missing),
         Err(CaptureProblem::LogUnreadable | CaptureProblem::LogTooLarge) => {
             return Err(Unresolved::Unreadable(
@@ -388,29 +394,6 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
     ))
 }
 
-async fn links_to_sqlite(deps: &UsageDeps, path: &HostPath) -> bool {
-    let Ok(Some(target)) = deps.fs.canonicalize(path).await else {
-        return false;
-    };
-    let (Some(dir), Some(name)) = (
-        target
-            .as_path()
-            .parent()
-            .and_then(|dir| HostPath::parse(dir).ok()),
-        target
-            .as_path()
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|name| RepoPath::parse(name).ok()),
-    ) else {
-        return false;
-    };
-    matches!(
-        deps.fs.read_regular(&dir, &name, SQLITE_MAGIC.len()).await,
-        Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC)
-    )
-}
-
 struct OpenCodeRecord {
     id: String,
     value: Secret,
@@ -429,28 +412,39 @@ fn extract_opencode_credential(
         .prepare(OPENCODE_CREDENTIAL_QUERY)
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
     let mut rows = statement
-        .query([OPENCODE_INTEGRATION])
+        .query(rusqlite::params![OPENCODE_INTEGRATION, STORE_LENGTH_LIMIT])
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
     let mut found: Option<OpenCodeCandidate> = None;
+    let mut oversized: Option<(i64, i64)> = None;
     while let Some(row) = rows
         .next()
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
     {
         let unreadable = || Unresolved::Unreadable("the OpenCode store could not be read");
-        let id = row
-            .get_ref(0)
-            .and_then(bounded_text)
-            .map_err(|_| unreadable())?;
-        let value = row
-            .get_ref(1)
-            .and_then(bounded_secret)
-            .map_err(|_| unreadable())?;
-        let updated: i64 = row
-            .get(2)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        let created: i64 = row
-            .get(3)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let updated: i64 = row.get(2).map_err(|_| unreadable())?;
+        let created: i64 = row.get(3).map_err(|_| unreadable())?;
+        let cells = if row
+            .get::<_, Option<bool>>(4)
+            .map_err(|_| unreadable())?
+            .unwrap_or(false)
+        {
+            None
+        } else {
+            let id = row
+                .get_ref(0)
+                .and_then(capped_text)
+                .map_err(|_| unreadable())?;
+            let value = row
+                .get_ref(1)
+                .and_then(capped_text)
+                .map_err(|_| unreadable())?
+                .map(Secret::new);
+            id.zip(value)
+        };
+        let Some((id, value)) = cells else {
+            oversized = oversized.max(Some((updated, created)));
+            continue;
+        };
         let kind = serde_json::from_str::<Value>(value.expose())
             .map_err(|_| Unresolved::Unreadable("the OpenCode credential is not valid JSON"))?;
         if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
@@ -465,6 +459,15 @@ fn extract_opencode_credential(
         if found.as_ref().is_none_or(|best| candidate.newer_than(best)) {
             found = Some(candidate);
         }
+    }
+    if let Some(rank) = oversized
+        && found
+            .as_ref()
+            .is_none_or(|best| rank >= (best.updated, best.created))
+    {
+        return Err(Unresolved::Unreadable(
+            "the OpenCode store could not be read",
+        ));
     }
     let Some(found) = found else {
         return Err(Unresolved::Missing);
@@ -551,8 +554,8 @@ fn read_omp_api_key(
     }
     let (id, data): (i64, Secret) = connection
         .query_row(
-            "SELECT id, data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
-            [provider_id],
+            jackin_core::OMP_API_KEY_QUERY,
+            rusqlite::params![provider_id, STORE_LENGTH_LIMIT],
             |row| Ok((row.get(0)?, bounded_secret(row.get_ref(1)?)?)),
         )
         .map_err(|error| match error {
@@ -573,12 +576,13 @@ fn read_omp_api_key(
     })
 }
 
-fn bounded_text(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<String> {
+fn capped_text(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<Option<String>> {
     let text = value.as_str()?;
-    if text.len() > STORE_VALUE_MAX_BYTES {
-        return Err(rusqlite::Error::InvalidQuery);
-    }
-    Ok(text.to_owned())
+    Ok((text.len() <= STORE_VALUE_MAX_BYTES).then(|| text.to_owned()))
+}
+
+fn bounded_text(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<String> {
+    capped_text(value)?.ok_or(rusqlite::Error::InvalidQuery)
 }
 
 fn bounded_secret(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<Secret> {
@@ -677,13 +681,22 @@ async fn read_credential(
     deps: &UsageDeps,
     path: &HostPath,
 ) -> Result<(String, String), Unresolved> {
+    present_credential(deps, path)
+        .await?
+        .ok_or(Unresolved::Missing)
+}
+
+async fn present_credential(
+    deps: &UsageDeps,
+    path: &HostPath,
+) -> Result<Option<(String, String)>, Unresolved> {
     let bytes = match read_credential_file(deps.fs.as_ref(), path).await {
         Err(_) => {
             return Err(Unresolved::Unreadable(
                 "the credential file could not be read",
             ));
         }
-        Ok(Err(CredentialFileProblem::Missing)) => return Err(Unresolved::Missing),
+        Ok(Err(CredentialFileProblem::Missing)) => return Ok(None),
         Ok(Err(CredentialFileProblem::NotARegularFile)) => {
             return Err(Unresolved::Unreadable(
                 "the credential file is not a regular file",
@@ -700,7 +713,7 @@ async fn read_credential(
     let text = non_empty(&text)
         .map(str::to_owned)
         .ok_or(Unresolved::Missing)?;
-    Ok((text, revision))
+    Ok(Some((text, revision)))
 }
 
 fn revision_of(bytes: &[u8]) -> String {
@@ -738,7 +751,12 @@ mod tests {
     fn plan_of(connection: &rusqlite::Connection) -> String {
         let query = format!("EXPLAIN QUERY PLAN {OPENCODE_CREDENTIAL_QUERY}");
         let mut statement = connection.prepare(&query).expect("the plan");
-        let mut rows = statement.query(["opencode"]).expect("the plan rows");
+        let mut rows = statement
+            .query(rusqlite::params![
+                "opencode",
+                jackin_core::STORE_LENGTH_LIMIT
+            ])
+            .expect("the plan rows");
         let mut plan = String::new();
         while let Some(row) = rows.next().expect("a plan row") {
             let detail: String = row.get(3).expect("the plan detail");

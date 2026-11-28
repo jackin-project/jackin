@@ -187,3 +187,66 @@ async fn an_omp_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unreadabl
         .unwrap_err();
     Ok(())
 }
+
+const REAL_TABLE: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, credential_type TEXT NOT NULL, data TEXT NOT NULL);";
+const SORTING_TABLE: &str =
+    "CREATE TABLE auth_credentials (id INTEGER, provider TEXT, credential_type TEXT, data TEXT);";
+
+async fn key_of_rows(
+    table: &str,
+    rows: &[(i64, String)],
+) -> Result<Result<String, jackin_session::CredentialError>, Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("agent.db");
+    let connection = rusqlite::Connection::open(&path)?;
+    connection.execute_batch(table)?;
+    for (id, data) in rows {
+        connection.execute(
+            "INSERT INTO auth_credentials (id, provider, credential_type, data) VALUES (?1, 'wanted', 'api_key', ?2)",
+            rusqlite::params![id, data],
+        )?;
+    }
+    drop(connection);
+    let host = HostPath::parse(&std::fs::canonicalize(&path)?)?;
+    Ok(
+        read_omp_host_key(&StdFileSystem::default(), &host, "wanted")
+            .await
+            .map(|key| key.expose().to_owned()),
+    )
+}
+
+fn key_row(key: &str) -> String {
+    format!("{{\"key\": \"{key}\"}}")
+}
+
+#[tokio::test]
+async fn an_oversized_row_the_selection_skips_does_not_hide_the_selected_key() -> TestResult {
+    for table in [REAL_TABLE, SORTING_TABLE] {
+        for stale in [100_000_usize, 200_000, 4_000_000] {
+            let rows = [(1, "x".repeat(stale)), (2, key_row("fake-wanted-key"))];
+            assert_eq!(
+                key_of_rows(table, &rows).await?.map_err(|e| e.to_string()),
+                Ok("fake-wanted-key".to_owned()),
+                "{table}: {stale} bytes"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_oversized_selected_row_is_refused_and_never_replaced_by_an_older_one() -> TestResult {
+    for table in [REAL_TABLE, SORTING_TABLE] {
+        for newest in [64 * 1024 + 1, 100_000, 200_000] {
+            let rows = [(1, key_row("fake-stale-key")), (2, "x".repeat(newest))];
+            assert!(
+                matches!(
+                    key_of_rows(table, &rows).await?,
+                    Err(jackin_session::CredentialError::LoginUnreadable { .. })
+                ),
+                "{table}: {newest} bytes"
+            );
+        }
+    }
+    Ok(())
+}

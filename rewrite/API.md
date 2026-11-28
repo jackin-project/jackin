@@ -975,6 +975,8 @@ pub enum MissingBinding {
     SeveralAccountsNoDefault { provider: Provider, accounts: Vec<AccountName> },
 }
 pub struct ConfigStore { }
+pub struct ConfigEditLease<'store> { }
+pub struct PreparedConfigEdit<'lease> { }
 
 impl ConfigStore {
     pub fn new(fs: Arc<dyn FileSystem>, clock: Arc<dyn Clock>, path: HostPath) -> ConfigStore;
@@ -982,11 +984,21 @@ impl ConfigStore {
     pub async fn load(&self) -> Result<Config, ConfigError>;
     pub async fn edit(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<Config, ConfigError>;
     pub async fn edit_checked<E: From<ConfigError>>(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken, check: impl FnOnce(&Config) -> Result<(), E>) -> Result<Config, E>;   // `check` sees the edited config under the lock; the commit point is after it
+    pub async fn begin_edit(&self, cancel: &CancellationToken) -> Result<ConfigEditLease<'_>, ConfigError>;
+}
+impl ConfigEditLease<'_> {
+    pub async fn prepare<E: From<ConfigError>>(&mut self, edits: Vec<ConfigEdit>, cancel: &CancellationToken, check_live: impl FnOnce(&Config) -> Result<(), E>) -> Result<PreparedConfigEdit<'_>, E>;
+}
+impl PreparedConfigEdit<'_> {
+    pub fn candidate(&self) -> &Config;
+    pub async fn commit(self, cancel: &CancellationToken) -> Result<Config, ConfigError>;
 }
 impl ConfigError { pub const fn committed(&self) -> bool; pub const fn cancelled(&self) -> bool; pub fn unless_cancelled(cancel: &CancellationToken) -> Result<(), ConfigError> }
 ```
 
 `edit_checked` checks the token before it creates the directory, while it waits for the lock, after the lock, and after `check`; each of those returns `ConfigError::Cancelled` and writes nothing. The atomic write is never raced against the token, so once it starts the caller gets its real outcome: `Ok`, a write error, or `FsError::Unsynced`, which `committed()` reports as written.
+
+`begin_edit` acquires the same cross-process lock. `prepare` reads and checks the live config under that lock, then applies the edits to a candidate in memory. `commit` writes the candidate under the same lock. Account plans keep the lease through provider operations, config commit, and any rollback. They acquire account locks and connect before taking the lease. Other writers of the same config wait within the existing lock timeout.
 
 Gateway keys are the registered OpenShell gateway names (D03). `jackin gateway add` writes `builder` (default `default`) and `platform` (default `Platform::host_default()` evaluated at add time), so a stored entry is always explicit and no later code guesses a default. The `docker_engine` entry exists because OpenShell has no place for an engine endpoint (D24).
 
@@ -2424,7 +2436,8 @@ impl AccountPlan {
 impl OfflinePlan { pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, ConfigError> }
 impl GatewayPlan { pub fn config(&self) -> &Config; pub async fn apply(self, gateways: &Gateways, cancel: &CancellationToken) -> Result<Config, AccountEditError> }   // build `gateways` from config()
 pub async fn plan_gateway_removal(desk: &AccountDesk, name: &GatewayName, cancel: &CancellationToken) -> Result<GatewayRemoval, AccountEditError>;
-pub enum GatewayRemoval { Offline(OfflinePlan), Online(RemovalPlan) }
+pub enum GatewayRemoval { Offline(OfflineRemoval), Online(RemovalPlan) }
+impl OfflineRemoval { pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
 impl RemovalPlan { pub fn gateway(&self) -> &GatewayName; pub async fn apply(self, connector: &dyn GatewayConnector, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
 pub enum AccountEditError { Config(ConfigError), Account(AccountError), OnGateway { gateway: GatewayName, source: GatewayError },
                             Unreachable(Vec<UnreachableGateway>), Connect(ConnectError), RollbackFailed { .. } }
