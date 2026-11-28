@@ -1240,12 +1240,17 @@ fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
     workspace.write("crates/jackin-tui/src/cafe\u{301}.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
     workspace.write("crates/jackin-tui/src/shared.rs", "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
     workspace.write("crates/jackin-tui/src/orphan.rs", "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
-    let violations = ScreenCheck::with_allowed(&[]).run(&workspace.repo()?);
+    let repo = workspace.repo()?;
+    let target = std::fs::canonicalize(workspace.root().join("crates/jackin-tui/src/cafe\u{301}.rs"))?;
+    let unicode_paths: Vec<_> = repo.files().iter().map(|file| file.path()).filter(|path| std::fs::canonicalize(repo.root().join(path)).is_ok_and(|candidate| candidate == target)).collect();
+    assert_eq!(unicode_paths.len(), 1);
+    let unicode_path = unicode_paths[0];
+    let violations = ScreenCheck::with_allowed(&[]).run(&repo);
     let actual: Vec<_> = violations.iter().map(|violation| (violation.path.as_deref(), violation.line, violation.message.as_str())).collect();
     let expected = [
         (Path::new("crates/jackin-tui/src/bin/flat.rs"), 2),
         (Path::new("crates/jackin-tui/src/bin/folder/main.rs"), 2),
-        (Path::new("crates/jackin-tui/src/cafe\u{301}.rs"), 2),
+        (unicode_path, 2),
         (Path::new("crates/jackin-tui/src/custom.rs"), 2),
         (Path::new("crates/jackin-tui/src/main.rs"), 3),
         (Path::new("crates/jackin-tui/src/shared.rs"), 1),
@@ -1257,4 +1262,36 @@ fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
         assert!(message.contains("C1: destructures"), "{message}");
     }
     Ok(())
+}
+
+#[test]
+fn renamed_standard_matches_preserves_receiver_scope() -> TestResult {
+    expect(
+        "use std::matches as is_match;\n\
+         struct Local { value: u8 }\n\
+         trait Inspect { fn inspect(&self) -> bool; }\n\
+         impl Inspect for ratatui::buffer::Buffer {\n\
+         \x20   fn inspect(&self) -> bool {\n\
+         \x20       let _ = is_match!(self, Self { content, .. } if !content.is_empty());\n\
+         \x20       { macro_rules! is_match { ($($tokens:tt)*) => { false }; } let _ = is_match!(self, Self { content, .. }); }\n\
+         \x20       false\n\
+         \x20   }\n\
+         }\n\
+         impl Inspect for Local { fn inspect(&self) -> bool { is_match!(self, Self { value: 1 }) } }\n",
+        &[("C1", 6, "destructures")],
+    )
+}
+
+#[test]
+fn raw_keyword_module_path_preserves_buffer_provenance() -> TestResult {
+    expect(
+        "mod r#return { pub use ratatui::buffer::Buffer; }\n\
+         mod domain { pub struct Buffer { pub value: u8 } }\n\
+         fn inspect(buf: r#return::Buffer, local: domain::Buffer) {\n\
+         \x20   let r#return::Buffer { content, .. } = buf;\n\
+         \x20   let domain::Buffer { value } = local;\n\
+         \x20   if false { return; }\n\
+         }\n",
+        &[("C1", 4, "destructures")],
+    )
 }
