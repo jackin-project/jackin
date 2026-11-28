@@ -577,8 +577,7 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
 
 #[test]
 fn self_patterns_follow_trait_impl_receivers() -> TestResult {
-    let extern_alias = tui(
-        "extern crate self as core;\n\
+    let extern_alias = tui("extern crate self as core;\n\
          #[macro_export]\n\
          macro_rules! matches { ($($tokens:tt)*) => { false }; }\n\
          mod child {\n\
@@ -590,8 +589,7 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20           let _ = ::std::matches!(self, Self { content, .. });\n\
          \x20       }\n\
          \x20   }\n\
-         }\n",
-    )?;
+         }\n")?;
     let main = "crates/jackin-tui/src/main.rs";
     extern_alias.write(
         main,
