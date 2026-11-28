@@ -568,6 +568,47 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
 }
 
 #[test]
+fn alias_patterns_align_elided_lifetimes() -> TestResult {
+    expect(
+        "use ratatui::buffer::Buffer;\n\
+         mod local { pub struct Buffer { pub value: u8 } }\n\
+         type Identity<'a, T> = T;\n\
+         type WithConst<'a, const C: char, T> = T;\n\
+         type Default<'a, const N: usize, T = Buffer> = T;\n\
+         fn check(a: Buffer, b: local::Buffer) {\n\
+         \x20   let Identity::<Buffer> { ref content, .. } = a;\n\
+         \x20   let Identity::<'_, Buffer> { ref content, .. } = a;\n\
+         \x20   let Identity::<local::Buffer> { value } = b;\n\
+         \x20   let WithConst::<'x', Buffer> { ref content, .. } = a;\n\
+         \x20   let Default::<'_, 7> { ref content, .. } = a;\n\
+         \x20   let Default::<7> { ref content, .. } = a;\n\
+         }\n",
+        &[
+            ("C1", 7, "destructures"),
+            ("C1", 8, "destructures"),
+            ("C1", 10, "destructures"),
+            ("C1", 11, "destructures"),
+            ("C1", 12, "destructures"),
+        ],
+    )
+}
+
+#[test]
+fn generic_enum_variants_are_not_buffer_patterns() -> TestResult {
+    expect(
+        "use ratatui::buffer::Buffer;\n\
+         enum View<T, U> { Buffer { first: T, second: U } }\n\
+         enum Checked<T, U> where T: Copy, U: Copy {\n\
+         \x20   Buffer { first: T, second: U }\n\
+         }\n\
+         fn check(buf: Buffer) {\n\
+         \x20   let Buffer { content, .. } = buf;\n\
+         }\n",
+        &[("C1", 7, "destructures")],
+    )
+}
+
+#[test]
 fn destructuring_through_composed_identity_aliases_preserves_provenance() -> TestResult {
     expect(
         "mod source { pub type Keep<const N: usize, T> = T; }\n\
