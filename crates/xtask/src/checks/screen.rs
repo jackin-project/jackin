@@ -767,6 +767,7 @@ struct ImportPath<'a> {
 struct FileModule {
     source: usize,
     directory: usize,
+    matches_textual: bool,
 }
 
 #[derive(Default)]
@@ -780,6 +781,8 @@ struct TypeScope<'a> {
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
+    matches_imported: bool,
+    matches_textual: bool,
 }
 
 impl<'a> TypeScope<'a> {
@@ -810,6 +813,7 @@ impl<'a> TypeScope<'a> {
                 (None, [.., name, "self"] | [.., name]) => *name,
                 _ => continue,
             };
+            self.matches_imported |= name == "matches";
             let binding = match segments {
                 ["ratatui", "buffer", "Buffer"] => TypeBinding::RatatuiBuffer,
                 _ if !attributed => {
@@ -942,6 +946,91 @@ fn opaque_group_open(tokens: &[Token], index: usize) -> Option<usize> {
 enum ScopePosition {
     Rust(usize),
     Opaque(usize),
+    MatchesPattern(usize, MatchesMacro),
+}
+
+#[derive(Clone, Copy)]
+enum MatchesMacro {
+    Prelude,
+    Absolute,
+}
+
+fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
+    let name = bang.checked_sub(1)?;
+    if !tokens[bang].is_punct('!') || !tokens[name].is_ident("matches") {
+        return None;
+    }
+    if !is_path_separator(tokens, name.wrapping_sub(2)) {
+        return Some(MatchesMacro::Prelude);
+    }
+    let root = name.checked_sub(3)?;
+    if !matches!(tokens[root].ident(), Some("core" | "std"))
+        || !is_path_separator(tokens, root.wrapping_sub(2))
+        || tokens
+            .get(root.wrapping_sub(3))
+            .and_then(Token::ident)
+            .is_some_and(|word| {
+                !KEYWORDS_BEFORE_PATH.contains(&word) && !matches!(word, "if" | "while" | "match")
+            })
+    {
+        return None;
+    }
+    Some(MatchesMacro::Absolute)
+}
+
+fn matches_pattern(file: &ScreenFile<'_>, arguments: Range<usize>) -> Option<Range<usize>> {
+    let tokens = &file.tokens;
+    let close = arguments.end - 1;
+    let mut index = arguments.start + 1;
+    let mut top_level = std::iter::from_fn(|| {
+        let current = index;
+        let token = tokens.get(current).filter(|_| current < close)?;
+        let nested = matches!(token.kind, Tok::Punct('(' | '[' | '{'))
+            || token.is_punct('<')
+                && (is_path_separator(tokens, current.wrapping_sub(2))
+                    || file.group_ends[current].is_some_and(|end| is_path_separator(tokens, end)));
+        index = if nested {
+            file.group_ends[current]
+                .filter(|&end| end <= close)
+                .unwrap_or(close)
+        } else {
+            current + 1
+        };
+        Some(current)
+    });
+    let separator = top_level
+        .by_ref()
+        .find(|&at| matches!(tokens[at].kind, Tok::Punct(',' | '|')))?;
+    if !tokens[separator].is_punct(',') {
+        return None;
+    }
+    let start = separator + 1;
+    let end = top_level
+        .find(|&at| tokens[at].is_ident("if") || tokens[at].is_punct(','))
+        .unwrap_or(close);
+    (start < end).then_some(start..end)
+}
+
+fn mark_matches_pattern(
+    file: &ScreenFile<'_>,
+    arguments: Range<usize>,
+    position: ScopePosition,
+    enclosing: &mut [Option<ScopePosition>],
+) {
+    let Some(pattern) = matches_pattern(file, arguments) else {
+        return;
+    };
+    let mut index = pattern.start;
+    while index < pattern.end {
+        if let Some(open) = opaque_group_open(&file.tokens, index) {
+            index = file.group_ends[open].unwrap_or(pattern.end);
+            continue;
+        }
+        if file.tokens[index].is_ident("Self") {
+            enclosing[index] = Some(position);
+        }
+        index += 1;
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1184,7 +1273,11 @@ impl<'a> ModulePaths<'a> {
     fn file(&self, directory: usize, name: &str) -> Option<FileModule> {
         let directory = self.child(directory, name)?;
         match self.directories[directory].file {
-            ModuleFile::Unique(source) => Some(FileModule { source, directory }),
+            ModuleFile::Unique(source) => Some(FileModule {
+                source,
+                directory,
+                matches_textual: false,
+            }),
             ModuleFile::Missing | ModuleFile::Ambiguous => None,
         }
     }
@@ -1264,6 +1357,7 @@ impl<'a> TypeScopes<'a> {
             if !self.sources[child.source].connected {
                 self.scopes[child.source].module_parent = Some(scope);
                 self.scopes[child.source].directory = Some(child.directory);
+                self.scopes[child.source].matches_textual = child.matches_textual;
                 self.sources[child.source].connected = true;
                 pending.push_back(child.source);
             }
@@ -1283,6 +1377,22 @@ impl<'a> TypeScopes<'a> {
             if let Some(open) = opaque_group_open(tokens, index) {
                 let end = file.group_ends[open].unwrap_or(tokens.len());
                 enclosing[index..end].fill(Some(ScopePosition::Opaque(scope)));
+                let scope_state = &mut self.scopes[scope];
+                scope_state.matches_textual |= token.is_punct('!')
+                    && tokens[index - 1].is_ident("macro_rules")
+                    && tokens[index + 1].is_ident("matches");
+                if scope_state.self_receiver.is_some()
+                    && let Some(kind) = matches_macro(tokens, index)
+                    && (matches!(kind, MatchesMacro::Absolute) || !scope_state.matches_textual)
+                    && file.group_ends[open].is_some()
+                {
+                    mark_matches_pattern(
+                        file,
+                        open..end,
+                        ScopePosition::MatchesPattern(scope, kind),
+                        &mut enclosing,
+                    );
+                }
                 index = end;
                 continue;
             }
@@ -1321,7 +1431,9 @@ impl<'a> TypeScopes<'a> {
         {
             return None;
         }
-        paths.file(module.directory?, tokens.get(declaration + 1)?.ident()?)
+        let mut child = paths.file(module.directory?, tokens.get(declaration + 1)?.ident()?)?;
+        child.matches_textual = module.matches_textual;
+        Some(child)
     }
 
     fn enter_scope(
@@ -1368,6 +1480,7 @@ impl<'a> TypeScopes<'a> {
             module_parent: module.map(|_| enclosing_module),
             directory,
             self_receiver,
+            matches_textual: self.scopes[parent].matches_textual,
             ..TypeScope::default()
         });
         child
@@ -1534,7 +1647,9 @@ impl<'a> TypeScopes<'a> {
             return Ok(None);
         };
         let scope = match position {
-            ScopePosition::Rust(scope) | ScopePosition::Opaque(scope) => scope,
+            ScopePosition::Rust(scope)
+            | ScopePosition::Opaque(scope)
+            | ScopePosition::MatchesPattern(scope, _) => scope,
         };
         let (start, absolute) = path_start(tokens, end, work)?;
         self.resolve(
@@ -1699,8 +1814,17 @@ impl<'a> TypeScopes<'a> {
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         work.charge(1)?;
-        let Some(ScopePosition::Rust(scope)) = self.sources[source].enclosing[index] else {
-            return Ok(false);
+        let scope = match self.sources[source].enclosing[index] {
+            Some(
+                ScopePosition::Rust(scope)
+                | ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute),
+            ) => scope,
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Prelude))
+                if self.matches_prelude_visible(scope, work)? =>
+            {
+                scope
+            }
+            _ => return Ok(false),
         };
         let Some(receiver) = self.scopes[scope].self_receiver else {
             return Ok(false);
@@ -1712,6 +1836,24 @@ impl<'a> TypeScopes<'a> {
                 self.alias_is_ratatui_buffer(source, alias, arguments, work)
             }
             _ => Ok(false),
+        }
+    }
+
+    fn matches_prelude_visible(
+        &self,
+        mut scope: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasWorkLimit> {
+        loop {
+            work.charge(1)?;
+            let current = &self.scopes[scope];
+            if current.matches_imported || current.glob_import {
+                return Ok(false);
+            }
+            let Some(parent) = current.parent else {
+                return Ok(true);
+            };
+            scope = parent;
         }
     }
 
