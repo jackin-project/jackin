@@ -580,13 +580,16 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
     expect(
         "mod model { pub struct Buffer { pub value: u8 } }\n\
          trait View { fn inspect(&self); }\n\
-         impl View for ratatui::buffer::Buffer {\n\
-         \x20   fn inspect(&self) { let Self { content, .. } = self; }\n\
+         impl View for (ratatui::buffer::Buffer) {\n\
+         \x20   fn inspect(&self) {\n\
+         \x20       let _ = ::core::stringify!(Self { content, .. });\n\
+         \x20       let Self { content, .. } = self;\n\
+         \x20   }\n\
          }\n\
          impl View for crate::model::Buffer {\n\
          \x20   fn inspect(&self) { let Self { value } = self; }\n\
          }\n",
-        &[("C1", 4, "destructures")],
+        &[("C1", 6, "destructures")],
     )
 }
 
@@ -595,10 +598,12 @@ fn out_of_line_buffer_reexports_preserve_provenance() -> TestResult {
     let workspace = tui("mod bridge;\n\
          mod model;\n\
          mod relay;\n\
-         fn check(a: bridge::Buffer, b: model::Buffer, c: relay::Buffer) {\n\
+         mod r#mod;\n\
+         fn check(a: bridge::Buffer, b: model::Buffer, c: relay::Buffer, d: r#mod::Buffer) {\n\
          \x20   let bridge::Buffer { content, .. } = a;\n\
          \x20   let model::Buffer { value } = b;\n\
          \x20   let relay::Buffer { content, .. } = c;\n\
+         \x20   let r#mod::Buffer { content, .. } = d;\n\
          }\n")?;
     workspace.write(
         "crates/jackin-tui/src/bridge.rs",
@@ -612,10 +617,18 @@ fn out_of_line_buffer_reexports_preserve_provenance() -> TestResult {
         "crates/jackin-tui/src/relay/mod.rs",
         "pub use crate::bridge::Buffer;\n",
     )?;
+    workspace.write(
+        "crates/jackin-tui/src/mod.rs",
+        "pub use ratatui::buffer::Buffer;\n",
+    )?;
     expect_workspace(
         ScreenCheck::with_allowed(&[]),
         &workspace,
-        &[("C1", 5, "destructures"), ("C1", 7, "destructures")],
+        &[
+            ("C1", 6, "destructures"),
+            ("C1", 8, "destructures"),
+            ("C1", 9, "destructures"),
+        ],
     )
 }
 

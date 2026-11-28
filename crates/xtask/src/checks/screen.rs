@@ -88,36 +88,28 @@ impl Check for ScreenCheck {
     fn run(&self, repo: &Repo) -> Vec<Violation> {
         let mut violations = Vec::new();
         let mut used: BTreeSet<&str> = BTreeSet::new();
-        let mut scanned = false;
-        for file in repo.files() {
-            if file.kind() != FileKind::Rust || !file.path().starts_with(SCREEN_SOURCE) {
-                continue;
-            }
-            scanned = true;
-            let tokens = lex_rust(file.text()).tokens;
-            let types = TypeScopes::collect(&tokens, file.path() == Path::new(SCREEN_LIB));
-            violations.extend(import_violations(file.path(), &tokens));
-            violations.extend(types.renamed_imports(file.path()));
-            violations.extend(index_violations(file.path(), &tokens));
-            violations.extend(silencing_violations(file.path(), &tokens));
-            violations.extend(pattern_violations(
-                file.path(),
-                &tokens,
-                &types,
-                self.alias_work_limit,
-            ));
-            violations.extend(type_alias_violations(file.path(), &tokens, &types));
-            violations.extend(literal_violations(
-                file.path(),
-                &tokens,
-                self.allowed,
-                &mut used,
-            ));
+        let files: Vec<_> = repo
+            .files()
+            .iter()
+            .filter(|file| file.kind() == FileKind::Rust && file.path().starts_with(SCREEN_SOURCE))
+            .map(|file| ScreenFile::new(file.path(), file.text()))
+            .collect();
+        let types = TypeScopes::collect(&files);
+        for (source, file) in files.iter().enumerate() {
+            let path = file.path;
+            let tokens = &file.tokens;
+            violations.extend(import_violations(path, tokens));
+            violations.extend(types.renamed_imports(source));
+            violations.extend(index_violations(path, tokens));
+            violations.extend(silencing_violations(path, tokens));
+            violations.extend(pattern_violations(source, &types, self.alias_work_limit));
+            violations.extend(type_alias_violations(source, &types));
+            violations.extend(literal_violations(path, tokens, self.allowed, &mut used));
         }
         for entry in self
             .allowed
             .iter()
-            .filter(|entry| scanned && !used.contains(**entry))
+            .filter(|entry| !files.is_empty() && !used.contains(**entry))
         {
             violations.push(Violation::at_file(
                 self.step(),
@@ -126,6 +118,27 @@ impl Check for ScreenCheck {
             ));
         }
         sorted(violations)
+    }
+}
+
+struct ScreenFile<'a> {
+    path: &'a Path,
+    tokens: Vec<Token>,
+    group_ends: Vec<Option<usize>>,
+    header_bodies: Vec<Option<usize>>,
+}
+
+impl<'a> ScreenFile<'a> {
+    fn new(path: &'a Path, text: &str) -> Self {
+        let tokens = lex_rust(text).tokens;
+        let group_ends = pattern_group_ends(&tokens);
+        let header_bodies = header_body_starts(&tokens, &group_ends);
+        Self {
+            path,
+            tokens,
+            group_ends,
+            header_bodies,
+        }
     }
 }
 
@@ -471,20 +484,18 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
-fn type_alias_violations<'a>(
-    path: &Path,
-    tokens: &'a [Token],
-    types: &TypeScopes<'a>,
-) -> Vec<Violation> {
+fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
+    let file = &types.files[source];
+    let tokens = &file.tokens;
     tokens
         .iter()
         .enumerate()
         .filter(|(_, token)| token.is_ident("type"))
         .filter(|(index, _)| {
-            TypeAlias::parse(tokens, *index).is_some_and(|alias| {
+            TypeAlias::parse(tokens, *index, source).is_some_and(|alias| {
                 alias.value.clone().any(|target| {
                     types
-                        .may_be_ratatui_buffer(tokens, target, &mut AliasWork::Unlimited)
+                        .may_be_ratatui_buffer(source, target, &mut AliasWork::Unlimited)
                         .unwrap_or(false)
                         && !associated_argument_name(tokens, target)
                         && !tokens[target].ident().is_some_and(|name| {
@@ -494,7 +505,7 @@ fn type_alias_violations<'a>(
                 })
             })
         })
-        .map(|(_, token)| Violation::at_line(CiStep::Screen, path, token.line, BUFFER_RENAME))
+        .map(|(_, token)| Violation::at_line(CiStep::Screen, file.path, token.line, BUFFER_RENAME))
         .collect()
 }
 
@@ -604,13 +615,14 @@ fn alias_boundary(tokens: &[Token], mut index: usize) -> Option<usize> {
 }
 
 struct TypeAlias {
+    source: usize,
     declaration: usize,
     parameters: Vec<Range<usize>>,
     value: Range<usize>,
 }
 
 impl TypeAlias {
-    fn parse(tokens: &[Token], index: usize) -> Option<Self> {
+    fn parse(tokens: &[Token], index: usize, source: usize) -> Option<Self> {
         tokens.get(index + 1)?.ident()?;
         let after_name = index + 2;
         let (parameters, mut assignment) = if tokens.get(after_name)?.is_punct('<') {
@@ -632,6 +644,7 @@ impl TypeAlias {
             end
         };
         (start < end && tokens[terminator].is_punct(';')).then_some(Self {
+            source,
             declaration: index,
             parameters,
             value: start..end,
@@ -663,25 +676,34 @@ impl TypeAlias {
 struct AliasApplication<'a> {
     alias: &'a TypeAlias,
     arguments: Vec<Range<usize>>,
+    argument_source: usize,
     elided_lifetimes: usize,
     available: usize,
 }
 
+struct TypeSpan {
+    source: usize,
+    range: Range<usize>,
+}
+
 impl<'a> AliasApplication<'a> {
     fn new(
-        tokens: &[Token],
+        files: &[ScreenFile<'_>],
         alias: &'a TypeAlias,
+        argument_source: usize,
         arguments: Vec<Range<usize>>,
         work: &mut AliasWork,
     ) -> Result<Option<Self>, AliasWorkLimit> {
-        let declared = count_leading_lifetimes(tokens, &alias.parameters, work)?;
-        let supplied = count_leading_lifetimes(tokens, &arguments, work)?;
+        let declared =
+            count_leading_lifetimes(&files[alias.source].tokens, &alias.parameters, work)?;
+        let supplied = count_leading_lifetimes(&files[argument_source].tokens, &arguments, work)?;
         if supplied != 0 && supplied != declared {
             return Ok(None);
         }
         Ok(Some(Self {
             alias,
             arguments,
+            argument_source,
             elided_lifetimes: declared - supplied,
             available: alias.parameters.len(),
         }))
@@ -710,6 +732,10 @@ enum AliasWork {
 struct AliasWorkLimit;
 
 impl AliasWork {
+    fn permits_file_modules(&self) -> bool {
+        matches!(self, Self::Limited(_))
+    }
+
     fn charge(&mut self, units: usize) -> Result<(), AliasWorkLimit> {
         if let Self::Limited(remaining) = self {
             *remaining = remaining.checked_sub(units).ok_or(AliasWorkLimit)?;
@@ -727,6 +753,7 @@ enum TypeBinding<'a> {
     RatatuiBuffer,
     Nominal,
     InlineModule(usize),
+    FileModule(usize),
     Import(ImportPath<'a>),
     Unresolved,
 }
@@ -738,9 +765,12 @@ struct ImportPath<'a> {
 
 #[derive(Default)]
 struct TypeScope<'a> {
+    source: usize,
     parent: Option<usize>,
     module: usize,
     module_parent: Option<usize>,
+    directory: Option<usize>,
+    self_receiver: Option<usize>,
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
@@ -795,14 +825,13 @@ impl<'a> TypeScope<'a> {
         position
     }
 
-    fn bind_item(&mut self, tokens: &'a [Token], index: usize) {
+    fn bind_item(&mut self, tokens: &'a [Token], index: usize, file_module: Option<usize>) {
         let Some(name) = tokens.get(index + 1).and_then(Token::ident) else {
             return;
         };
         let binding = match tokens[index].ident() {
-            Some("type") => {
-                TypeAlias::parse(tokens, index).map_or(TypeBinding::Unresolved, TypeBinding::Alias)
-            }
+            Some("type") => TypeAlias::parse(tokens, index, self.source)
+                .map_or(TypeBinding::Unresolved, TypeBinding::Alias),
             Some("struct" | "enum" | "union")
                 if nominal_attributes_preserve_binding(tokens, index) =>
             {
@@ -810,7 +839,7 @@ impl<'a> TypeScope<'a> {
             }
             Some("struct" | "enum" | "union") => TypeBinding::Unresolved,
             Some("mod") if tokens.get(index + 2).is_some_and(|t| t.is_punct(';')) => {
-                TypeBinding::Unresolved
+                file_module.map_or(TypeBinding::Unresolved, TypeBinding::FileModule)
             }
             _ => return,
         };
@@ -909,67 +938,363 @@ enum ScopePosition {
     Opaque(usize),
 }
 
-struct TypeScopes<'a> {
-    scopes: Vec<TypeScope<'a>>,
+#[derive(Clone, Copy)]
+enum SelfReceiver {
+    Inherit,
+    Mask,
+    Concrete(usize),
+}
+
+impl SelfReceiver {
+    fn resolve(self, parent: Option<usize>) -> Option<usize> {
+        match self {
+            Self::Inherit => parent,
+            Self::Mask => None,
+            Self::Concrete(target) => Some(target),
+        }
+    }
+}
+
+fn self_receiver_scopes(file: &ScreenFile<'_>) -> Vec<SelfReceiver> {
+    let tokens = &file.tokens;
+    let mut scopes = vec![SelfReceiver::Inherit; tokens.len()];
+    let mut index = 0;
+    while let Some(token) = tokens.get(index) {
+        if let Some(open) = opaque_group_open(tokens, index) {
+            index = file.group_ends[open].unwrap_or(tokens.len());
+            continue;
+        }
+        let is_impl = token.is_ident("impl") && starts_impl_item(tokens, index);
+        let is_trait =
+            token.is_ident("trait") && tokens.get(index + 1).and_then(Token::ident).is_some();
+        if (is_impl || is_trait)
+            && let Some(body) = file.header_bodies[index + 1]
+        {
+            scopes[body] = if is_impl {
+                concrete_impl_receiver(file, index, body)
+                    .map_or(SelfReceiver::Mask, SelfReceiver::Concrete)
+            } else {
+                SelfReceiver::Mask
+            };
+            index = body;
+        }
+        index += 1;
+    }
+    scopes
+}
+
+fn starts_impl_item(tokens: &[Token], index: usize) -> bool {
+    let start = index
+        - usize::from(
+            tokens
+                .get(index.wrapping_sub(1))
+                .is_some_and(|token| token.is_ident("unsafe")),
+        );
+    tokens
+        .get(start.wrapping_sub(1))
+        .is_none_or(|token| matches!(token.kind, Tok::Punct('{' | '}' | ';' | ']')))
+}
+
+fn concrete_impl_receiver(file: &ScreenFile<'_>, declaration: usize, body: usize) -> Option<usize> {
+    let tokens = &file.tokens;
+    let ends = &file.group_ends;
+    let generic_start = declaration + 1;
+    let trait_start = if tokens.get(generic_start)?.is_punct('<') {
+        ends[generic_start]?
+    } else {
+        generic_start
+    };
+    let (_, separator) = impl_path(&tokens[..body], ends, trait_start, true)?;
+    if !tokens.get(separator)?.is_ident("for") {
+        return None;
+    }
+    let receiver_start = separator + 1;
+    let (receiver, boundary) = impl_path(&tokens[..body], ends, receiver_start, false)?;
+    if boundary != body && !tokens.get(boundary)?.is_ident("where") {
+        return None;
+    }
+    if receiver == receiver_start && trait_start != generic_start {
+        let (parameters, _) = generic_slots(&tokens[..trait_start], generic_start)?;
+        let name = tokens[receiver].ident()?;
+        if parameters.iter().any(|range| {
+            impl_type_parameter(tokens, ends, range).is_some_and(|parameter| parameter == name)
+        }) {
+            return None;
+        }
+    }
+    Some(receiver)
+}
+
+fn impl_path(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    start: usize,
+    type_arguments: bool,
+) -> Option<(usize, usize)> {
+    let mut position = start + 2 * usize::from(is_path_separator(tokens, start));
+    loop {
+        tokens.get(position)?.ident()?;
+        let ident = position;
+        position += 1;
+        if type_arguments
+            && tokens
+                .get(position)
+                .is_some_and(|token| token.is_punct('<'))
+        {
+            position = ends[position]?;
+        }
+        if !is_path_separator(tokens, position) {
+            return Some((ident, position));
+        }
+        position += 2;
+    }
+}
+
+fn impl_type_parameter<'a>(
+    tokens: &'a [Token],
+    ends: &[Option<usize>],
+    range: &Range<usize>,
+) -> Option<&'a str> {
+    let mut position = range.start;
+    while position < range.end && tokens[position].is_punct('#') {
+        position = ends.get(position + 1).copied().flatten()?;
+    }
+    if position >= range.end || tokens[position].is_ident("const") {
+        return None;
+    }
+    tokens[position].ident()
+}
+
+#[derive(Default)]
+enum ModuleFile {
+    #[default]
+    Missing,
+    Unique(usize),
+    Ambiguous,
+}
+
+#[derive(Default)]
+struct ModuleDirectory<'a> {
+    children: BTreeMap<&'a str, usize>,
+    file: ModuleFile,
+}
+
+struct ModulePaths<'a> {
+    directories: Vec<ModuleDirectory<'a>>,
+}
+
+impl<'a> ModulePaths<'a> {
+    fn include(&mut self, file: &'a Path, source: usize) -> Option<usize> {
+        let relative = file.strip_prefix(SCREEN_SOURCE).ok()?;
+        let mut directory = 0;
+        for part in relative.parent()?.iter() {
+            directory = self.include_child(directory, part.to_str()?);
+        }
+        if file == Path::new(SCREEN_LIB) {
+            return Some(directory);
+        }
+        if relative.file_name()?.to_str()? != "mod.rs" {
+            directory = self.include_child(directory, relative.file_stem()?.to_str()?);
+        }
+        let candidate = &mut self.directories[directory].file;
+        *candidate = match candidate {
+            ModuleFile::Missing => ModuleFile::Unique(source),
+            _ => ModuleFile::Ambiguous,
+        };
+        Some(directory)
+    }
+
+    fn include_child(&mut self, directory: usize, name: &'a str) -> usize {
+        if let Some(child) = self.child(directory, name) {
+            return child;
+        }
+        let child = self.directories.len();
+        self.directories.push(ModuleDirectory::default());
+        self.directories[directory].children.insert(name, child);
+        child
+    }
+
+    fn child(&self, directory: usize, name: &str) -> Option<usize> {
+        self.directories[directory].children.get(name).copied()
+    }
+
+    fn file(&self, directory: usize, name: &str) -> Option<usize> {
+        let child = self.child(directory, name)?;
+        match self.directories[child].file {
+            ModuleFile::Unique(source) => Some(source),
+            ModuleFile::Missing | ModuleFile::Ambiguous => None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct SourceScopes {
     enclosing: Vec<Option<ScopePosition>>,
-    crate_root: bool,
+    inner_scopes: Range<usize>,
+    connected: bool,
+}
+
+struct TypeScopes<'a> {
+    files: &'a [ScreenFile<'a>],
+    scopes: Vec<TypeScope<'a>>,
+    sources: Vec<SourceScopes>,
+    crate_root: Option<usize>,
 }
 
 impl<'a> TypeScopes<'a> {
-    fn collect(tokens: &'a [Token], crate_root: bool) -> Self {
-        let mut scopes = vec![TypeScope::default()];
+    fn collect(files: &'a [ScreenFile<'a>]) -> Self {
+        let mut paths = ModulePaths {
+            directories: vec![ModuleDirectory::default()],
+        };
+        let scopes = files
+            .iter()
+            .enumerate()
+            .map(|(source, file)| TypeScope {
+                source,
+                module: source,
+                directory: paths.include(file.path, source),
+                ..TypeScope::default()
+            })
+            .collect();
+        let mut graph = Self {
+            files,
+            scopes,
+            sources: (0..files.len()).map(|_| SourceScopes::default()).collect(),
+            crate_root: files
+                .iter()
+                .position(|file| file.path == Path::new(SCREEN_LIB)),
+        };
+        if let Some(root) = graph.crate_root {
+            graph.sources[root].connected = true;
+            let mut pending = VecDeque::from([root]);
+            while let Some(source) = pending.pop_front() {
+                graph.collect_file(source, &paths);
+                graph.attach_children(source, &mut pending);
+            }
+        }
+        for source in 0..files.len() {
+            if !graph.sources[source].connected {
+                graph.collect_file(source, &paths);
+            }
+        }
+        graph
+    }
+
+    fn source_scopes(&self, source: usize) -> impl Iterator<Item = usize> + use<> {
+        std::iter::once(source).chain(self.sources[source].inner_scopes.clone())
+    }
+
+    fn attach_children(&mut self, source: usize, pending: &mut VecDeque<usize>) {
+        let links: Vec<_> = self
+            .source_scopes(source)
+            .flat_map(|scope| {
+                self.scopes[scope]
+                    .bindings
+                    .values()
+                    .filter_map(move |binding| match binding {
+                        TypeBinding::FileModule(child) => Some((scope, *child)),
+                        _ => None,
+                    })
+            })
+            .collect();
+        for (scope, child) in links {
+            if !self.sources[child].connected {
+                self.scopes[child].module_parent = Some(scope);
+                self.sources[child].connected = true;
+                pending.push_back(child);
+            }
+        }
+    }
+
+    fn collect_file(&mut self, source: usize, paths: &ModulePaths<'a>) {
+        let file = &self.files[source];
+        let tokens = &file.tokens;
+        let receiver_scopes = self_receiver_scopes(file);
+        let inner_start = self.scopes.len();
         let mut enclosing = vec![None; tokens.len()];
-        let mut stack = vec![0];
+        let mut stack = vec![source];
         let mut index = 0;
         while let Some(token) = tokens.get(index) {
-            let scope = *stack.last().unwrap_or(&0);
+            let scope = *stack.last().unwrap_or(&source);
             if let Some(open) = opaque_group_open(tokens, index) {
-                let end = (closing(tokens, open) + 1).min(tokens.len());
+                let end = file.group_ends[open].unwrap_or(tokens.len());
                 enclosing[index..end].fill(Some(ScopePosition::Opaque(scope)));
                 index = end;
                 continue;
             }
             enclosing[index] = Some(ScopePosition::Rust(scope));
             if token.is_punct('{') {
-                stack.push(Self::enter_scope(tokens, index, &mut scopes, scope));
+                stack.push(self.enter_scope(source, index, scope, paths, receiver_scopes[index]));
             } else if token.is_punct('}') && stack.len() > 1 {
                 stack.pop();
             } else if token.is_ident("use") {
-                index = scopes[scope].import(tokens, index);
+                index = self.scopes[scope].import(tokens, index);
                 continue;
             } else {
-                scopes[scope].bind_item(tokens, index);
+                let file_module = self.file_module(source, scope, index, paths);
+                self.scopes[scope].bind_item(tokens, index, file_module);
             }
             index += 1;
         }
-        Self {
-            scopes,
-            enclosing,
-            crate_root,
+        self.sources[source].enclosing = enclosing;
+        self.sources[source].inner_scopes = inner_start..self.scopes.len();
+    }
+
+    fn file_module(
+        &self,
+        source: usize,
+        scope: usize,
+        declaration: usize,
+        paths: &ModulePaths<'a>,
+    ) -> Option<usize> {
+        let tokens = &self.files[source].tokens;
+        let module = &self.scopes[scope];
+        if !self.sources[source].connected
+            || scope != module.module
+            || !tokens[declaration].is_ident("mod")
+            || !tokens.get(declaration + 2)?.is_punct(';')
+            || has_outer_attribute(tokens, declaration)
+        {
+            return None;
         }
+        paths.file(module.directory?, tokens.get(declaration + 1)?.ident()?)
     }
 
     fn enter_scope(
-        tokens: &'a [Token],
+        &mut self,
+        source: usize,
         open: usize,
-        scopes: &mut Vec<TypeScope<'a>>,
         parent: usize,
+        paths: &ModulePaths<'a>,
+        receiver: SelfReceiver,
     ) -> usize {
-        let child = scopes.len();
-        let enclosing_module = scopes[parent].module;
+        let tokens = &self.files[source].tokens;
+        let child = self.scopes.len();
+        let enclosing_module = self.scopes[parent].module;
         let module = open
             .checked_sub(2)
             .filter(|&index| tokens[index].is_ident("mod"))
             .and_then(|index| tokens[index + 1].ident().map(|name| (index, name)));
-        if let Some((index, name)) = module {
-            let binding = if has_outer_attribute(tokens, index) {
+        let directory = module.and_then(|(declaration, name)| {
+            let attributed = has_outer_attribute(tokens, declaration);
+            let binding = if attributed {
                 TypeBinding::Unresolved
             } else {
                 TypeBinding::InlineModule(child)
             };
-            scopes[parent].bind(name, binding);
-        }
-        scopes.push(TypeScope {
+            self.scopes[parent].bind(name, binding);
+            if attributed {
+                return None;
+            }
+            paths.child(self.scopes[enclosing_module].directory?, name)
+        });
+        let self_receiver = if module.is_some() {
+            None
+        } else {
+            receiver.resolve(self.scopes[parent].self_receiver)
+        };
+        self.scopes.push(TypeScope {
+            source,
             parent: module.is_none().then_some(parent),
             module: if module.is_some() {
                 child
@@ -977,6 +1302,8 @@ impl<'a> TypeScopes<'a> {
                 enclosing_module
             },
             module_parent: module.map(|_| enclosing_module),
+            directory,
+            self_receiver,
             ..TypeScope::default()
         });
         child
@@ -1016,6 +1343,11 @@ impl<'a> TypeScopes<'a> {
             let Some(parent) = self.scopes[module].module_parent else {
                 return Ok(None);
             };
+            if self.scopes[module].source != self.scopes[parent].source
+                && !work.permits_file_modules()
+            {
+                return Ok(None);
+            }
             module = parent;
             if path.front() != Some(&"super") {
                 return Ok(Some(module));
@@ -1061,11 +1393,17 @@ impl<'a> TypeScopes<'a> {
             };
             let start = edge.map(|(scope, _, _)| scope);
             let (owner, binding) = match (start, name) {
-                (Some(_), "crate") if self.crate_root => {
-                    current = 0;
+                (Some(start), "crate") => {
+                    let source = self.scopes[start].source;
+                    let Some(root) = self.crate_root.filter(|root| {
+                        source == *root
+                            || self.sources[source].connected && work.permits_file_modules()
+                    }) else {
+                        return Ok(None);
+                    };
+                    current = root;
                     continue;
                 }
-                (Some(_), "crate") => return Ok(None),
                 (Some(start), "self") => {
                     current = self.scopes[start].module;
                     continue;
@@ -1105,6 +1443,12 @@ impl<'a> TypeScopes<'a> {
                 }
                 _ if path.is_empty() => return Ok(Some(binding)),
                 TypeBinding::InlineModule(child) => current = *child,
+                TypeBinding::FileModule(child)
+                    if work.permits_file_modules()
+                        && self.scopes[*child].module_parent == Some(owner.0) =>
+                {
+                    current = *child
+                }
                 _ => return Ok(None),
             }
         }
@@ -1112,15 +1456,16 @@ impl<'a> TypeScopes<'a> {
 
     fn binding_at(
         &self,
-        tokens: &'a [Token],
+        source: usize,
         end: usize,
         work: &mut AliasWork,
     ) -> Result<Option<&TypeBinding<'a>>, AliasWorkLimit> {
         work.charge(1)?;
+        let tokens = &self.files[source].tokens;
         if tokens[end].ident().is_none() {
             return Ok(None);
         }
-        let Some(position) = self.enclosing[end] else {
+        let Some(position) = self.sources[source].enclosing[end] else {
             return Ok(None);
         };
         let scope = match position {
@@ -1140,35 +1485,43 @@ impl<'a> TypeScopes<'a> {
 
     fn apply_alias(
         &self,
-        tokens: &'a [Token],
+        argument_source: usize,
         alias: &TypeAlias,
         arguments: Vec<Range<usize>>,
         work: &mut AliasWork,
-    ) -> Result<Option<Range<usize>>, AliasWorkLimit> {
-        let mut value = alias.value.clone();
-        let Some(application) = AliasApplication::new(tokens, alias, arguments, work)? else {
+    ) -> Result<Option<TypeSpan>, AliasWorkLimit> {
+        let mut value = TypeSpan {
+            source: alias.source,
+            range: alias.value.clone(),
+        };
+        let Some(application) =
+            AliasApplication::new(self.files, alias, argument_source, arguments, work)?
+        else {
             return Ok(None);
         };
         let mut applications = vec![application];
         loop {
-            work.charge(value.len().max(1))?;
-            let first = value.start + 2 * usize::from(is_path_separator(tokens, value.start));
+            let tokens = &self.files[value.source].tokens;
+            let span = &value.range;
+            work.charge(span.len().max(1))?;
+            let first = span.start + 2 * usize::from(is_path_separator(tokens, span.start));
             let mut end = first;
             let Some(name) = tokens.get(end).and_then(Token::ident) else {
                 return Ok(None);
             };
-            while end + 3 < value.end
+            while end + 3 < span.end
                 && is_path_separator(tokens, end + 1)
                 && tokens[end + 3].ident().is_some()
             {
                 end += 3;
             }
-            if end + 1 == value.end {
-                let Some(current) = applications.last_mut().filter(|_| value.start == end) else {
+            if end + 1 == span.end {
+                let Some(current) = applications.last_mut().filter(|_| span.start == end) else {
                     return Ok(Some(value));
                 };
                 work.charge(current.alias.parameters.len())?;
-                let Some(slot) = current.alias.type_parameter_slot(tokens, name) else {
+                let alias_tokens = &self.files[current.alias.source].tokens;
+                let Some(slot) = current.alias.type_parameter_slot(alias_tokens, name) else {
                     return Ok(Some(value));
                 };
                 if slot >= current.available {
@@ -1178,53 +1531,67 @@ impl<'a> TypeScopes<'a> {
                     return Ok(None);
                 };
                 if let Some(argument) = current.arguments.get(argument_slot) {
-                    value = argument.clone();
+                    value = TypeSpan {
+                        source: current.argument_source,
+                        range: argument.clone(),
+                    };
                     applications.truncate(applications.len() - 1);
                     continue;
                 }
                 work.charge(slot + 1 + current.alias.parameters[slot].len())?;
-                let Some(default) = current.alias.type_parameter_default(tokens, slot) else {
+                let Some(default) = current.alias.type_parameter_default(alias_tokens, slot) else {
                     return Ok(None);
                 };
-                value = default;
+                value = TypeSpan {
+                    source: current.alias.source,
+                    range: default,
+                };
                 current.available = slot;
                 continue;
             }
-            let Some(TypeBinding::Alias(alias)) = self.binding_at(tokens, end, work)? else {
+            let Some(TypeBinding::Alias(alias)) = self.binding_at(value.source, end, work)? else {
                 return Ok(None);
             };
             let arguments = end + 1 + 2 * usize::from(is_path_separator(tokens, end + 1));
-            let Some((slots, boundary)) = generic_slots(&tokens[..value.end], arguments) else {
+            let Some((slots, boundary)) = generic_slots(&tokens[..span.end], arguments) else {
                 return Ok(None);
             };
-            if boundary != value.end {
+            if boundary != span.end {
                 return Ok(None);
             }
             work.charge(applications.len())?;
-            if applications
-                .iter()
-                .any(|active| active.alias.declaration == alias.declaration)
-            {
+            if applications.iter().any(|active| {
+                active.alias.source == alias.source && active.alias.declaration == alias.declaration
+            }) {
                 return Ok(None);
             }
-            let Some(application) = AliasApplication::new(tokens, alias, slots, work)? else {
+            let Some(application) =
+                AliasApplication::new(self.files, alias, value.source, slots, work)?
+            else {
                 return Ok(None);
             };
-            value = alias.value.clone();
+            value = TypeSpan {
+                source: alias.source,
+                range: alias.value.clone(),
+            };
             applications.push(application);
         }
     }
 
     fn may_be_ratatui_buffer(
         &self,
-        tokens: &'a [Token],
+        source: usize,
         index: usize,
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
-        Ok(match self.binding_at(tokens, index, work)? {
+        let tokens = &self.files[source].tokens;
+        Ok(match self.binding_at(source, index, work)? {
             Some(TypeBinding::RatatuiBuffer) => true,
             Some(TypeBinding::Nominal)
-                if matches!(self.enclosing[index], Some(ScopePosition::Rust(_))) =>
+                if matches!(
+                    self.sources[source].enclosing[index],
+                    Some(ScopePosition::Rust(_))
+                ) =>
             {
                 false
             }
@@ -1235,12 +1602,33 @@ impl<'a> TypeScopes<'a> {
         })
     }
 
-    fn renamed_imports(&self, path: &Path) -> Vec<Violation> {
-        self.scopes
-            .iter()
-            .enumerate()
-            .flat_map(|(scope, bindings)| {
-                bindings
+    fn self_is_ratatui_buffer(
+        &self,
+        source: usize,
+        index: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasWorkLimit> {
+        work.charge(1)?;
+        let Some(position) = self.sources[source].enclosing[index] else {
+            return Ok(false);
+        };
+        let scope = match position {
+            ScopePosition::Rust(scope) | ScopePosition::Opaque(scope) => scope,
+        };
+        let Some(receiver) = self.scopes[scope].self_receiver else {
+            return Ok(false);
+        };
+        Ok(matches!(
+            self.binding_at(source, receiver, work)?,
+            Some(TypeBinding::RatatuiBuffer)
+        ))
+    }
+
+    fn renamed_imports(&self, source: usize) -> Vec<Violation> {
+        let path = self.files[source].path;
+        self.source_scopes(source)
+            .flat_map(|scope| {
+                self.scopes[scope]
                     .renamed
                     .iter()
                     .filter(move |&&(name, _)| {
@@ -1274,18 +1662,19 @@ fn path_start(
     Ok((start, false))
 }
 
-struct FieldPatternIndex {
-    ends: Vec<Option<usize>>,
+struct FieldPatternIndex<'a> {
+    ends: &'a [Option<usize>],
     excluded: Vec<bool>,
     fields: Vec<bool>,
     type_prefixes: Vec<bool>,
 }
 
-impl FieldPatternIndex {
-    fn new(tokens: &[Token]) -> Self {
-        let ends = pattern_group_ends(tokens);
-        let excluded = field_pattern_exclusions(tokens, &ends);
-        let fields = field_prefixes(tokens, &ends);
+impl<'a> FieldPatternIndex<'a> {
+    fn new(file: &'a ScreenFile<'_>) -> Self {
+        let tokens = &file.tokens;
+        let ends = &file.group_ends;
+        let excluded = field_pattern_exclusions(file);
+        let fields = field_prefixes(tokens, ends);
         let type_prefixes = pattern_type_prefixes(tokens);
         Self {
             ends,
@@ -1306,19 +1695,23 @@ impl FieldPatternIndex {
     }
 }
 
-fn buffer_pattern_matches<'a>(
-    tokens: &'a [Token],
+fn buffer_pattern_matches(
+    source: usize,
     index: usize,
-    types: &TypeScopes<'a>,
-    patterns: &FieldPatternIndex,
+    types: &TypeScopes<'_>,
+    patterns: &FieldPatternIndex<'_>,
     work_limit: usize,
 ) -> Result<bool, AliasWorkLimit> {
+    let tokens = &types.files[source].tokens;
     let mut work = AliasWork::Limited(work_limit);
     if tokens.get(index + 1).is_some_and(|t| t.is_punct('{')) {
         if !patterns.is_field_pattern(tokens, index, index + 1) {
             return Ok(false);
         }
-        return types.may_be_ratatui_buffer(tokens, index, &mut work);
+        if tokens[index].is_ident("Self") && !is_path_separator(tokens, index.wrapping_sub(2)) {
+            return types.self_is_ratatui_buffer(source, index, &mut work);
+        }
+        return types.may_be_ratatui_buffer(source, index, &mut work);
     }
     let start = index + 3;
     if !is_path_separator(tokens, index + 1) || !tokens.get(start).is_some_and(|t| t.is_punct('<'))
@@ -1331,42 +1724,45 @@ fn buffer_pattern_matches<'a>(
     if !patterns.is_field_pattern(tokens, index, open) {
         return Ok(false);
     }
-    let Some(TypeBinding::Alias(alias)) = types.binding_at(tokens, index, &mut work)? else {
+    let Some(TypeBinding::Alias(alias)) = types.binding_at(source, index, &mut work)? else {
         return Ok(false);
     };
     work.charge(open - start)?;
     let Some((slots, _)) = generic_slots(&tokens[..open], start) else {
         return Ok(false);
     };
-    let Some(argument) = types.apply_alias(tokens, alias, slots, &mut work)? else {
+    let Some(argument) = types.apply_alias(source, alias, slots, &mut work)? else {
         return Ok(false);
     };
     Ok(matches!(
-        types.binding_at(tokens, argument.end - 1, &mut work)?,
+        types.binding_at(argument.source, argument.range.end - 1, &mut work)?,
         Some(TypeBinding::RatatuiBuffer)
     ))
 }
 
-fn pattern_violations<'a>(
-    path: &Path,
-    tokens: &'a [Token],
-    aliases: &TypeScopes<'a>,
+fn pattern_violations(
+    source: usize,
+    aliases: &TypeScopes<'_>,
     work_limit: usize,
 ) -> Vec<Violation> {
-    let patterns = FieldPatternIndex::new(tokens);
+    let file = &aliases.files[source];
+    let tokens = &file.tokens;
+    let patterns = FieldPatternIndex::new(file);
     (1..tokens.len())
         .filter_map(|index| {
-            let message = match buffer_pattern_matches(tokens, index, aliases, &patterns, work_limit) {
+            let message = match buffer_pattern_matches(source, index, aliases, &patterns, work_limit) {
                 Ok(true) => "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
                 Ok(false) => return None,
                 Err(AliasWorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
             };
-            Some(Violation::at_line(CiStep::Screen, path, tokens[index].line, message))
+            Some(Violation::at_line(CiStep::Screen, file.path, tokens[index].line, message))
         })
         .collect()
 }
 
-fn field_pattern_exclusions(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
+fn field_pattern_exclusions(file: &ScreenFile<'_>) -> Vec<bool> {
+    let tokens = &file.tokens;
+    let ends = &file.group_ends;
     let mut test_ends = vec![0; tokens.len()];
     for index in 0..tokens.len() {
         if let Some(test) =
@@ -1378,7 +1774,7 @@ fn field_pattern_exclusions(tokens: &[Token], ends: &[Option<usize>]) -> Vec<boo
     let mut excluded = Vec::with_capacity(tokens.len());
     let mut test_end = 0;
     let mut braces = Vec::new();
-    let enum_bodies = enum_body_starts(tokens, ends);
+    let enum_bodies = enum_body_starts(file);
     for (index, token) in tokens.iter().enumerate() {
         test_end = test_end.max(test_ends[index]);
         excluded.push(index < test_end || braces.last().copied().unwrap_or(false));
@@ -1391,9 +1787,8 @@ fn field_pattern_exclusions(tokens: &[Token], ends: &[Option<usize>]) -> Vec<boo
     excluded
 }
 
-fn enum_body_starts(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
+fn header_body_starts(tokens: &[Token], ends: &[Option<usize>]) -> Vec<Option<usize>> {
     let mut where_bodies = vec![None; tokens.len() + 1];
-    let mut bodies = vec![false; tokens.len()];
     for index in (0..tokens.len()).rev() {
         let token = &tokens[index];
         where_bodies[index] = match token.kind {
@@ -1409,8 +1804,17 @@ fn enum_body_starts(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
             Tok::Punct('{' | '<' | '(' | '[') => ends[index].and_then(|end| where_bodies[end]),
             _ => where_bodies[index + 1],
         };
+    }
+    where_bodies
+}
+
+fn enum_body_starts(file: &ScreenFile<'_>) -> Vec<bool> {
+    let tokens = &file.tokens;
+    let mut bodies = vec![false; tokens.len()];
+    for (index, token) in tokens.iter().enumerate() {
         if token.is_ident("enum")
-            && let Some(body) = enum_body_after_name(tokens, ends, &where_bodies, index)
+            && let Some(body) =
+                enum_body_after_name(tokens, &file.group_ends, &file.header_bodies, index)
         {
             bodies[body] = true;
         }
