@@ -235,9 +235,8 @@ fn a_rename_with_new_roles_and_a_new_default_applies_cleanly() -> Out {
         .workspace(&WorkspaceName::parse("alpha2")?)
         .ok_or("alpha2")?;
     assert_eq!(moved.default_role, Some(RoleName::parse("other")?));
-    assert!(
-        matches!(&moved.roles, jackin_core::AllowedRoles::Only(set) if set.iter().map(ToString::to_string).collect::<Vec<_>>() == ["other"])
-    );
+    let only_other = jackin_core::RoleSet::new([RoleName::parse("other")?]).ok_or("no roles")?;
+    assert_eq!(moved.roles, jackin_core::AllowedRoles::Only(only_other));
     Ok(())
 }
 

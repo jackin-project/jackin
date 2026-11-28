@@ -3,6 +3,7 @@
 
 use jackin_core::Sha256;
 use std::error::Error;
+use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -255,6 +256,24 @@ async fn call(
     let result = ensure_image(engine, request, &tx, cancel).await;
     rx.close();
     result
+}
+
+#[tokio::test]
+async fn a_build_tightens_a_lock_directory_that_was_left_broad() -> TestResult {
+    guarded(async {
+        let rig = Rig::new()?;
+        let locks = rig.fixture.work.as_path().join("locks");
+        std::fs::create_dir_all(&locks)?;
+        std::fs::set_permissions(&locks, std::fs::Permissions::from_mode(0o755))?;
+        let request = rig.fixture.request()?;
+        call(&rig.engine(), &request, &CancellationToken::new()).await?;
+        assert_eq!(
+            std::fs::metadata(&locks)?.permissions().mode() & 0o777,
+            0o700
+        );
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

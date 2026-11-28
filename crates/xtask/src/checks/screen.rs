@@ -1,19 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fs;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use unicode_normalization::UnicodeNormalization;
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Token, lex_rust};
-use crate::repo::{FileKind, Repo};
+use crate::lex::{Tok, Token, lex_rust};
+use crate::repo::{DependencyKind, FileKind, Member, Repo};
 use crate::violation::{Violation, sorted};
 
 pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION"];
 
 const SCREEN_SOURCE: &str = "crates/jackin-tui/src";
+const SCREEN_LIB: &str = "crates/jackin-tui/src/lib.rs";
 
 const SCREEN_CHECK_FILE: &str = "crates/xtask/src/checks/screen.rs";
 
@@ -42,6 +47,8 @@ const KEYWORDS_BEFORE_ARRAY: [&str; 13] = [
     "match",
 ];
 
+const NON_PATTERN_KEYWORDS: [&str; 7] = ["for", "struct", "impl", "enum", "trait", "type", "union"];
+
 const SILENCING_ATTRIBUTES: [&str; 2] = ["allow", "expect"];
 
 const DRAWING_LINTS: [&str; 2] = ["disallowed_methods", "disallowed_fields"];
@@ -53,9 +60,13 @@ const RATATUI_ALLOWED: [&[&str]; 4] = [
     &["crossterm", "event"],
 ];
 
+const BUFFER_RENAME: &str = "C1: renames a ratatui Buffer; jackin-tui names the type as Buffer so the drawing gate can see it";
+const ALIAS_WORK_LIMIT: usize = 16_384;
+
 #[derive(Clone, Copy, Debug)]
 pub struct ScreenCheck {
     allowed: &'static [&'static str],
+    alias_work_limit: usize,
 }
 
 impl ScreenCheck {
@@ -66,7 +77,10 @@ impl ScreenCheck {
 
     #[must_use]
     pub const fn with_allowed(allowed: &'static [&'static str]) -> Self {
-        Self { allowed }
+        Self {
+            allowed,
+            alias_work_limit: ALIAS_WORK_LIMIT,
+        }
     }
 }
 
@@ -78,27 +92,77 @@ impl Check for ScreenCheck {
     fn run(&self, repo: &Repo) -> Vec<Violation> {
         let mut violations = Vec::new();
         let mut used: BTreeSet<&str> = BTreeSet::new();
-        let mut scanned = false;
-        for file in repo.files() {
-            if file.kind() != FileKind::Rust || !file.path().starts_with(SCREEN_SOURCE) {
-                continue;
+        let files: Vec<_> = repo
+            .files()
+            .iter()
+            .filter(|file| file.kind() == FileKind::Rust && file.path().starts_with(SCREEN_SOURCE))
+            .map(|file| ScreenFile::new(file.path(), file.text()))
+            .collect();
+        let mut roots = BTreeMap::new();
+        for dependency in repo
+            .members()
+            .iter()
+            .filter(|member| member.name() == "jackin-tui")
+            .flat_map(Member::dependencies)
+            .filter(|dependency| dependency.kind() != DependencyKind::Build)
+        {
+            let name = dependency.alias().replace('-', "_");
+            let is_ratatui = dependency.name() == "ratatui";
+            roots
+                .entry(name)
+                .and_modify(|value| *value &= is_ratatui)
+                .or_insert(is_ratatui);
+        }
+        roots.entry("ratatui".to_owned()).or_insert(true);
+        let mut paths = ModulePaths {
+            directories: vec![ModuleDirectory::default()],
+        };
+        let directories: Vec<_> = files
+            .iter()
+            .enumerate()
+            .map(|(source, file)| paths.include(file.path, source))
+            .collect();
+        let target_roots = target_root_indices(repo, &files);
+        let mut reached = vec![false; files.len()];
+        let mut context_hits = BTreeMap::new();
+        for root in target_roots {
+            let types =
+                TypeScopes::collect(&files, roots.clone(), &paths, &directories, Some(root), &[]);
+            let selected: Vec<_> = types
+                .sources
+                .iter()
+                .map(|source| source.connected)
+                .collect();
+            for (seen, included) in reached.iter_mut().zip(&selected) {
+                *seen |= *included;
             }
-            scanned = true;
-            let tokens = lex_rust(file.text()).tokens;
-            violations.extend(import_violations(file.path(), &tokens));
-            violations.extend(index_violations(file.path(), &tokens));
-            violations.extend(silencing_violations(file.path(), &tokens));
-            violations.extend(literal_violations(
-                file.path(),
-                &tokens,
-                self.allowed,
-                &mut used,
-            ));
+            merge_context_hits(
+                &mut context_hits,
+                context_violations(&files, &types, &selected, self.alias_work_limit),
+            );
+        }
+        let orphaned: Vec<_> = reached.iter().map(|seen| !seen).collect();
+        if orphaned.iter().any(|orphan| *orphan) {
+            let types = TypeScopes::collect(&files, roots, &paths, &directories, None, &orphaned);
+            merge_context_hits(
+                &mut context_hits,
+                context_violations(&files, &types, &orphaned, self.alias_work_limit),
+            );
+        }
+        for (_, (count, violation)) in context_hits {
+            violations.extend(std::iter::repeat_n(violation, count));
+        }
+        for file in &files {
+            let path = file.path;
+            let tokens = &file.tokens;
+            violations.extend(index_violations(path, tokens));
+            violations.extend(silencing_violations(path, tokens));
+            violations.extend(literal_violations(path, tokens, self.allowed, &mut used));
         }
         for entry in self
             .allowed
             .iter()
-            .filter(|entry| scanned && !used.contains(**entry))
+            .filter(|entry| !files.is_empty() && !used.contains(**entry))
         {
             violations.push(Violation::at_file(
                 self.step(),
@@ -108,6 +172,161 @@ impl Check for ScreenCheck {
         }
         sorted(violations)
     }
+}
+
+fn target_root_indices(repo: &Repo, files: &[ScreenFile<'_>]) -> BTreeSet<usize> {
+    let mut roots = BTreeSet::new();
+    let mut physical = None;
+    for target in repo
+        .members()
+        .iter()
+        .filter(|member| member.name() == "jackin-tui")
+        .flat_map(Member::targets)
+    {
+        if let Some(source) = files.iter().position(|file| file.path == target) {
+            roots.insert(source);
+            continue;
+        }
+        let Ok(path) = fs::canonicalize(repo.root().join(target)) else {
+            continue;
+        };
+        let index = physical.get_or_insert_with(|| {
+            let mut index = BTreeMap::new();
+            for (source, file) in files.iter().enumerate() {
+                if let Ok(path) = fs::canonicalize(repo.root().join(file.path)) {
+                    index
+                        .entry(path)
+                        .and_modify(|existing: &mut Option<usize>| *existing = None)
+                        .or_insert(Some(source));
+                }
+            }
+            index
+        });
+        if let Some(Some(source)) = index.get(&path) {
+            roots.insert(*source);
+        }
+    }
+    roots
+}
+
+struct ScreenOccurrence {
+    source: usize,
+    token: usize,
+    violation: Violation,
+}
+
+type ContextHits =
+    BTreeMap<(usize, usize, Option<PathBuf>, Option<u32>, String), (usize, Violation)>;
+
+fn merge_context_hits(merged: &mut ContextHits, occurrences: Vec<ScreenOccurrence>) {
+    let mut counts = BTreeMap::new();
+    for ScreenOccurrence {
+        source,
+        token,
+        violation,
+    } in occurrences
+    {
+        let key = (
+            source,
+            token,
+            violation.path.clone(),
+            violation.line,
+            violation.message.clone(),
+        );
+        let count = counts.entry(key.clone()).or_insert(0);
+        *count += 1;
+        merged
+            .entry(key)
+            .and_modify(|existing| existing.0 = existing.0.max(*count))
+            .or_insert((*count, violation));
+    }
+}
+
+fn context_violations(
+    files: &[ScreenFile<'_>],
+    types: &TypeScopes<'_>,
+    selected: &[bool],
+    work_limit: usize,
+) -> Vec<ScreenOccurrence> {
+    let mut occurrences = Vec::new();
+    for (source, _) in files
+        .iter()
+        .enumerate()
+        .filter(|(source, _)| selected[*source])
+    {
+        let mut violations = Vec::new();
+        violations.extend(import_violations(source, types));
+        violations.extend(types.direct_import_violations(source));
+        violations.extend(types.renamed_imports(source));
+        violations.extend(pattern_violations(source, types, work_limit));
+        violations.extend(type_alias_violations(source, types));
+        violations.extend(macro_lint_level_violations(source, types));
+        violations.extend(include_violations(source, types));
+        occurrences.extend(
+            violations
+                .into_iter()
+                .map(|(token, violation)| ScreenOccurrence {
+                    source,
+                    token,
+                    violation,
+                }),
+        );
+    }
+    occurrences
+}
+
+struct ScreenFile<'a> {
+    path: &'a Path,
+    tokens: Vec<Token>,
+    doc_before: Vec<bool>,
+    group_ends: Vec<Option<usize>>,
+    header_bodies: Vec<Option<usize>>,
+    may_supply_matches: bool,
+}
+
+impl<'a> ScreenFile<'a> {
+    fn new(path: &'a Path, text: &str) -> Self {
+        let lexed = lex_rust(text);
+        let mut tokens = lexed.tokens;
+        for token in &mut tokens {
+            if let Tok::Ident(name) | Tok::RawIdent(name) = &mut token.kind
+                && !name.is_ascii()
+            {
+                *name = name.nfc().collect();
+            }
+        }
+        let mut doc_before = vec![false; tokens.len() + 1];
+        for comment in lexed.comments {
+            if is_doc_comment(&comment.text) {
+                doc_before[comment.tokens_before] = true;
+            }
+        }
+        let group_ends = pattern_group_ends(&tokens);
+        let header_bodies = header_body_starts(&tokens, &group_ends);
+        let may_supply_matches = file_may_supply_matches(&tokens, &group_ends);
+        Self {
+            path,
+            tokens,
+            doc_before,
+            group_ends,
+            header_bodies,
+            may_supply_matches,
+        }
+    }
+
+    fn macro_invocation_literal(&self, group: &Range<usize>) -> Option<MacroLiteral<'_>> {
+        let close = group.end - 1;
+        let start = group.start + 1;
+        let literal = macro_literal(&self.tokens[start..close])?;
+        (!self.doc_before[start..=close].iter().any(|&doc| doc)).then_some(literal)
+    }
+}
+
+fn is_doc_comment(text: &str) -> bool {
+    text.starts_with("//!")
+        || text.starts_with("///") && !text.starts_with("////")
+        || text.starts_with("/*!")
+        || text.starts_with("/**") && !text.starts_with("/***") && text != "/**/"
 }
 
 fn closing(tokens: &[Token], open: usize) -> usize {
@@ -184,6 +403,14 @@ fn error_types(tokens: &[Token]) -> BTreeSet<&str> {
 }
 
 fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
+    cfg_test_bounds(tokens, index, |open| closing(tokens, open) + 1)
+}
+
+fn cfg_test_bounds(
+    tokens: &[Token],
+    index: usize,
+    group_end: impl Fn(usize) -> usize,
+) -> Option<Range<usize>> {
     let attribute = [
         |t: &Token| t.is_punct('#'),
         |t: &Token| t.is_punct('['),
@@ -201,6 +428,9 @@ fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
     let mut position = index + attribute.len();
     if tokens.get(position).is_some_and(|t| t.is_ident("pub")) {
         position += 1;
+        if tokens.get(position).is_some_and(|t| t.is_punct('(')) {
+            position = group_end(position);
+        }
     }
     if !tokens.get(position)?.is_ident("mod") || tokens.get(position + 1)?.ident().is_none() {
         return None;
@@ -209,7 +439,7 @@ fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
     tokens
         .get(open)?
         .is_punct('{')
-        .then(|| open..closing(tokens, open) + 1)
+        .then(|| open..group_end(open))
 }
 
 fn macro_arguments(tokens: &[Token], index: usize) -> Option<Range<usize>> {
@@ -283,18 +513,39 @@ fn literal_violations<'a>(
     violations
 }
 
-fn path_tree(
-    tokens: &[Token],
+#[derive(Clone)]
+struct PathLeaf<'a> {
+    segments: Vec<&'a str>,
+    rename: Option<(&'a str, u32)>,
+    root: usize,
+    terminal: usize,
+    absolute: bool,
+}
+
+fn path_tree<'a>(
+    tokens: &'a [Token],
     position: &mut usize,
-    prefix: &[String],
-    out: &mut Vec<Vec<String>>,
+    prefix: &[&'a str],
+    inherited_root: Option<usize>,
+    inherited_absolute: bool,
+    out: &mut Vec<PathLeaf<'a>>,
 ) {
     let mut path = prefix.to_vec();
+    let mut root = inherited_root;
+    let mut absolute = inherited_absolute;
+    if is_path_separator(tokens, *position) {
+        *position += 2;
+        path.clear();
+        root = None;
+        absolute = true;
+    }
+    let mut rename = None;
+    let mut terminal = None;
     while let Some(token) = tokens.get(*position) {
         if token.is_punct('{') {
             *position += 1;
             loop {
-                path_tree(tokens, position, &path, out);
+                path_tree(tokens, position, &path, root, absolute, out);
                 match tokens.get(*position) {
                     Some(next) if next.is_punct(',') => *position += 1,
                     Some(next) if next.is_punct('}') => {
@@ -312,52 +563,101 @@ fn path_tree(
         } else {
             break;
         };
-        path.push(segment.to_owned());
+        root.get_or_insert(*position);
+        terminal = Some(*position);
+        path.push(segment);
         *position += 1;
         if segment != "*" && is_path_separator(tokens, *position) {
             *position += 2;
             continue;
         }
         if tokens.get(*position).is_some_and(|t| t.is_ident("as")) {
+            rename = tokens
+                .get(*position + 1)
+                .and_then(Token::ident)
+                .map(|name| (name, token.line));
             *position += 2;
         }
         break;
     }
     if path.len() > prefix.len() || prefix.is_empty() {
-        out.push(path);
+        out.push(PathLeaf {
+            segments: path,
+            rename,
+            root: root.unwrap_or(*position),
+            terminal: terminal.unwrap_or(*position),
+            absolute,
+        });
     }
 }
 
-fn import_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
+fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
+    let file = &types.files[source];
+    let path = file.path;
+    let tokens = &file.tokens;
     let mut violations = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
+        if types.sources[source].use_enclosing[index].is_some()
+            || !is_path_separator(tokens, index + 1)
+        {
+            continue;
+        }
         let continues_path = index >= 3
             && is_path_separator(tokens, index - 2)
-            && tokens[index - 3]
+            && tokens[index - 3].ident().is_some()
+            && !KEYWORDS_BEFORE_PATH
+                .iter()
+                .any(|keyword| tokens[index - 3].is_keyword(keyword));
+        if !continues_path
+            && token
                 .ident()
-                .is_some_and(|ident| !KEYWORDS_BEFORE_PATH.contains(&ident));
-        let starts_path = token.is_ident("ratatui") && !continues_path;
+                .is_some_and(|name| types.conditional_root_at(source, index, name))
+        {
+            let mut position = index;
+            let mut paths = Vec::new();
+            path_tree(tokens, &mut position, &[], None, false, &mut paths);
+            if paths.iter().any(|leaf| {
+                !RATATUI_ALLOWED
+                    .iter()
+                    .any(|prefix| leaf.segments[1..].starts_with(prefix))
+            }) {
+                violations.push((
+                    index,
+                    Violation::at_line(
+                        CiStep::Screen,
+                        path,
+                        token.line,
+                        "C1: conditional module leaves ratatui root provenance uncertain",
+                    ),
+                ));
+            }
+            continue;
+        }
+        let starts_path = token
+            .ident()
+            .is_some_and(|name| types.root_at(source, index, name))
+            && !continues_path;
         if !starts_path {
             continue;
         }
         let mut position = index;
         let mut paths = Vec::new();
-        path_tree(tokens, &mut position, &[], &mut paths);
-        for full in paths {
-            let rest: Vec<&str> = full.iter().skip(1).map(String::as_str).collect();
+        path_tree(tokens, &mut position, &[], None, false, &mut paths);
+        for leaf in paths {
+            let rest = &leaf.segments[1..];
             let allowed = RATATUI_ALLOWED
                 .iter()
                 .any(|prefix| rest.starts_with(prefix));
             if !allowed {
-                violations.push(Violation::at_line(
+                violations.push((leaf.terminal, Violation::at_line(
                     CiStep::Screen,
                     path,
                     token.line,
                     format!(
                         "C1: imports {}; jackin-tui may import only Frame, Rect, Buffer and crossterm::event from ratatui",
-                        full.join("::")
+                        leaf.segments.join("::")
                     ),
-                ));
+                )));
             }
         }
     }
@@ -418,6 +718,3687 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
+fn type_alias_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
+    let file = &types.files[source];
+    let tokens = &file.tokens;
+    tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| token.is_ident("type"))
+        .filter_map(|(index, token)| {
+            let alias = TypeAlias::parse(tokens, index, source)?;
+            let message = alias.value.clone().find_map(|target| {
+                let message = match types.may_be_ratatui_buffer(
+                    source,
+                    target,
+                    BufferReference::Rename,
+                    &mut AliasWork::Unlimited,
+                ) {
+                    Ok(true) => BUFFER_RENAME,
+                    Err(AliasResolutionError::ConditionalRoot) => {
+                        "C1: conditional module leaves ratatui root provenance uncertain"
+                    }
+                    _ => return None,
+                };
+                if associated_argument_name(tokens, target)
+                    || tokens[target].ident().is_some_and(|name| {
+                        !is_path_separator(tokens, target.wrapping_sub(2))
+                            && alias.type_parameter_slot(tokens, name).is_some()
+                    })
+                {
+                    return None;
+                }
+                Some(message)
+            })?;
+            Some((
+                index,
+                Violation::at_line(CiStep::Screen, file.path, token.line, message),
+            ))
+        })
+        .collect()
+}
+
+fn generic_slots(tokens: &[Token], open: usize) -> Option<(Vec<Range<usize>>, usize)> {
+    if !tokens.get(open)?.is_punct('<') {
+        return None;
+    }
+    let mut slots = Vec::new();
+    let mut start = open + 1;
+    let mut index = start;
+    let mut depth = 0;
+    while let Some(token) = tokens.get(index) {
+        if ['(', '[', '{'].iter().any(|c| token.is_punct(*c)) {
+            index = closing(tokens, index) + 1;
+            continue;
+        }
+        if token.is_punct('<') {
+            depth += 1;
+        } else if token.is_punct('>') && !tokens[index - 1].is_punct('-') {
+            if depth == 0 {
+                if start < index {
+                    slots.push(start..index);
+                }
+                return Some((slots, index + 1));
+            }
+            depth -= 1;
+        } else if token.is_punct(',') && depth == 0 {
+            slots.push(start..index);
+            start = index + 1;
+        }
+        index += 1;
+    }
+    None
+}
+
+fn pattern_group_ends(tokens: &[Token]) -> Vec<Option<usize>> {
+    let mut ends = vec![None; tokens.len()];
+    let mut opens = Vec::new();
+    let mut groups = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        match token.kind {
+            Tok::Punct('(' | '[' | '{') => groups.push((index, opens.len())),
+            Tok::Punct(')' | ']' | '}') => {
+                if let Some((open, start)) = groups.pop() {
+                    ends[open] = Some(index + 1);
+                    opens.truncate(start);
+                }
+            }
+            Tok::Punct('<') => opens.push(index),
+            Tok::Punct('>')
+                if opens.len() > groups.last().map_or(0, |&(_, start)| start)
+                    && !tokens[index - 1].is_punct('-') =>
+            {
+                if let Some(open) = opens.pop() {
+                    ends[open] = Some(index + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    ends
+}
+
+fn associated_argument_name(tokens: &[Token], index: usize) -> bool {
+    if !tokens
+        .get(index.wrapping_sub(1))
+        .is_some_and(|token| matches!(token.kind, Tok::Punct('<' | ',')))
+    {
+        return false;
+    }
+    let after_name = index + 1;
+    let arguments = after_name + 2 * usize::from(is_path_separator(tokens, after_name));
+    let boundary = if tokens
+        .get(arguments)
+        .is_some_and(|token| token.is_punct('<'))
+    {
+        let Some((_, end)) = generic_slots(tokens, arguments) else {
+            return false;
+        };
+        end
+    } else {
+        after_name
+    };
+    tokens.get(boundary).is_some_and(|token| {
+        token.is_punct('=')
+            || token.is_punct(':')
+                && (!is_path_separator(tokens, boundary) || is_path_separator(tokens, boundary + 1))
+    })
+}
+
+fn alias_boundary(tokens: &[Token], mut index: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    while let Some(token) = tokens.get(index) {
+        match &token.kind {
+            Tok::Punct('(' | '[' | '{') => index = closing(tokens, index),
+            Tok::Punct('<') => depth += 1,
+            Tok::Punct('>') if !tokens[index - 1].is_punct('-') => depth = depth.checked_sub(1)?,
+            Tok::Punct('=') if depth == 0 => return Some(index),
+            Tok::Ident(name) if depth == 0 && name == "where" => return Some(index),
+            Tok::Punct(';') => return (depth == 0).then_some(index),
+            Tok::Punct(')' | ']' | '}') => return None,
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+struct TypeAlias {
+    source: usize,
+    declaration: usize,
+    parameters: Vec<Range<usize>>,
+    conditional: Vec<bool>,
+    opaque: Vec<bool>,
+    has_conditional: bool,
+    value: Range<usize>,
+}
+
+fn parameter_attributes(
+    tokens: &[Token],
+    mut range: Range<usize>,
+) -> Option<(Range<usize>, bool, bool)> {
+    let mut conditional = false;
+    let mut opaque = false;
+    while range.start < range.end && tokens[range.start].is_punct('#') {
+        let open = range.start + 1;
+        if !tokens.get(open).is_some_and(|token| token.is_punct('[')) {
+            return None;
+        }
+        let close = closing(&tokens[..range.end], open);
+        if close >= range.end {
+            return None;
+        }
+        let attribute = &tokens[open + 1..close];
+        let constant = |name: &str| {
+            matches!(attribute, [cfg, outer, inner, args, args_end, outer_end]
+            if cfg.is_keyword("cfg") && outer.is_punct('(') && inner.is_ident(name)
+                && args.is_punct('(') && args_end.is_punct(')') && outer_end.is_punct(')'))
+        };
+        if constant("any") {
+            return None;
+        }
+        if !constant("all") && !inert_lint_attribute(attribute) {
+            conditional = true;
+            opaque |= !attribute
+                .first()
+                .is_some_and(|token| token.is_keyword("cfg"));
+        }
+        range.start = close + 1;
+    }
+    (!range.is_empty()).then_some((range, conditional, opaque))
+}
+
+impl TypeAlias {
+    fn parse(tokens: &[Token], index: usize, source: usize) -> Option<Self> {
+        tokens.get(index + 1)?.ident()?;
+        let after_name = index + 2;
+        let (parameters, mut assignment) = if tokens.get(after_name)?.is_punct('<') {
+            generic_slots(tokens, after_name)?
+        } else {
+            (Vec::new(), after_name)
+        };
+        if tokens.get(assignment)?.is_ident("where") {
+            assignment = alias_boundary(tokens, assignment + 1)?;
+        }
+        if !tokens[assignment].is_punct('=') {
+            return None;
+        }
+        let start = assignment + 1;
+        let end = alias_boundary(tokens, start)?;
+        let terminator = if tokens[end].is_ident("where") {
+            alias_boundary(tokens, end + 1)?
+        } else {
+            end
+        };
+        let mut normalized = Vec::new();
+        let mut conditional = Vec::new();
+        let mut opaque = Vec::new();
+        for (range, presence, transform) in parameters
+            .into_iter()
+            .filter_map(|range| parameter_attributes(tokens, range))
+        {
+            normalized.push(range);
+            conditional.push(presence);
+            opaque.push(transform);
+        }
+        let has_conditional = conditional.iter().any(|value| *value);
+        (start < end && tokens[terminator].is_punct(';')).then_some(Self {
+            source,
+            declaration: index,
+            parameters: normalized,
+            conditional,
+            opaque,
+            has_conditional,
+            value: start..end,
+        })
+    }
+
+    fn type_parameter_slot(&self, tokens: &[Token], name: &str) -> Option<usize> {
+        self.parameters.iter().position(|range| {
+            !range.is_empty()
+                && !tokens[range.start].is_ident("const")
+                && tokens[range.start].is_ident(name)
+        })
+    }
+
+    fn type_parameter_default(&self, tokens: &[Token], slot: usize) -> Option<Range<usize>> {
+        let parameters = self.parameters.get(..=slot)?;
+        if parameters.iter().any(|range| {
+            range.is_empty()
+                || !(tokens[range.start].ident().is_some()
+                    || tokens[range.start].kind == Tok::Lifetime)
+        }) {
+            return None;
+        }
+        let parameter = parameters.last()?;
+        let equals = alias_boundary(&tokens[..parameter.end], parameter.start + 1)?;
+        let start = equals + 1;
+        (tokens[equals].is_punct('=') && start < parameter.end).then_some(start..parameter.end)
+    }
+}
+
+struct AliasApplication<'a> {
+    alias: &'a TypeAlias,
+    arguments: Vec<Range<usize>>,
+    argument_source: usize,
+    elided_lifetimes: usize,
+    conditional_lifetimes: bool,
+    available: usize,
+}
+
+struct TypeSpan {
+    source: usize,
+    range: Range<usize>,
+}
+
+impl<'a> AliasApplication<'a> {
+    fn new(
+        files: &[ScreenFile<'_>],
+        alias: &'a TypeAlias,
+        argument_source: usize,
+        arguments: Vec<Range<usize>>,
+        work: &mut AliasWork,
+    ) -> Result<Option<Self>, AliasResolutionError> {
+        let declared =
+            count_leading_lifetimes(&files[alias.source].tokens, &alias.parameters, work)?;
+        let conditional_lifetimes = alias.conditional[..declared].iter().any(|value| *value);
+        let supplied = count_leading_lifetimes(&files[argument_source].tokens, &arguments, work)?;
+        if !conditional_lifetimes && supplied != 0 && supplied != declared {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            alias,
+            arguments,
+            argument_source,
+            elided_lifetimes: declared.saturating_sub(supplied),
+            conditional_lifetimes,
+            available: alias.parameters.len(),
+        }))
+    }
+}
+
+fn count_leading_lifetimes(
+    tokens: &[Token],
+    slots: &[Range<usize>],
+    work: &mut AliasWork,
+) -> Result<usize, AliasResolutionError> {
+    for (index, slot) in slots.iter().enumerate() {
+        work.charge(1)?;
+        if slot.is_empty() || tokens[slot.start].kind != Tok::Lifetime {
+            return Ok(index);
+        }
+    }
+    Ok(slots.len())
+}
+
+enum AliasWork {
+    Limited(usize),
+    Unlimited,
+}
+
+enum AliasResolutionError {
+    WorkLimit,
+    ConditionalParameters,
+    ConditionalRoot,
+}
+
+impl AliasWork {
+    fn permits_file_modules(&self) -> bool {
+        matches!(self, Self::Limited(_))
+    }
+
+    fn charge(&mut self, units: usize) -> Result<(), AliasResolutionError> {
+        if let Self::Limited(remaining) = self {
+            *remaining = remaining
+                .checked_sub(units)
+                .ok_or(AliasResolutionError::WorkLimit)?;
+        }
+        Ok(())
+    }
+
+    fn charge_name(&mut self, name: &str) -> Result<(), AliasResolutionError> {
+        self.charge(name.len().saturating_add(1))
+    }
+}
+
+fn enum_named_variants<'a>(
+    file: &'a ScreenFile<'_>,
+    declaration: usize,
+) -> Option<BTreeSet<&'a str>> {
+    let tokens = &file.tokens;
+    let body = enum_body_after_name(tokens, &file.group_ends, &file.header_bodies, declaration)?;
+    let end = file.group_ends[body]? - 1;
+    let mut names = BTreeSet::new();
+    let mut index = body + 1;
+    while index < end {
+        while index < end && tokens[index].is_punct('#') {
+            let open = opaque_group_open(tokens, index)?;
+            index = file.group_ends[open]?;
+        }
+        let name = tokens.get(index)?.ident()?;
+        if tokens
+            .get(index + 1)
+            .is_some_and(|token| token.is_punct('{'))
+            && nominal_attributes_preserve_binding(tokens, index)
+            && !macro_item_disabled(tokens, index)
+        {
+            names.insert(name);
+        }
+        index += 1;
+        while index < end && !tokens[index].is_punct(',') {
+            if matches!(tokens[index].kind, Tok::Punct('(' | '[' | '{')) {
+                index = file.group_ends[index]?;
+            } else if let Some(close) = matches_angle_end(file, index, end) {
+                index = close;
+            } else {
+                index += 1;
+            }
+        }
+        index += usize::from(index < end);
+    }
+    Some(names)
+}
+
+enum TypeBinding<'a> {
+    Alias(TypeAlias),
+    RatatuiBuffer,
+    Nominal,
+    NominalEnum(BTreeSet<&'a str>),
+    InlineModule(usize),
+    FileModule(FileModule),
+    Import(ImportPath<'a>),
+    Unresolved,
+}
+
+impl TypeBinding<'_> {
+    fn is_nominal(&self) -> bool {
+        matches!(self, Self::Nominal | Self::NominalEnum(_))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BufferReference {
+    Rename,
+    FieldPattern,
+}
+
+struct ImportPath<'a> {
+    segments: Vec<&'a str>,
+    absolute: bool,
+}
+
+struct GlobPath<'a> {
+    path: ImportPath<'a>,
+    public: Option<bool>,
+}
+
+enum GlobVisit {
+    Enter(usize, bool),
+    Exit(usize, bool),
+}
+
+#[derive(Default)]
+struct GlobPaths<'a> {
+    known: Vec<GlobPath<'a>>,
+    unknown: bool,
+}
+
+#[derive(Clone, Copy)]
+struct FileModule {
+    source: usize,
+    directory: usize,
+    matches_textual: bool,
+    declaration: usize,
+}
+
+#[derive(Default)]
+struct TextualMacros<'a> {
+    first_names: BTreeMap<&'a str, usize>,
+    unknown_at: Option<usize>,
+    parent: Option<(usize, usize)>,
+}
+
+#[derive(Default)]
+struct TypeScope<'a> {
+    source: usize,
+    parent: Option<usize>,
+    module: usize,
+    module_parent: Option<usize>,
+    directory: Option<usize>,
+    self_receiver: Option<ImplReceiver>,
+    guard_origin: Option<usize>,
+    bindings: BTreeMap<&'a str, TypeBinding<'a>>,
+    renamed: Vec<(&'a str, u32, usize)>,
+    imports: Vec<PathLeaf<'a>>,
+    glob_import: bool,
+    glob_paths: GlobPaths<'a>,
+    public_bindings: BTreeSet<&'a str>,
+    uncertain_visibility: BTreeSet<&'a str>,
+    conditional_roots: BTreeSet<&'a str>,
+    matches_imported: MatchesImport,
+    named_matches_imports: BTreeMap<&'a str, MatchesImport>,
+    named_include_imports: BTreeMap<&'a str, MatchesImport>,
+    matches_textual: bool,
+    textual_macros: TextualMacros<'a>,
+    matches_to_parent: bool,
+    extern_macro_roots: [Option<bool>; 2],
+    extern_roots: BTreeMap<&'a str, Option<&'a str>>,
+}
+
+impl<'a> TypeScope<'a> {
+    fn bind(&mut self, name: &'a str, binding: TypeBinding<'a>) {
+        self.bindings
+            .entry(name)
+            .and_modify(|existing| *existing = TypeBinding::Unresolved)
+            .or_insert(binding);
+    }
+
+    fn import(&mut self, tokens: &'a [Token], index: usize) -> usize {
+        let mut position = index + 1;
+        let mut paths = Vec::new();
+        path_tree(tokens, &mut position, &[], None, false, &mut paths);
+        self.imports.extend(paths.iter().cloned());
+        if macro_item_disabled(tokens, index) {
+            return position;
+        }
+        let attributed = has_outer_attribute(tokens, index);
+        let macro_attributed = attributed
+            && has_macro_attribute(tokens, index, |attribute| !inert_lint_attribute(attribute));
+        for mut path in paths {
+            let absolute = path.absolute;
+            let segments = path.segments.as_slice();
+            let name = match (path.rename, segments) {
+                (Some((name, _)), _) => name,
+                (None, [.., "*"]) => {
+                    self.glob_import = true;
+                    if macro_attributed {
+                        self.glob_paths.unknown = true;
+                    } else {
+                        path.segments.pop();
+                        self.glob_paths.known.push(GlobPath {
+                            path: ImportPath {
+                                segments: path.segments,
+                                absolute,
+                            },
+                            public: glob_visibility(tokens, index),
+                        });
+                    }
+                    continue;
+                }
+                (None, [.., name, "self"] | [.., name]) => *name,
+                _ => continue,
+            };
+            if name == "matches" {
+                self.matches_imported =
+                    self.matches_imported
+                        .include(segments, absolute, macro_attributed);
+            } else {
+                let entry = self.named_matches_imports.entry(name).or_default();
+                *entry = entry.include(segments, absolute, macro_attributed);
+            }
+            let entry = self.named_include_imports.entry(name).or_default();
+            *entry = entry.include_macro(segments, absolute, macro_attributed, "include");
+            let binding = match segments {
+                _ if !macro_attributed => {
+                    if let Some(rename) = path.rename {
+                        self.renamed.push((rename.0, rename.1, path.terminal));
+                    }
+                    if matches!(segments, [_, .., "self"]) {
+                        path.segments.pop();
+                    }
+                    TypeBinding::Import(ImportPath {
+                        segments: path.segments,
+                        absolute,
+                    })
+                }
+                _ => TypeBinding::Unresolved,
+            };
+            if glob_visible(tokens, index) && !macro_attributed {
+                self.public_bindings.insert(name);
+            } else if glob_visibility(tokens, index).is_none() || macro_attributed {
+                self.uncertain_visibility.insert(name);
+            }
+            self.bind(name, binding);
+        }
+        position
+    }
+
+    fn bind_item(
+        &mut self,
+        file: &'a ScreenFile<'_>,
+        index: usize,
+        file_module: Option<FileModule>,
+    ) {
+        let tokens = &file.tokens;
+        if tokens[index].is_keyword("mod") && macro_item_disabled(tokens, index) {
+            return;
+        }
+        if tokens[index].is_keyword("extern")
+            && tokens
+                .get(index + 1)
+                .is_some_and(|token| token.is_keyword("crate"))
+        {
+            self.bind_extern_macro_root(tokens, index);
+            if !macro_item_disabled(tokens, index)
+                && let Some(source) = tokens.get(index + 2).and_then(Token::ident)
+            {
+                let name = if tokens
+                    .get(index + 3)
+                    .is_some_and(|token| token.is_keyword("as"))
+                {
+                    tokens.get(index + 4).and_then(Token::ident)
+                } else {
+                    Some(source)
+                };
+                if let Some(name) = name {
+                    self.extern_roots
+                        .insert(name, (source != "self").then_some(source));
+                }
+            }
+            return;
+        }
+        let Some(name) = tokens.get(index + 1).and_then(Token::ident) else {
+            return;
+        };
+        if tokens[index].is_keyword("mod") && conditional_attribute(tokens, index) {
+            self.conditional_roots.insert(name);
+        }
+        let binding = match tokens[index].ident() {
+            Some("type") => TypeAlias::parse(tokens, index, self.source)
+                .map_or(TypeBinding::Unresolved, TypeBinding::Alias),
+            Some("enum") if nominal_attributes_preserve_binding(tokens, index) => {
+                enum_named_variants(file, index)
+                    .map_or(TypeBinding::Unresolved, TypeBinding::NominalEnum)
+            }
+            Some("struct" | "union") if nominal_attributes_preserve_binding(tokens, index) => {
+                TypeBinding::Nominal
+            }
+            Some("struct" | "enum" | "union") => TypeBinding::Unresolved,
+            Some("mod") if tokens.get(index + 2).is_some_and(|t| t.is_punct(';')) => {
+                file_module.map_or(TypeBinding::Unresolved, TypeBinding::FileModule)
+            }
+            _ => return,
+        };
+        let attributed =
+            has_macro_attribute(tokens, index, |attribute| !inert_lint_attribute(attribute));
+        if glob_visible(tokens, index) && !attributed {
+            self.public_bindings.insert(name);
+        } else if glob_visibility(tokens, index).is_none() || attributed {
+            self.uncertain_visibility.insert(name);
+        }
+        self.bind(name, binding);
+    }
+
+    fn bind_extern_macro_root(&mut self, tokens: &[Token], index: usize) {
+        let Some(source) = tokens.get(index + 2).and_then(Token::ident) else {
+            return;
+        };
+        let name = if tokens
+            .get(index + 3)
+            .is_some_and(|token| token.is_keyword("as"))
+        {
+            tokens.get(index + 4).and_then(Token::ident)
+        } else {
+            Some(source)
+        };
+        let Some(root) = name.and_then(StandardMacroRoot::from_name) else {
+            return;
+        };
+        if !macro_item_disabled(tokens, index) {
+            self.extern_macro_roots[root as usize] = Some(
+                StandardMacroRoot::from_name(source).is_some()
+                    && !has_macro_attribute(tokens, index, |attribute| {
+                        !inert_lint_attribute(attribute) && !extern_macro_use_attribute(attribute)
+                    }),
+            );
+        }
+    }
+}
+
+fn group_start(tokens: &[Token], close: usize, left: char, right: char) -> Option<usize> {
+    let mut depth = 0;
+    for (index, token) in tokens.get(..close)?.iter().enumerate().rev() {
+        if token.is_punct(right) {
+            depth += 1;
+        } else if token.is_punct(left) {
+            if depth == 0 {
+                return Some(index);
+            }
+            depth -= 1;
+        }
+    }
+    None
+}
+
+fn before_visibility(tokens: &[Token], item: usize) -> usize {
+    let mut end = item;
+    if tokens
+        .get(end.wrapping_sub(1))
+        .is_some_and(|t| t.is_punct(')'))
+        && let Some(open) = group_start(tokens, end - 1, '(', ')')
+        && tokens
+            .get(open.wrapping_sub(1))
+            .is_some_and(|t| t.is_ident("pub"))
+    {
+        end = open - 1;
+    } else if tokens
+        .get(end.wrapping_sub(1))
+        .is_some_and(|t| t.is_ident("pub"))
+    {
+        end -= 1;
+    }
+    end
+}
+
+fn glob_visible(tokens: &[Token], item: usize) -> bool {
+    glob_visibility(tokens, item) == Some(true)
+}
+
+fn glob_visibility(tokens: &[Token], item: usize) -> Option<bool> {
+    let start = before_visibility(tokens, item);
+    if start == item {
+        Some(false)
+    } else if tokens[start].is_keyword("pub")
+        && (start + 1 == item
+            || (start + 4 == item
+                && tokens[start + 1].is_punct('(')
+                && tokens[start + 2].is_keyword("crate")
+                && tokens[start + 3].is_punct(')')))
+    {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn outer_attribute_before(tokens: &[Token], end: usize) -> Option<Range<usize>> {
+    let close = end.checked_sub(1)?;
+    if !tokens.get(close)?.is_punct(']') {
+        return None;
+    }
+    let start = group_start(tokens, close, '[', ']')?.checked_sub(1)?;
+    tokens[start].is_punct('#').then_some(start..end)
+}
+
+fn has_outer_attribute(tokens: &[Token], item: usize) -> bool {
+    outer_attribute_before(tokens, before_visibility(tokens, item)).is_some()
+}
+
+fn conditional_attribute(tokens: &[Token], item: usize) -> bool {
+    has_macro_attribute(tokens, item, |attribute| {
+        !cfg_always_active(attribute)
+            && attribute
+                .first()
+                .is_some_and(|token| token.is_keyword("cfg") || token.is_keyword("cfg_attr"))
+    })
+}
+
+fn cfg_always_active(attribute: &[Token]) -> bool {
+    matches!(attribute, [cfg, outer, all, inner, inner_end, outer_end]
+        if cfg.is_keyword("cfg") && outer.is_punct('(') && all.is_keyword("all")
+            && inner.is_punct('(') && inner_end.is_punct(')') && outer_end.is_punct(')'))
+}
+
+fn has_macro_attribute(
+    tokens: &[Token],
+    declaration: usize,
+    recognizes: impl Fn(&[Token]) -> bool,
+) -> bool {
+    let mut boundary = before_visibility(tokens, declaration);
+    while let Some(attribute) = outer_attribute_before(tokens, boundary) {
+        if recognizes(&tokens[attribute.start + 2..attribute.end - 1]) {
+            return true;
+        }
+        boundary = attribute.start;
+    }
+    false
+}
+
+fn imports_macro_rules(tokens: &[Token], declaration: usize) -> bool {
+    has_macro_attribute(tokens, declaration, macro_use_attribute)
+}
+
+fn macro_use_attribute(attribute: &[Token]) -> bool {
+    matches!(attribute, [name] if name.is_keyword("macro_use"))
+}
+
+fn extern_macro_use_attribute(attribute: &[Token]) -> bool {
+    match attribute {
+        [name, open, .., close] => {
+            name.is_keyword("macro_use") && open.is_punct('(') && close.is_punct(')')
+        }
+        _ => macro_use_attribute(attribute),
+    }
+}
+
+fn inert_lint_attribute(attribute: &[Token]) -> bool {
+    let [name, open, .., close] = attribute else {
+        return false;
+    };
+    matches!(&name.kind, Tok::Ident(name) if matches!(name.as_str(), "allow" | "warn" | "deny" | "forbid" | "expect"))
+        && open.is_punct('(')
+        && close.is_punct(')')
+}
+
+fn macro_item_disabled(tokens: &[Token], declaration: usize) -> bool {
+    has_macro_attribute(tokens, declaration, |attribute| {
+        let [cfg, outer, any, inner, inner_close, outer_close] = attribute else {
+            return false;
+        };
+        cfg.is_keyword("cfg")
+            && outer.is_punct('(')
+            && any.is_keyword("any")
+            && inner.is_punct('(')
+            && inner_close.is_punct(')')
+            && outer_close.is_punct(')')
+    })
+}
+
+fn nominal_attributes_preserve_binding(tokens: &[Token], item: usize) -> bool {
+    let mut end = before_visibility(tokens, item);
+    while let Some(attribute) = outer_attribute_before(tokens, end) {
+        let inner = &tokens[attribute.start + 2..attribute.end - 1];
+        let [name, input, ..] = inner else {
+            return false;
+        };
+        if !matches!(
+            name.ident(),
+            Some("derive" | "repr" | "allow" | "warn" | "deny" | "forbid" | "expect")
+        ) || !input.is_punct('(')
+            || closing(inner, 1) + 1 != inner.len()
+        {
+            return false;
+        }
+        end = attribute.start;
+    }
+    true
+}
+
+fn opaque_group_open(tokens: &[Token], index: usize) -> Option<usize> {
+    let token = &tokens[index];
+    if token.is_punct('#') {
+        let open = index + 1 + usize::from(tokens.get(index + 1)?.is_punct('!'));
+        return tokens.get(open)?.is_punct('[').then_some(open);
+    }
+    if !token.is_punct('!') || tokens.get(index.checked_sub(1)?)?.ident().is_none() {
+        return None;
+    }
+    let open = index + 1 + usize::from(tokens[index - 1].is_ident("macro_rules"));
+    let next = tokens.get(open)?;
+    ['(', '[', '{']
+        .iter()
+        .any(|&c| next.is_punct(c))
+        .then_some(open)
+}
+
+#[derive(Clone, Copy)]
+enum ScopePosition {
+    Rust(usize),
+    Opaque(usize),
+    MatchesPattern(usize, MatchesMacro),
+}
+
+#[derive(Clone, Copy)]
+enum MatchesMacro {
+    Prelude,
+    Absolute(StandardMacroRoot),
+    Relative(StandardMacroRoot),
+    Named(usize),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StandardMacroRoot {
+    Core,
+    Std,
+}
+
+impl StandardMacroRoot {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "core" => Some(Self::Core),
+            "std" => Some(Self::Std),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Core => "core",
+            Self::Std => "std",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum MatchesImport {
+    #[default]
+    Absent,
+    Standard(StandardMacroRoot),
+    RelativeStandard(StandardMacroRoot),
+    Unknown,
+}
+
+impl MatchesImport {
+    fn include(self, segments: &[&str], absolute: bool, attributed: bool) -> Self {
+        self.include_macro(segments, absolute, attributed, "matches")
+    }
+
+    fn include_macro(
+        self,
+        segments: &[&str],
+        absolute: bool,
+        attributed: bool,
+        macro_name: &str,
+    ) -> Self {
+        let root = match (segments, attributed) {
+            ([name, terminal], false) if *terminal == macro_name => {
+                StandardMacroRoot::from_name(name)
+            }
+            _ => None,
+        };
+        let observed = match (root, absolute) {
+            (Some(root), true) => Self::Standard(root),
+            (Some(root), false) => Self::RelativeStandard(root),
+            (None, _) => Self::Unknown,
+        };
+        if self == Self::Absent || self == observed {
+            observed
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+fn file_may_supply_matches(tokens: &[Token], ends: &[Option<usize>]) -> bool {
+    let mut index = 0;
+    while index < tokens.len() {
+        let Some(open) = opaque_group_open(tokens, index) else {
+            index += 1;
+            continue;
+        };
+        if tokens[index].is_punct('#') {
+            let Some(end) = ends[open] else {
+                return true;
+            };
+            let attribute = &tokens[open + 1..end - 1];
+            if !attribute
+                .first()
+                .is_some_and(|token| token.is_keyword("cfg"))
+                && !inert_lint_attribute(attribute)
+            {
+                return true;
+            }
+        } else if !tokens[index - 1].is_keyword("macro_rules")
+            || tokens[index + 1].is_ident("matches")
+        {
+            return true;
+        }
+        index = ends[open].unwrap_or(tokens.len());
+    }
+    false
+}
+
+fn expression_path_boundary(token: Option<&Token>) -> bool {
+    token.is_none_or(|token| {
+        token.ident().is_none()
+            || KEYWORDS_BEFORE_PATH
+                .iter()
+                .chain(&["if", "while", "match", "break", "yield"])
+                .any(|keyword| token.is_keyword(keyword))
+    })
+}
+
+fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
+    let name = bang.checked_sub(1)?;
+    if !tokens[bang].is_punct('!') {
+        return None;
+    }
+    if !tokens[name].is_ident("matches") {
+        return (!is_path_separator(tokens, name.wrapping_sub(2))
+            && tokens[name].ident().is_some())
+        .then_some(MatchesMacro::Named(name));
+    }
+    if !is_path_separator(tokens, name.wrapping_sub(2)) {
+        return Some(MatchesMacro::Prelude);
+    }
+    let root_start = name.checked_sub(3)?;
+    let root = StandardMacroRoot::from_name(tokens[root_start].ident()?)?;
+    if !is_path_separator(tokens, root_start.wrapping_sub(2)) {
+        return Some(MatchesMacro::Relative(root));
+    }
+    if !expression_path_boundary(tokens.get(root_start.wrapping_sub(3))) {
+        return None;
+    }
+    Some(MatchesMacro::Absolute(root))
+}
+
+fn matches_pattern(file: &ScreenFile<'_>, arguments: Range<usize>) -> Option<Range<usize>> {
+    let tokens = &file.tokens;
+    let close = arguments.end - 1;
+    let mut index = arguments.start + 1;
+    let mut top_level = std::iter::from_fn(|| {
+        let current = index;
+        let token = tokens.get(current).filter(|_| current < close)?;
+        index = if matches!(token.kind, Tok::Punct('(' | '[' | '{')) {
+            file.group_ends[current]
+                .filter(|&end| end <= close)
+                .unwrap_or(close)
+        } else {
+            matches_angle_end(file, current, close).unwrap_or(current + 1)
+        };
+        Some(current)
+    });
+    let separator = matches_scrutinee_end(tokens, &mut top_level)?;
+    let start = separator + 1;
+    let end = top_level
+        .find(|&at| tokens[at].is_keyword("if") || tokens[at].is_punct(','))
+        .unwrap_or(close);
+    (start < end).then_some(start..end)
+}
+
+fn matches_scrutinee_end(
+    tokens: &[Token],
+    top_level: &mut impl Iterator<Item = usize>,
+) -> Option<usize> {
+    let mut starts_operand = true;
+    while let Some(index) = top_level.next() {
+        let token = &tokens[index];
+        if token.is_punct(',') {
+            return Some(index);
+        }
+        if token.joins_next_pipe {
+            top_level.next()?;
+            starts_operand = true;
+            continue;
+        }
+        if starts_operand && token.is_punct('|') {
+            top_level.find(|&at| tokens[at].is_punct('|'))?;
+            continue;
+        }
+        starts_operand = matches!(
+            token.kind,
+            Tok::Punct('|' | '&' | '^' | '=' | '!' | '+' | '-' | '*' | '/' | '%')
+        ) || [
+            "if", "while", "match", "return", "break", "yield", "move", "async",
+        ]
+        .iter()
+        .any(|keyword| token.is_keyword(keyword));
+    }
+    None
+}
+
+fn matches_angle_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Option<usize> {
+    let tokens = &file.tokens;
+    if !tokens[open].is_punct('<') {
+        return None;
+    }
+    let end = file.group_ends[open]?;
+    (end <= limit
+        && (is_path_separator(tokens, open.wrapping_sub(2)) || is_path_separator(tokens, end)))
+    .then_some(end)
+}
+
+fn mark_matches_pattern(
+    file: &ScreenFile<'_>,
+    arguments: Range<usize>,
+    position: ScopePosition,
+    has_self_receiver: bool,
+    enclosing: &mut [Option<ScopePosition>],
+) {
+    let Some(pattern) = matches_pattern(file, arguments) else {
+        return;
+    };
+    let mut index = pattern.start;
+    while index < pattern.end {
+        if let Some(open) = opaque_group_open(&file.tokens, index) {
+            index = file.group_ends[open].unwrap_or(pattern.end);
+            continue;
+        }
+        if let Some(end) = matches_angle_end(file, index, pattern.end) {
+            index = end;
+            continue;
+        }
+        let token = &file.tokens[index];
+        if token.ident().is_some()
+            && is_path_separator(&file.tokens, index + 1)
+            && file
+                .tokens
+                .get(index + 3)
+                .is_some_and(|open| open.is_punct('<'))
+            && let Some(end) = file.group_ends[index + 3]
+            && end < pattern.end
+            && file.tokens[end].is_punct('{')
+        {
+            enclosing[index] = Some(position);
+            let mut argument = index + 4;
+            while argument < end - 1 {
+                if let Some(open) = opaque_group_open(&file.tokens, argument) {
+                    argument = file.group_ends[open].unwrap_or(end);
+                    continue;
+                }
+                if file.tokens[argument].is_punct('{') {
+                    argument = file.group_ends[argument].unwrap_or(end);
+                    continue;
+                }
+                if has_self_receiver && file.tokens[argument].is_keyword("Self") {
+                    enclosing[argument] = Some(position);
+                }
+                argument += 1;
+            }
+        }
+        if token.ident().is_some()
+            && (has_self_receiver || !token.is_keyword("Self"))
+            && file
+                .tokens
+                .get(index + 1)
+                .is_some_and(|open| open.is_punct('{'))
+        {
+            enclosing[index] = Some(position);
+        }
+        index += 1;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ImplReceiver {
+    ident: usize,
+    arguments: Option<usize>,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum MacroLiteral<'a> {
+    Empty,
+    Identifier(Cow<'a, str>),
+}
+
+fn macro_identifier(name: &str) -> Cow<'_, str> {
+    Cow::Borrowed(name)
+}
+
+fn macro_literal(tokens: &[Token]) -> Option<MacroLiteral<'_>> {
+    match tokens {
+        [] => Some(MacroLiteral::Empty),
+        [
+            Token {
+                kind: Tok::Ident(name),
+                ..
+            },
+        ] => Some(MacroLiteral::Identifier(macro_identifier(name))),
+        _ => None,
+    }
+}
+
+struct LocalMacroTemplate<'a> {
+    receiver: ImplReceiver,
+    transcribers: BTreeMap<MacroLiteral<'a>, Range<usize>>,
+}
+
+#[derive(Default)]
+struct LocalMacroTemplates<'a> {
+    active: BTreeMap<Cow<'a, str>, LocalMacroTemplate<'a>>,
+    undo: Vec<(Cow<'a, str>, Option<LocalMacroTemplate<'a>>)>,
+    blocks: Vec<(usize, usize)>,
+    last_import: usize,
+}
+
+impl<'a> LocalMacroTemplates<'a> {
+    fn enter_block(&mut self) {
+        self.blocks.push((self.undo.len(), self.last_import));
+    }
+
+    fn leave_block(&mut self) {
+        let Some((start, last_import)) = self.blocks.pop() else {
+            return;
+        };
+        self.last_import = last_import;
+        for (name, previous) in self.undo.drain(start..).rev() {
+            if let Some(previous) = previous {
+                self.active.insert(name, previous);
+            } else {
+                self.active.remove(name.as_ref());
+            }
+        }
+    }
+
+    fn observe_import(&mut self, token: usize) {
+        self.last_import = token;
+    }
+
+    fn observe(
+        &mut self,
+        file: &'a ScreenFile<'_>,
+        bang: usize,
+        group: Range<usize>,
+        receiver: Option<ImplReceiver>,
+    ) -> Option<Range<usize>> {
+        let tokens = &file.tokens;
+        let invoked = bang.checked_sub(1)?;
+        if !tokens[bang].is_punct('!') {
+            return None;
+        }
+        if tokens[invoked].is_keyword("macro_rules") {
+            if !macro_item_disabled(tokens, invoked) {
+                self.define(file, invoked, group, receiver);
+            }
+            return None;
+        }
+        if self.active.is_empty() {
+            return None;
+        }
+        let name = macro_identifier(tokens[invoked].ident()?);
+        let template = self.active.get_mut(name.as_ref())?;
+        let literal = file.macro_invocation_literal(&group)?;
+        let transcriber = template.transcribers.get(&literal)?;
+        if Some(template.receiver) == receiver
+            && transcriber.start > self.last_import
+            && is_direct_template_invocation(tokens, invoked)
+        {
+            template.transcribers.remove(&literal)
+        } else {
+            None
+        }
+    }
+
+    fn define(
+        &mut self,
+        file: &'a ScreenFile<'_>,
+        declaration: usize,
+        definition: Range<usize>,
+        receiver: Option<ImplReceiver>,
+    ) {
+        let tokens = &file.tokens;
+        let Some(name) = tokens.get(declaration + 2).and_then(Token::ident) else {
+            return;
+        };
+        let name = macro_identifier(name);
+        let previous = self.active.remove(name.as_ref());
+        let current = receiver
+            .filter(|_| {
+                !has_macro_attribute(tokens, declaration, |attribute| {
+                    !inert_lint_attribute(attribute)
+                })
+            })
+            .and_then(|receiver| {
+                let transcribers = literal_macro_transcribers(file, definition);
+                (!transcribers.is_empty()).then_some(LocalMacroTemplate {
+                    receiver,
+                    transcribers,
+                })
+            });
+        let changed = current.is_some() || previous.is_some();
+        if let Some(current) = current {
+            self.active.insert(name.clone(), current);
+        }
+        if changed {
+            self.undo.push((name, previous));
+        }
+    }
+}
+
+fn is_direct_template_invocation(tokens: &[Token], name: usize) -> bool {
+    let mut start = name;
+    while let Some((begin, attribute)) = invocation_attribute_before(tokens, start) {
+        if !inert_lint_attribute(attribute) {
+            return false;
+        }
+        start = begin;
+    }
+    tokens
+        .get(start.wrapping_sub(1))
+        .is_none_or(|token| matches!(token.kind, Tok::Punct('{' | '}' | ';')))
+}
+
+fn invocation_attribute_before(tokens: &[Token], end: usize) -> Option<(usize, &[Token])> {
+    let close = end.checked_sub(1)?;
+    if !tokens[close].is_punct(']') {
+        return None;
+    }
+    let open = group_start(tokens, close, '[', ']')?;
+    let before = open.checked_sub(1)?;
+    let start = before.checked_sub(usize::from(tokens[before].is_punct('!')))?;
+    tokens[start]
+        .is_punct('#')
+        .then_some((start, &tokens[open + 1..close]))
+}
+
+fn macro_arm_group_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Option<usize> {
+    if !matches!(file.tokens.get(open)?.kind, Tok::Punct('(' | '[' | '{')) {
+        return None;
+    }
+    file.group_ends[open].filter(|&end| end <= limit)
+}
+
+fn macro_lint_transcribers(
+    file: &ScreenFile<'_>,
+    start: usize,
+    end: usize,
+) -> Vec<(Range<usize>, bool)> {
+    let tokens = &file.tokens;
+    let mut pending = Vec::new();
+    let mut matcher = start;
+    while let Some(arrow) = macro_arm_group_end(file, matcher, end - 1) {
+        if !tokens.get(arrow).is_some_and(|token| token.is_punct('='))
+            || !tokens
+                .get(arrow + 1)
+                .is_some_and(|token| token.is_punct('>'))
+        {
+            break;
+        }
+        let open = arrow + 2;
+        let Some(arm_end) = macro_arm_group_end(file, open, end - 1) else {
+            break;
+        };
+        pending.push((open + 1..arm_end - 1, true));
+        if !tokens
+            .get(arm_end)
+            .is_some_and(|token| token.is_punct(';') || token.is_punct(','))
+        {
+            break;
+        }
+        matcher = arm_end + 1;
+    }
+    pending
+}
+
+fn uncertain_macro_lint(file: &ScreenFile<'_>, index: usize, limit: usize) -> bool {
+    let tokens = &file.tokens;
+    if !tokens[index].is_punct('#') {
+        return false;
+    }
+    let open = index + 1 + usize::from(tokens.get(index + 1).is_some_and(|t| t.is_punct('!')));
+    if !tokens.get(open).is_some_and(|t| t.is_punct('['))
+        || !tokens.get(open + 1).is_some_and(|t| t.is_punct('$'))
+        || tokens.get(open + 2).is_none_or(|t| t.ident().is_none())
+        || !tokens.get(open + 3).is_some_and(|t| t.is_punct('('))
+    {
+        return false;
+    }
+    let Some(attribute_end) = macro_arm_group_end(file, open, limit) else {
+        return false;
+    };
+    let Some(end) = macro_arm_group_end(file, open + 3, attribute_end - 1) else {
+        return false;
+    };
+    let mut position = open + 4;
+    let mut start = true;
+    while position < end - 1 {
+        if start
+            && position + 4 < end
+            && tokens[position].is_ident("clippy")
+            && is_path_separator(tokens, position + 1)
+            && DRAWING_LINTS
+                .iter()
+                .any(|lint| tokens[position + 3].is_ident(lint))
+            && (position + 4 == end - 1 || tokens[position + 4].is_punct(','))
+        {
+            return true;
+        }
+        if let Some(group_end) = macro_arm_group_end(file, position, end - 1) {
+            position = group_end;
+            start = false;
+        } else {
+            start = tokens[position].is_punct(',');
+            position += 1;
+        }
+    }
+    false
+}
+
+fn macro_lint_level_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
+    let file = &types.files[source];
+    let tokens = &file.tokens;
+    let mut pending = vec![(0..tokens.len(), false)];
+    let mut violations = Vec::new();
+    while let Some((range, transcriber)) = pending.pop() {
+        let mut index = range.start;
+        while index < range.end {
+            if tokens[index].is_ident("macro_rules")
+                && tokens
+                    .get(index + 1)
+                    .is_some_and(|token| token.is_punct('!'))
+                && tokens
+                    .get(index + 2)
+                    .is_some_and(|token| token.ident().is_some())
+                && let Some(end) = macro_arm_group_end(file, index + 3, range.end)
+            {
+                pending.extend(macro_lint_transcribers(file, index + 4, end));
+                index = end;
+                continue;
+            }
+            if tokens[index].is_punct('!')
+                && index >= 6
+                && tokens[index - 1].is_ident("stringify")
+                && is_path_separator(tokens, index - 3)
+                && (tokens[index - 4].is_ident("core") || tokens[index - 4].is_ident("std"))
+                && is_path_separator(tokens, index - 6)
+                && expression_path_boundary(tokens.get(index.wrapping_sub(7)))
+                && let Some(position) = types.sources[source].enclosing[index]
+            {
+                let scope = match position {
+                    ScopePosition::Rust(scope)
+                    | ScopePosition::Opaque(scope)
+                    | ScopePosition::MatchesPattern(scope, _) => scope,
+                };
+                if types
+                    .matches_absolute_root_visible(
+                        scope,
+                        if tokens[index - 4].is_ident("core") {
+                            StandardMacroRoot::Core
+                        } else {
+                            StandardMacroRoot::Std
+                        },
+                        &mut AliasWork::Unlimited,
+                    )
+                    .unwrap_or(false)
+                    && let Some(end) = macro_arm_group_end(file, index + 1, range.end)
+                {
+                    index = end;
+                    continue;
+                }
+            }
+            if transcriber && uncertain_macro_lint(file, index, range.end) {
+                violations.push((
+                    index,
+                    Violation::at_line(
+                        CiStep::Screen,
+                        file.path,
+                        tokens[index].line,
+                        "C1: macro-generated drawing lint level cannot be proven safe",
+                    ),
+                ));
+            }
+            index += 1;
+        }
+    }
+    violations
+}
+
+fn include_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
+    let file = &types.files[source];
+    let mut violations = Vec::new();
+    for (index, token) in file.tokens.iter().enumerate() {
+        let Some(name) = token.ident() else {
+            continue;
+        };
+        if !file
+            .tokens
+            .get(index + 1)
+            .is_some_and(|token| token.is_punct('!'))
+            || macro_arm_group_end(file, index + 2, file.tokens.len()).is_none()
+        {
+            continue;
+        }
+        let mut work = AliasWork::Unlimited;
+        let Ok(Some(scope)) = types.proven_field_pattern_scope(source, index, &mut work) else {
+            continue;
+        };
+        let qualified = is_path_separator(&file.tokens, index.wrapping_sub(2));
+        let visible = if qualified {
+            let Some(root_index) = index.checked_sub(3) else {
+                continue;
+            };
+            let Some(root) = file.tokens[root_index]
+                .ident()
+                .and_then(StandardMacroRoot::from_name)
+            else {
+                continue;
+            };
+            if name != "include" {
+                continue;
+            }
+            if is_path_separator(&file.tokens, root_index.wrapping_sub(2)) {
+                expression_path_boundary(file.tokens.get(root_index.wrapping_sub(3)))
+                    && types
+                        .matches_absolute_root_visible(scope, root, &mut work)
+                        .unwrap_or(false)
+            } else {
+                types
+                    .matches_standard_root_visible(scope, root, &mut work)
+                    .unwrap_or(false)
+            }
+        } else {
+            types
+                .include_name_visible(scope, index, name, &mut work)
+                .unwrap_or(false)
+        };
+        let (start, absolute) =
+            path_start(&file.tokens, index, &mut work).unwrap_or((index, false));
+        let invocation = start.saturating_sub(usize::from(absolute) * 2);
+        if visible && !macro_item_disabled(&file.tokens, invocation) {
+            violations.push((
+                index,
+                Violation::at_line(
+                    CiStep::Screen,
+                    file.path,
+                    token.line,
+                    "C1: include! source coverage is uncertain at this site",
+                ),
+            ));
+        }
+    }
+    violations
+}
+
+fn literal_macro_transcribers<'a>(
+    file: &'a ScreenFile<'_>,
+    definition: Range<usize>,
+) -> BTreeMap<MacroLiteral<'a>, Range<usize>> {
+    let tokens = &file.tokens;
+    let limit = definition.end - 1;
+    let mut matcher = definition.start + 1;
+    let mut transcribers = BTreeMap::new();
+    while let Some(arrow) = macro_arm_group_end(file, matcher, limit) {
+        let Some(literal) = macro_literal(&tokens[matcher + 1..arrow - 1]) else {
+            break;
+        };
+        if !tokens[arrow].is_punct('=')
+            || !tokens
+                .get(arrow + 1)
+                .is_some_and(|token| token.is_punct('>'))
+        {
+            break;
+        }
+        let open = arrow + 2;
+        let Some(end) = macro_arm_group_end(file, open, limit) else {
+            break;
+        };
+        transcribers.entry(literal).or_insert(open + 1..end - 1);
+        if !tokens[end].is_punct(';') {
+            break;
+        }
+        matcher = end + 1;
+    }
+    transcribers
+}
+
+fn mark_local_macro_arm(
+    file: &ScreenFile<'_>,
+    transcriber: Range<usize>,
+    scope: usize,
+    enclosing: &mut [Option<ScopePosition>],
+) {
+    let tokens = &file.tokens;
+    let mut index = transcriber.start;
+    while index < transcriber.end {
+        if let Some(open) = opaque_group_open(tokens, index) {
+            index = file.group_ends[open].unwrap_or(transcriber.end);
+            continue;
+        }
+        if let Some(end) = matches_angle_end(file, index, transcriber.end) {
+            index = end;
+            continue;
+        }
+        if let Some(end) = template_item_end(file, index, transcriber.end) {
+            index = end;
+            continue;
+        }
+        if tokens[index].is_keyword("Self")
+            && is_template_field_pattern(file, index, transcriber.end)
+        {
+            enclosing[index] = Some(ScopePosition::Rust(scope));
+        }
+        index += 1;
+    }
+}
+
+fn template_item_end(file: &ScreenFile<'_>, index: usize, limit: usize) -> Option<usize> {
+    if !["fn", "impl", "mod", "trait"]
+        .iter()
+        .any(|keyword| file.tokens[index].is_keyword(keyword))
+    {
+        return None;
+    }
+    let body = file.header_bodies[index + 1]?;
+    file.group_ends[body].filter(|&end| end <= limit)
+}
+
+fn is_template_field_pattern(file: &ScreenFile<'_>, index: usize, limit: usize) -> bool {
+    let tokens = &file.tokens;
+    if !tokens.get(index + 1).is_some_and(|open| open.is_punct('{')) {
+        return false;
+    }
+    if tokens[index - 1].is_keyword("let") {
+        return true;
+    }
+    let Some(end) = file.group_ends[index + 1].filter(|&end| end < limit) else {
+        return false;
+    };
+    tokens[end].is_keyword("in")
+        || tokens[end].is_punct('=') && tokens.get(end + 1).is_some_and(|next| next.is_punct('>'))
+}
+
+#[derive(Clone, Copy)]
+enum SelfReceiver {
+    Inherit,
+    Mask,
+    Concrete(ImplReceiver),
+}
+
+impl SelfReceiver {
+    fn resolve(self, parent: Option<ImplReceiver>) -> Option<ImplReceiver> {
+        match self {
+            Self::Inherit => parent,
+            Self::Mask => None,
+            Self::Concrete(target) => Some(target),
+        }
+    }
+}
+
+fn self_receiver_scopes(file: &ScreenFile<'_>) -> Vec<SelfReceiver> {
+    let tokens = &file.tokens;
+    let mut scopes = vec![SelfReceiver::Inherit; tokens.len()];
+    let mut index = 0;
+    while let Some(token) = tokens.get(index) {
+        if let Some(open) = opaque_group_open(tokens, index) {
+            index = file.group_ends[open].unwrap_or(tokens.len());
+            continue;
+        }
+        let is_impl = token.is_ident("impl") && starts_impl_item(tokens, index);
+        let is_trait =
+            token.is_ident("trait") && tokens.get(index + 1).and_then(Token::ident).is_some();
+        if (is_impl || is_trait)
+            && let Some(body) = file.header_bodies[index + 1]
+        {
+            scopes[body] = if is_impl {
+                concrete_impl_receiver(file, index, body)
+                    .map_or(SelfReceiver::Mask, SelfReceiver::Concrete)
+            } else {
+                SelfReceiver::Mask
+            };
+            index = body;
+        }
+        index += 1;
+    }
+    scopes
+}
+
+fn starts_impl_item(tokens: &[Token], index: usize) -> bool {
+    let start = index
+        - usize::from(
+            tokens
+                .get(index.wrapping_sub(1))
+                .is_some_and(|token| token.is_ident("unsafe")),
+        );
+    tokens
+        .get(start.wrapping_sub(1))
+        .is_none_or(|token| matches!(token.kind, Tok::Punct('{' | '}' | ';' | ']')))
+}
+
+fn concrete_impl_receiver(
+    file: &ScreenFile<'_>,
+    declaration: usize,
+    body: usize,
+) -> Option<ImplReceiver> {
+    let tokens = &file.tokens;
+    let ends = &file.group_ends;
+    let generic_start = declaration + 1;
+    let trait_start = if tokens.get(generic_start)?.is_punct('<') {
+        ends[generic_start]?
+    } else {
+        generic_start
+    };
+    let (_, separator) = impl_path(&tokens[..body], ends, trait_start, true)?;
+    if !tokens.get(separator)?.is_ident("for") {
+        return None;
+    }
+    let receiver_start = separator + 1;
+    let (receiver, boundary, bare) = impl_receiver_path(&tokens[..body], ends, receiver_start)?;
+    if boundary != body && !tokens.get(boundary)?.is_ident("where") {
+        return None;
+    }
+    if bare && trait_start != generic_start {
+        let (parameters, _) = generic_slots(&tokens[..trait_start], generic_start)?;
+        let name = tokens[receiver.ident].ident()?;
+        if parameters.iter().any(|range| {
+            impl_type_parameter(tokens, ends, range).is_some_and(|parameter| parameter == name)
+        }) {
+            return None;
+        }
+    }
+    Some(receiver)
+}
+
+fn impl_receiver_path(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    start: usize,
+) -> Option<(ImplReceiver, usize, bool)> {
+    if !tokens.get(start)?.is_punct('(') {
+        let (receiver, end) = impl_receiver_type(tokens, ends, start)?;
+        return Some((receiver, end, receiver.ident == start));
+    }
+    let boundary = ends[start]?;
+    if boundary > tokens.len() {
+        return None;
+    }
+    let mut inner = start;
+    let mut end = boundary;
+    while inner < end && tokens[inner].is_punct('(') && ends[inner] == Some(end) {
+        inner += 1;
+        end -= 1;
+    }
+    let (receiver, inner_end) = impl_receiver_type(&tokens[..end], ends, inner)?;
+    (inner_end == end).then_some((receiver, boundary, receiver.ident == inner))
+}
+
+fn impl_receiver_type(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    start: usize,
+) -> Option<(ImplReceiver, usize)> {
+    let (ident, end) = impl_path(tokens, ends, start, false)?;
+    let angle = end + 2 * usize::from(is_path_separator(tokens, end));
+    let arguments = tokens
+        .get(angle)
+        .filter(|token| token.is_punct('<'))
+        .map(|_| angle);
+    let boundary = arguments.map_or(Some(end), |open| ends[open])?;
+    (boundary <= tokens.len()).then_some((ImplReceiver { ident, arguments }, boundary))
+}
+
+fn impl_path(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    start: usize,
+    type_arguments: bool,
+) -> Option<(usize, usize)> {
+    let mut position = start + 2 * usize::from(is_path_separator(tokens, start));
+    loop {
+        tokens.get(position)?.ident()?;
+        let ident = position;
+        position += 1;
+        if type_arguments
+            && tokens
+                .get(position)
+                .is_some_and(|token| token.is_punct('<'))
+        {
+            position = ends[position]?;
+        }
+        if !is_path_separator(tokens, position)
+            || tokens.get(position + 2).and_then(Token::ident).is_none()
+        {
+            return Some((ident, position));
+        }
+        position += 2;
+    }
+}
+
+fn impl_type_parameter<'a>(
+    tokens: &'a [Token],
+    ends: &[Option<usize>],
+    range: &Range<usize>,
+) -> Option<&'a str> {
+    let mut position = range.start;
+    while position < range.end && tokens[position].is_punct('#') {
+        position = ends.get(position + 1).copied().flatten()?;
+    }
+    if position >= range.end || tokens[position].is_ident("const") {
+        return None;
+    }
+    tokens[position].ident()
+}
+
+#[derive(Default)]
+enum ModuleFile {
+    #[default]
+    Missing,
+    Unique(usize),
+    Ambiguous,
+}
+
+#[derive(Default)]
+struct ModuleDirectory<'a> {
+    children: BTreeMap<&'a str, usize>,
+    file: ModuleFile,
+}
+
+struct ModulePaths<'a> {
+    directories: Vec<ModuleDirectory<'a>>,
+}
+
+impl<'a> ModulePaths<'a> {
+    fn include(&mut self, file: &'a Path, source: usize) -> Option<usize> {
+        let relative = file.strip_prefix(SCREEN_SOURCE).ok()?;
+        let mut directory = 0;
+        for part in relative.parent()? {
+            directory = self.include_child(directory, part.to_str()?);
+        }
+        if file == Path::new(SCREEN_LIB) {
+            return Some(directory);
+        }
+        let direct = self.include_child(directory, relative.file_stem()?.to_str()?);
+        self.claim(direct, source);
+        if relative.file_name()?.to_str()? == "mod.rs" {
+            self.claim(directory, source);
+            Some(directory)
+        } else {
+            Some(direct)
+        }
+    }
+
+    fn claim(&mut self, directory: usize, source: usize) {
+        let candidate = &mut self.directories[directory].file;
+        *candidate = match candidate {
+            ModuleFile::Missing => ModuleFile::Unique(source),
+            _ => ModuleFile::Ambiguous,
+        };
+    }
+
+    fn include_child(&mut self, directory: usize, name: &'a str) -> usize {
+        if let Some(child) = self.child(directory, name) {
+            return child;
+        }
+        let child = self.directories.len();
+        self.directories.push(ModuleDirectory::default());
+        self.directories[directory].children.insert(name, child);
+        child
+    }
+
+    fn child(&self, directory: usize, name: &str) -> Option<usize> {
+        self.directories[directory].children.get(name).copied()
+    }
+
+    fn parent_directory(&self, path: &Path) -> Option<usize> {
+        let mut directory = 0;
+        for part in path.strip_prefix(SCREEN_SOURCE).ok()?.parent()? {
+            directory = self.child(directory, part.to_str()?)?;
+        }
+        Some(directory)
+    }
+
+    fn file(&self, directory: usize, name: &str) -> Option<FileModule> {
+        let directory = self.child(directory, name)?;
+        match self.directories[directory].file {
+            ModuleFile::Unique(source) => Some(FileModule {
+                source,
+                directory,
+                matches_textual: false,
+                declaration: 0,
+            }),
+            ModuleFile::Missing | ModuleFile::Ambiguous => None,
+        }
+    }
+}
+
+#[derive(Default)]
+struct SourceScopes {
+    enclosing: Vec<Option<ScopePosition>>,
+    use_enclosing: Vec<Option<usize>>,
+    inner_scopes: Range<usize>,
+    connected: bool,
+}
+
+struct TypeScopes<'a> {
+    files: &'a [ScreenFile<'a>],
+    roots: BTreeMap<String, bool>,
+    scopes: Vec<TypeScope<'a>>,
+    sources: Vec<SourceScopes>,
+    crate_root: Option<usize>,
+    guard_pending: Vec<(usize, Range<usize>, usize, MatchesMacro)>,
+}
+
+impl<'a> TypeScopes<'a> {
+    fn collect(
+        files: &'a [ScreenFile<'a>],
+        roots: BTreeMap<String, bool>,
+        paths: &ModulePaths<'a>,
+        directories: &[Option<usize>],
+        crate_root: Option<usize>,
+        orphans: &[bool],
+    ) -> Self {
+        let scopes = files
+            .iter()
+            .enumerate()
+            .map(|(source, file)| TypeScope {
+                source,
+                module: source,
+                directory: if Some(source) == crate_root {
+                    paths.parent_directory(file.path)
+                } else {
+                    directories[source]
+                },
+                ..TypeScope::default()
+            })
+            .collect();
+        let mut graph = Self {
+            files,
+            roots,
+            scopes,
+            sources: (0..files.len()).map(|_| SourceScopes::default()).collect(),
+            crate_root,
+            guard_pending: Vec::new(),
+        };
+        if let Some(root) = graph.crate_root {
+            graph.sources[root].connected = true;
+            let mut pending = VecDeque::from([root]);
+            while let Some(source) = pending.pop_front() {
+                graph.collect_file(source, paths);
+                graph.attach_children(source, &mut pending);
+            }
+        }
+        for source in 0..files.len() {
+            if orphans.get(source).copied().unwrap_or(false) {
+                graph.collect_file(source, paths);
+            }
+        }
+        let mut proven = Vec::new();
+        for (scope, current) in graph.scopes.iter().enumerate() {
+            for (&name, binding) in &current.bindings {
+                if let TypeBinding::Import(import) = binding
+                    && import.segments.len() == 3
+                    && import.segments[1..] == ["buffer", "Buffer"]
+                    && graph
+                        .external_root_visible_ignoring_globs(
+                            scope,
+                            import.segments[0],
+                            import.absolute,
+                            true,
+                            &mut AliasWork::Unlimited,
+                        )
+                        .unwrap_or(false)
+                {
+                    proven.push((scope, name));
+                }
+            }
+        }
+        for (scope, name) in proven {
+            graph.scopes[scope]
+                .bindings
+                .insert(name, TypeBinding::RatatuiBuffer);
+        }
+        for (source, arguments, origin, kind) in std::mem::take(&mut graph.guard_pending) {
+            let work = &mut AliasWork::Unlimited;
+            let visible = match kind {
+                MatchesMacro::Prelude => graph.matches_prelude_visible(origin, work),
+                MatchesMacro::Absolute(root) => {
+                    graph.matches_absolute_root_visible(origin, root, work)
+                }
+                MatchesMacro::Relative(root) => {
+                    graph.matches_standard_root_visible(origin, root, work)
+                }
+                MatchesMacro::Named(name) => graph.matches_named_visible(origin, name, work),
+            }
+            .unwrap_or(false);
+            if visible {
+                let mut enclosing = std::mem::take(&mut graph.sources[source].enclosing);
+                graph.collect_matches_guard(source, arguments, origin, kind, paths, &mut enclosing);
+                graph.sources[source].enclosing = enclosing;
+            }
+        }
+        graph
+    }
+
+    fn source_scopes(&self, source: usize) -> impl Iterator<Item = usize> + '_ {
+        std::iter::once(source)
+            .chain(self.sources[source].inner_scopes.clone())
+            .filter(|scope| self.scopes[*scope].guard_origin.is_none())
+    }
+
+    fn attach_children(&mut self, source: usize, pending: &mut VecDeque<usize>) {
+        let links: Vec<_> = self
+            .source_scopes(source)
+            .flat_map(|scope| {
+                self.scopes[scope]
+                    .bindings
+                    .values()
+                    .filter_map(move |binding| match binding {
+                        TypeBinding::FileModule(child) => Some((scope, *child)),
+                        _ => None,
+                    })
+            })
+            .collect();
+        for (scope, child) in links {
+            if !self.sources[child.source].connected {
+                self.scopes[child.source].module_parent = Some(scope);
+                self.scopes[child.source].directory = Some(child.directory);
+                self.scopes[child.source].matches_textual = child.matches_textual;
+                self.scopes[child.source].textual_macros.parent = Some((scope, child.declaration));
+                self.sources[child.source].connected = true;
+                pending.push_back(child.source);
+            }
+        }
+    }
+
+    fn collect_matches_guard(
+        &mut self,
+        source: usize,
+        arguments: Range<usize>,
+        origin: usize,
+        kind: MatchesMacro,
+        paths: &ModulePaths<'a>,
+        enclosing: &mut [Option<ScopePosition>],
+    ) {
+        let file = &self.files[source];
+        let Some(pattern) = matches_pattern(file, arguments.clone()) else {
+            return;
+        };
+        if !file.tokens[pattern.end].is_keyword("if") {
+            return;
+        }
+        let limit = arguments.end - 1;
+        let root = self.scopes.len();
+        self.scopes.push(TypeScope {
+            source,
+            parent: Some(origin),
+            module: self.scopes[origin].module,
+            directory: self.scopes[origin].directory,
+            self_receiver: self.scopes[origin].self_receiver,
+            guard_origin: Some(origin),
+            textual_macros: TextualMacros {
+                parent: Some((origin, arguments.start)),
+                ..TextualMacros::default()
+            },
+            ..TypeScope::default()
+        });
+        let mut stack = vec![root];
+        let mut index = pattern.end + 1;
+        while index < limit {
+            let scope = *stack.last().unwrap_or(&root);
+            let token = &file.tokens[index];
+            if let Some(open) = opaque_group_open(&file.tokens, index) {
+                if token.is_punct('!')
+                    && file.tokens[index - 1].is_keyword("macro_rules")
+                    && !macro_item_disabled(&file.tokens, index - 1)
+                    && let Some(name) = file.tokens.get(index + 1).and_then(Token::ident)
+                {
+                    self.scopes[scope]
+                        .textual_macros
+                        .first_names
+                        .entry(name)
+                        .or_insert(index);
+                }
+                index = file.group_ends[open].unwrap_or(limit).min(limit);
+                continue;
+            }
+            if let Some(end) = template_item_end(file, index, limit) {
+                index = end;
+                continue;
+            }
+            enclosing[index] = Some(ScopePosition::MatchesPattern(scope, kind));
+            if token.is_punct('{') {
+                stack.push(self.enter_scope(source, index, scope, paths, SelfReceiver::Inherit));
+            } else if token.is_punct('}') && stack.len() > 1 {
+                stack.pop();
+            } else if token.is_keyword("use") {
+                index = self.scopes[scope].import(&file.tokens, index).min(limit);
+                continue;
+            } else if ["type", "struct", "enum", "union"]
+                .iter()
+                .any(|keyword| token.is_keyword(keyword))
+            {
+                self.scopes[scope].bind_item(file, index, None);
+            }
+            index += 1;
+        }
+    }
+
+    fn collect_file(&mut self, source: usize, paths: &ModulePaths<'a>) {
+        let file = &self.files[source];
+        let tokens = &file.tokens;
+        let receiver_scopes = self_receiver_scopes(file);
+        let inner_start = self.scopes.len();
+        let mut enclosing = vec![None; tokens.len()];
+        let mut use_enclosing = vec![None; tokens.len()];
+        let mut stack = vec![source];
+        let mut local_macros = LocalMacroTemplates::default();
+        let mut index = 0;
+        while let Some(token) = tokens.get(index) {
+            let scope = *stack.last().unwrap_or(&source);
+            if let Some(open) = opaque_group_open(tokens, index) {
+                let end = file.group_ends[open].unwrap_or(tokens.len());
+                enclosing[index..end].fill(Some(ScopePosition::Opaque(scope)));
+                let scope_state = &mut self.scopes[scope];
+                if token.is_punct('!')
+                    && tokens[index - 1].is_keyword("macro_rules")
+                    && !macro_item_disabled(tokens, index - 1)
+                    && let Some(name) = tokens.get(index + 1).and_then(Token::ident)
+                {
+                    scope_state
+                        .textual_macros
+                        .first_names
+                        .entry(name)
+                        .or_insert(index);
+                }
+                scope_state.matches_textual |= token.is_punct('!')
+                    && tokens[index - 1].is_ident("macro_rules")
+                    && tokens[index + 1].is_ident("matches")
+                    && !macro_item_disabled(tokens, index - 1);
+                if file.group_ends[open].is_some()
+                    && let Some(transcriber) =
+                        local_macros.observe(file, index, open..end, scope_state.self_receiver)
+                {
+                    mark_local_macro_arm(file, transcriber, scope, &mut enclosing);
+                }
+                if let Some(kind) = matches_macro(tokens, index)
+                    && (!matches!(kind, MatchesMacro::Prelude) || !scope_state.matches_textual)
+                    && file.group_ends[open].is_some()
+                {
+                    mark_matches_pattern(
+                        file,
+                        open..end,
+                        ScopePosition::MatchesPattern(scope, kind),
+                        scope_state.self_receiver.is_some(),
+                        &mut enclosing,
+                    );
+                    self.guard_pending.push((source, open..end, scope, kind));
+                }
+                index = end;
+                continue;
+            }
+            enclosing[index] = Some(ScopePosition::Rust(scope));
+            if token.is_punct('{') {
+                stack.push(self.enter_scope(source, index, scope, paths, receiver_scopes[index]));
+                local_macros.enter_block();
+            } else if token.is_punct('}') && stack.len() > 1 {
+                stack.pop();
+                local_macros.leave_block();
+                let child = &self.scopes[scope];
+                if child.matches_to_parent {
+                    local_macros.observe_import(index);
+                    let imports_matches = child.matches_textual;
+                    let parent = *stack.last().unwrap_or(&source);
+                    self.scopes[parent].matches_textual |= imports_matches;
+                    self.scopes[parent]
+                        .textual_macros
+                        .unknown_at
+                        .get_or_insert(index);
+                }
+            } else if token.is_ident("use") {
+                let end = self.scopes[scope].import(tokens, index);
+                use_enclosing[index..end].fill(Some(scope));
+                index = end;
+                continue;
+            } else {
+                if token.is_keyword("mod")
+                    && tokens.get(index + 2).is_some_and(|end| end.is_punct(';'))
+                    && imports_macro_rules(tokens, index)
+                    && !macro_item_disabled(tokens, index)
+                {
+                    local_macros.observe_import(index);
+                    let imports_matches = self.file_may_import_matches(source, scope, index, paths);
+                    self.scopes[scope].matches_textual |= imports_matches;
+                    self.scopes[scope]
+                        .textual_macros
+                        .unknown_at
+                        .get_or_insert(index);
+                }
+                if token.is_keyword("extern")
+                    && has_macro_attribute(tokens, index, extern_macro_use_attribute)
+                    && !macro_item_disabled(tokens, index)
+                {
+                    self.scopes[scope]
+                        .textual_macros
+                        .unknown_at
+                        .get_or_insert(index);
+                }
+                let file_module = self.file_module(source, scope, index, paths);
+                self.scopes[scope].bind_item(file, index, file_module);
+            }
+            index += 1;
+        }
+        self.sources[source].enclosing = enclosing;
+        self.sources[source].use_enclosing = use_enclosing;
+        self.sources[source].inner_scopes = inner_start..self.scopes.len();
+    }
+
+    fn file_module(
+        &self,
+        source: usize,
+        scope: usize,
+        declaration: usize,
+        paths: &ModulePaths<'a>,
+    ) -> Option<FileModule> {
+        let tokens = &self.files[source].tokens;
+        let module = &self.scopes[scope];
+        if !self.sources[source].connected
+            || scope != module.module
+            || !tokens[declaration].is_ident("mod")
+            || !tokens.get(declaration + 2)?.is_punct(';')
+            || has_macro_attribute(tokens, declaration, |attribute| {
+                !inert_lint_attribute(attribute) && !cfg_always_active(attribute)
+            })
+        {
+            return None;
+        }
+        let mut child = paths.file(module.directory?, tokens.get(declaration + 1)?.ident()?)?;
+        child.matches_textual = module.matches_textual;
+        child.declaration = declaration;
+        Some(child)
+    }
+
+    fn file_may_import_matches(
+        &self,
+        source: usize,
+        scope: usize,
+        declaration: usize,
+        paths: &ModulePaths<'a>,
+    ) -> bool {
+        let module = &self.scopes[scope];
+        let tokens = &self.files[source].tokens;
+        if !self.sources[source].connected
+            || scope != module.module
+            || has_macro_attribute(tokens, declaration, |attribute| {
+                !macro_use_attribute(attribute) && !inert_lint_attribute(attribute)
+            })
+        {
+            return true;
+        }
+        module
+            .directory
+            .zip(tokens.get(declaration + 1).and_then(Token::ident))
+            .and_then(|(directory, name)| paths.file(directory, name))
+            .is_none_or(|child| self.files[child.source].may_supply_matches)
+    }
+
+    fn enter_scope(
+        &mut self,
+        source: usize,
+        open: usize,
+        parent: usize,
+        paths: &ModulePaths<'a>,
+        receiver: SelfReceiver,
+    ) -> usize {
+        let tokens = &self.files[source].tokens;
+        let child = self.scopes.len();
+        let enclosing_module = self.scopes[parent].module;
+        let module = open
+            .checked_sub(2)
+            .filter(|&index| tokens[index].is_ident("mod"))
+            .and_then(|index| tokens[index + 1].ident().map(|name| (index, name)));
+        let directory = module.and_then(|(declaration, name)| {
+            if macro_item_disabled(tokens, declaration) {
+                return None;
+            }
+            if conditional_attribute(tokens, declaration) {
+                self.scopes[parent].conditional_roots.insert(name);
+            }
+            let attributed = has_macro_attribute(tokens, declaration, |attribute| {
+                !inert_lint_attribute(attribute) && !cfg_always_active(attribute)
+            });
+            let binding = if attributed {
+                TypeBinding::Unresolved
+            } else {
+                TypeBinding::InlineModule(child)
+            };
+            if glob_visible(tokens, declaration) && !attributed {
+                self.scopes[parent].public_bindings.insert(name);
+            } else if glob_visibility(tokens, declaration).is_none() || attributed {
+                self.scopes[parent].uncertain_visibility.insert(name);
+            }
+            self.scopes[parent].bind(name, binding);
+            if attributed {
+                return None;
+            }
+            paths.child(self.scopes[enclosing_module].directory?, name)
+        });
+        let self_receiver = if module.is_some() {
+            None
+        } else {
+            receiver.resolve(self.scopes[parent].self_receiver)
+        };
+        self.scopes.push(TypeScope {
+            source,
+            parent: module.is_none().then_some(parent),
+            module: if module.is_some() {
+                child
+            } else {
+                enclosing_module
+            },
+            module_parent: module.map(|_| enclosing_module),
+            directory,
+            self_receiver,
+            guard_origin: self.scopes[parent].guard_origin,
+            matches_textual: self.scopes[parent].matches_textual,
+            textual_macros: TextualMacros {
+                parent: Some((parent, open)),
+                ..TextualMacros::default()
+            },
+            matches_to_parent: module.is_some_and(|(declaration, _)| {
+                imports_macro_rules(tokens, declaration)
+                    && !macro_item_disabled(tokens, declaration)
+            }),
+            ..TypeScope::default()
+        });
+        child
+    }
+
+    fn glob_module_binding(
+        &self,
+        mut owner: usize,
+        name: &str,
+        first: bool,
+        budget: &mut usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasResolutionError> {
+        loop {
+            let local = &self.scopes[owner];
+            if let Some(binding) = local.bindings.get(name) {
+                return Ok(Some((owner, binding)));
+            }
+            if !first || local.glob_import {
+                return Ok(None);
+            }
+            let Some(parent) = local.parent else {
+                return Ok(None);
+            };
+            *budget = budget
+                .checked_sub(1)
+                .ok_or(AliasResolutionError::WorkLimit)?;
+            work.charge(1)?;
+            owner = parent;
+        }
+    }
+
+    fn glob_module(
+        &self,
+        scope: usize,
+        path: &ImportPath<'a>,
+        budget: &mut usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<usize>, AliasResolutionError> {
+        if path.absolute || path.segments.is_empty() {
+            return Ok(None);
+        }
+        let mut current = scope;
+        let mut first = true;
+        for name in &path.segments {
+            *budget = budget
+                .checked_sub(name.len() + 1)
+                .ok_or(AliasResolutionError::WorkLimit)?;
+            work.charge_name(name)?;
+            if first && *name == "crate" {
+                let source = self.scopes[current].source;
+                let Some(root) = self.crate_root.filter(|root| {
+                    source == *root || self.sources[source].connected && work.permits_file_modules()
+                }) else {
+                    return Ok(None);
+                };
+                current = root;
+            } else if first && *name == "self" {
+                current = self.scopes[current].module;
+            } else if first && *name == "super" {
+                let Some(parent) = self.super_module(current, &mut VecDeque::new(), work)? else {
+                    return Ok(None);
+                };
+                current = parent;
+            } else {
+                let Some((owner, binding)) =
+                    self.glob_module_binding(current, name, first, budget, work)?
+                else {
+                    return Ok(None);
+                };
+                match binding {
+                    TypeBinding::InlineModule(child) => current = *child,
+                    TypeBinding::FileModule(child)
+                        if work.permits_file_modules()
+                            && self.scopes[child.source].module_parent == Some(owner)
+                            && self.scopes[child.source].directory == Some(child.directory) =>
+                    {
+                        current = child.source;
+                    }
+                    _ => return Ok(None),
+                }
+            }
+            first = false;
+        }
+        Ok(Some(current))
+    }
+
+    fn glob_binding(
+        &self,
+        scope: usize,
+        name: &str,
+        export: bool,
+        work: &mut AliasWork,
+    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasResolutionError> {
+        let mut budget = 4096usize;
+        let mut pending = vec![GlobVisit::Enter(scope, export)];
+        let mut active = BTreeSet::new();
+        let mut complete = BTreeSet::new();
+        let mut found = None;
+        while let Some(visit) = pending.pop() {
+            budget = budget
+                .checked_sub(name.len() + 1)
+                .ok_or(AliasResolutionError::WorkLimit)?;
+            work.charge_name(name)?;
+            let (current, export) = match visit {
+                GlobVisit::Exit(current, export) => {
+                    active.remove(&(current, export));
+                    complete.insert((current, export));
+                    continue;
+                }
+                GlobVisit::Enter(current, export) => (current, export),
+            };
+            if complete.contains(&(current, export)) {
+                continue;
+            }
+            if !active.insert((current, export)) {
+                return Ok(None);
+            }
+            pending.push(GlobVisit::Exit(current, export));
+            let entry = &self.scopes[current];
+            if current != scope && entry.uncertain_visibility.contains(name) {
+                return Ok(None);
+            }
+            if current != scope
+                && let Some(binding) = entry.bindings.get(name)
+            {
+                if entry.public_bindings.contains(name)
+                    && found.is_some_and(|(owner, _)| owner != current)
+                {
+                    return Ok(None);
+                }
+                if entry.public_bindings.contains(name) {
+                    found = Some((current, binding));
+                }
+                continue;
+            }
+            if entry.glob_paths.unknown {
+                return Ok(None);
+            }
+            for glob in &entry.glob_paths.known {
+                budget = budget
+                    .checked_sub(1)
+                    .ok_or(AliasResolutionError::WorkLimit)?;
+                work.charge(1)?;
+                if export && glob.public == Some(false) {
+                    continue;
+                }
+                if export && glob.public.is_none() {
+                    return Ok(None);
+                }
+                let Some(target) = self.glob_module(current, &glob.path, &mut budget, work)? else {
+                    return Ok(None);
+                };
+                pending.push(GlobVisit::Enter(target, true));
+            }
+        }
+        Ok(found)
+    }
+
+    fn lexical_binding(
+        &self,
+        mut scope: usize,
+        name: &str,
+        work: &mut AliasWork,
+    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasResolutionError> {
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            if let Some(binding) = current.bindings.get(name) {
+                return Ok(Some((scope, binding)));
+            }
+            if current.glob_import {
+                return self.glob_binding(scope, name, false, work);
+            }
+            let Some(parent) = current.parent else {
+                return Ok(None);
+            };
+            scope = parent;
+        }
+    }
+
+    fn external_root_visible(
+        &self,
+        scope: usize,
+        name: &str,
+        absolute: bool,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        self.external_root_visible_ignoring_globs(scope, name, absolute, false, work)
+    }
+
+    fn external_root_visible_ignoring_globs(
+        &self,
+        mut scope: usize,
+        name: &str,
+        absolute: bool,
+        ignore_globs: bool,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        if absolute {
+            let source = self.scopes[scope].source;
+            let root = if self.sources[source].connected {
+                self.crate_root.unwrap_or(source)
+            } else {
+                source
+            };
+            if let Some(source) = self.scopes[root].extern_roots.get(name) {
+                return Ok(
+                    source.is_some_and(|source| self.roots.get(source).copied().unwrap_or(false))
+                );
+            }
+            return Ok(self.roots.get(name).copied().unwrap_or(false));
+        }
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            if let Some(source) = current.extern_roots.get(name) {
+                return Ok(
+                    source.is_some_and(|source| self.roots.get(source).copied().unwrap_or(false))
+                );
+            }
+            if current.glob_import && name == "ratatui" {
+                let binding = match self.glob_binding(scope, name, false, work) {
+                    Err(AliasResolutionError::WorkLimit)
+                        if matches!(work, AliasWork::Unlimited) =>
+                    {
+                        None
+                    }
+                    result => result?,
+                };
+                if binding.is_some_and(|(_, binding)| {
+                    matches!(
+                        binding,
+                        TypeBinding::Alias(_)
+                            | TypeBinding::RatatuiBuffer
+                            | TypeBinding::Nominal
+                            | TypeBinding::NominalEnum(_)
+                            | TypeBinding::InlineModule(_)
+                            | TypeBinding::FileModule(_)
+                    )
+                }) {
+                    return Ok(false);
+                }
+            }
+            if current.bindings.contains_key(name)
+                || current.glob_import && !ignore_globs && name != "ratatui"
+            {
+                return Ok(false);
+            }
+            let Some(parent) = current.parent else {
+                return self.external_root_visible_ignoring_globs(
+                    scope,
+                    name,
+                    true,
+                    ignore_globs,
+                    work,
+                );
+            };
+            scope = parent;
+        }
+    }
+
+    fn root_at(&self, source: usize, index: usize, name: &str) -> bool {
+        let scopes = &self.sources[source];
+        let scope = scopes.use_enclosing[index].or_else(|| match scopes.enclosing[index] {
+            Some(
+                ScopePosition::Rust(scope)
+                | ScopePosition::Opaque(scope)
+                | ScopePosition::MatchesPattern(scope, _),
+            ) => Some(scope),
+            None => None,
+        });
+        let Some(scope) = scope else {
+            return false;
+        };
+        let tokens = &self.files[source].tokens;
+        let absolute = is_path_separator(tokens, index.wrapping_sub(2));
+        self.external_root_visible_ignoring_globs(
+            scope,
+            name,
+            absolute,
+            false,
+            &mut AliasWork::Unlimited,
+        )
+        .unwrap_or(false)
+    }
+
+    fn conditional_root_at(&self, source: usize, index: usize, name: &str) -> bool {
+        if !self.roots.get(name).copied().unwrap_or(false)
+            || is_path_separator(&self.files[source].tokens, index.wrapping_sub(2))
+        {
+            return false;
+        }
+        let Some(scope) = self.sources[source].use_enclosing[index].or_else(|| {
+            self.proven_field_pattern_scope(source, index, &mut AliasWork::Unlimited)
+                .ok()
+                .flatten()
+        }) else {
+            return false;
+        };
+        self.conditional_root_in_scope(scope, name)
+    }
+
+    fn conditional_root_in_scope(&self, mut scope: usize, name: &str) -> bool {
+        if !self.roots.get(name).copied().unwrap_or(false) {
+            return false;
+        }
+        loop {
+            let current = &self.scopes[scope];
+            if current.bindings.contains_key(name) {
+                return current.conditional_roots.contains(name);
+            }
+            let Some(parent) = current.parent else {
+                return false;
+            };
+            scope = parent;
+        }
+    }
+
+    fn super_module(
+        &self,
+        scope: usize,
+        path: &mut VecDeque<&str>,
+        work: &mut AliasWork,
+    ) -> Result<Option<usize>, AliasResolutionError> {
+        let mut module = self.scopes[scope].module;
+        loop {
+            work.charge(1)?;
+            let Some(parent) = self.scopes[module].module_parent else {
+                return Ok(None);
+            };
+            if self.scopes[module].source != self.scopes[parent].source
+                && !work.permits_file_modules()
+            {
+                return Ok(None);
+            }
+            module = parent;
+            if path.front() != Some(&"super") {
+                return Ok(Some(module));
+            }
+            path.pop_front();
+        }
+    }
+
+    fn resolve(
+        &self,
+        scope: usize,
+        segments: impl IntoIterator<Item = &'a str>,
+        absolute: bool,
+        work: &mut AliasWork,
+    ) -> Result<Option<&TypeBinding<'a>>, AliasResolutionError> {
+        let mut path = VecDeque::new();
+        for segment in segments {
+            work.charge(1)?;
+            path.push_back(segment);
+        }
+        let mut state = Some((scope, absolute, path.len()));
+        let mut current = scope;
+        let mut visited = BTreeSet::new();
+        loop {
+            work.charge(1)?;
+            let edge = state.take();
+            if let Some((start, absolute, edge_len)) = edge {
+                if !absolute
+                    && edge_len == 3
+                    && path
+                        .iter()
+                        .skip(1)
+                        .take(2)
+                        .copied()
+                        .eq(["buffer", "Buffer"])
+                    && self.conditional_root_in_scope(start, path[0])
+                {
+                    return Err(AliasResolutionError::ConditionalRoot);
+                }
+                if edge_len == 3
+                    && path
+                        .iter()
+                        .skip(1)
+                        .take(2)
+                        .copied()
+                        .eq(["buffer", "Buffer"])
+                    && self.external_root_visible(start, path[0], absolute, work)?
+                {
+                    return Ok((path.len() == edge_len).then_some(&TypeBinding::RatatuiBuffer));
+                }
+                if absolute {
+                    return Ok(None);
+                }
+            }
+            let Some(name) = path.pop_front() else {
+                return Ok(None);
+            };
+            let start = edge.map(|(scope, _, _)| scope);
+            let (owner, binding) = match (start, name) {
+                (Some(start), "crate") => {
+                    let source = self.scopes[start].source;
+                    let Some(root) = self.crate_root.filter(|root| {
+                        source == *root
+                            || self.sources[source].connected && work.permits_file_modules()
+                    }) else {
+                        return Ok(None);
+                    };
+                    current = root;
+                    continue;
+                }
+                (Some(start), "self") => {
+                    current = self.scopes[start].module;
+                    continue;
+                }
+                (Some(start), "super") => {
+                    let Some(module) = self.super_module(start, &mut path, work)? else {
+                        return Ok(None);
+                    };
+                    current = module;
+                    continue;
+                }
+                (Some(start), name) => {
+                    let Some((owner, binding)) = self.lexical_binding(start, name, work)? else {
+                        return Ok(None);
+                    };
+                    ((owner, name), binding)
+                }
+                (None, name) => {
+                    work.charge_name(name)?;
+                    if let Some(binding) = self.scopes[current].bindings.get(name) {
+                        ((current, name), binding)
+                    } else if let Some((owner, binding)) =
+                        self.glob_binding(current, name, true, work)?
+                    {
+                        ((owner, name), binding)
+                    } else {
+                        return Ok(None);
+                    }
+                }
+            };
+            match binding {
+                TypeBinding::Import(import) => {
+                    work.charge_name(owner.1)?;
+                    work.charge(import.segments.len())?;
+                    if !visited.insert(owner) {
+                        return Ok(None);
+                    }
+                    for segment in import.segments.iter().rev() {
+                        path.push_front(segment);
+                    }
+                    state = Some((owner.0, import.absolute, import.segments.len()));
+                }
+                _ if path.is_empty() => return Ok(Some(binding)),
+                TypeBinding::NominalEnum(variants)
+                    if path.len() == 1
+                        && path.front().is_some_and(|name| variants.contains(name)) =>
+                {
+                    return Ok(Some(&TypeBinding::Nominal));
+                }
+                TypeBinding::InlineModule(child) => current = *child,
+                TypeBinding::FileModule(child)
+                    if work.permits_file_modules()
+                        && self.scopes[child.source].module_parent == Some(owner.0)
+                        && self.scopes[child.source].directory == Some(child.directory) =>
+                {
+                    current = child.source;
+                }
+                _ => return Ok(None),
+            }
+        }
+    }
+
+    fn binding_at(
+        &self,
+        source: usize,
+        end: usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<&TypeBinding<'a>>, AliasResolutionError> {
+        work.charge(1)?;
+        let tokens = &self.files[source].tokens;
+        if tokens[end].ident().is_none() {
+            return Ok(None);
+        }
+        let Some(position) = self.sources[source].enclosing[end] else {
+            return Ok(None);
+        };
+        let scope = match position {
+            ScopePosition::Rust(scope)
+            | ScopePosition::Opaque(scope)
+            | ScopePosition::MatchesPattern(scope, _) => scope,
+        };
+        let (start, absolute) = path_start(tokens, end, work)?;
+        self.resolve(
+            scope,
+            tokens[start..=end]
+                .iter()
+                .step_by(3)
+                .map_while(Token::ident),
+            absolute,
+            work,
+        )
+    }
+
+    fn span_is_nominal(
+        &self,
+        source: usize,
+        mut range: Range<usize>,
+        frames: &[AliasApplication<'_>],
+        current: Option<&AliasApplication<'_>>,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let file = &self.files[source];
+        let tokens = &file.tokens;
+        work.charge(range.len().max(1))?;
+        while !range.is_empty()
+            && tokens[range.start].is_punct('(')
+            && file.group_ends[range.start] == Some(range.end)
+        {
+            range.start += 1;
+            range.end -= 1;
+        }
+        if range.is_empty() {
+            return Ok(false);
+        }
+        let absolute = is_path_separator(tokens, range.start);
+        let mut index = range.start + 2 * usize::from(absolute);
+        if tokens.get(index).and_then(Token::ident).is_none() {
+            return Ok(false);
+        }
+        if !absolute {
+            let Some(name) = tokens[index].ident() else {
+                return Ok(false);
+            };
+            for frame in frames.iter().chain(current) {
+                work.charge(1)?;
+                if frame.alias.source != source {
+                    continue;
+                }
+                work.charge(frame.alias.parameters.len().saturating_mul(2))?;
+                let contains = |candidate: &Range<usize>| {
+                    candidate.start <= range.start && range.end <= candidate.end
+                };
+                if (contains(&frame.alias.value) || frame.alias.parameters.iter().any(contains))
+                    && frame.alias.type_parameter_slot(tokens, name).is_some()
+                {
+                    return Ok(false);
+                }
+            }
+        }
+        while index + 3 < range.end
+            && is_path_separator(tokens, index + 1)
+            && tokens[index + 3].ident().is_some()
+        {
+            index += 3;
+        }
+        if index + 1 != range.end {
+            return Ok(false);
+        }
+        Ok(self
+            .binding_at(source, index, work)?
+            .is_some_and(TypeBinding::is_nominal))
+    }
+
+    fn conditional_parameter_resolution(
+        &self,
+        current: &AliasApplication<'_>,
+        outer: &[AliasApplication<'_>],
+        slot: usize,
+        fallback: TypeSpan,
+        work: &mut AliasWork,
+    ) -> Result<Option<bool>, AliasResolutionError> {
+        if !current.alias.has_conditional {
+            return Ok(None);
+        }
+        work.charge((slot + 1).saturating_mul(3))?;
+        let conditional_before = current.alias.conditional[..slot].iter().any(|value| *value);
+        let all_present = current
+            .arguments
+            .len()
+            .saturating_add(current.elided_lifetimes)
+            == current.alias.parameters.len();
+        let uncertain = current.conditional_lifetimes
+            || current.alias.opaque[..=slot].iter().any(|value| *value)
+            || (conditional_before || current.alias.conditional[slot]) && !all_present;
+        if !uncertain {
+            return Ok(None);
+        }
+        if self.conditional_arguments_are_nominal(current, outer, slot, fallback, work)? {
+            return Ok(Some(false));
+        }
+        Err(AliasResolutionError::ConditionalParameters)
+    }
+
+    fn conditional_arguments_are_nominal(
+        &self,
+        current: &AliasApplication<'_>,
+        outer: &[AliasApplication<'_>],
+        slot: usize,
+        fallback: TypeSpan,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        work.charge(slot + 1 + current.alias.parameters[slot].len())?;
+        let alias_tokens = &self.files[current.alias.source].tokens;
+        let default = current.alias.type_parameter_default(alias_tokens, slot);
+        let mut nominal = (!current.arguments.is_empty() || default.is_some())
+            && !current.alias.opaque[..=slot].iter().any(|value| *value);
+        for argument in &current.arguments {
+            if self.files[current.argument_source].tokens[argument.start].kind != Tok::Lifetime {
+                nominal &= self.span_is_nominal(
+                    current.argument_source,
+                    argument.clone(),
+                    outer,
+                    None,
+                    work,
+                )?;
+            }
+        }
+        if let Some(default) = default {
+            nominal &=
+                self.span_is_nominal(current.alias.source, default, outer, Some(current), work)?;
+        }
+        if current.alias.conditional[slot] {
+            nominal &= self.span_is_nominal(fallback.source, fallback.range, outer, None, work)?;
+        }
+        Ok(nominal)
+    }
+
+    fn applied_alias_is_ratatui_buffer(
+        &self,
+        argument_source: usize,
+        alias: &TypeAlias,
+        arguments: Vec<Range<usize>>,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let mut value = TypeSpan {
+            source: alias.source,
+            range: alias.value.clone(),
+        };
+        let Some(application) =
+            AliasApplication::new(self.files, alias, argument_source, arguments, work)?
+        else {
+            return Ok(false);
+        };
+        let mut applications = vec![application];
+        loop {
+            let file = &self.files[value.source];
+            let tokens = &file.tokens;
+            let span = &mut value.range;
+            work.charge(span.len().max(1))?;
+            while !Range::is_empty(span)
+                && tokens[span.start].is_punct('(')
+                && file.group_ends[span.start] == Some(span.end)
+            {
+                span.start += 1;
+                span.end -= 1;
+            }
+            if Range::is_empty(span) {
+                return Ok(false);
+            }
+            if span.len() == 1 && tokens[span.start].is_ident("Self") {
+                let Some(scope) =
+                    self.proven_field_pattern_scope(value.source, span.start, work)?
+                else {
+                    return Ok(false);
+                };
+                let Some(receiver) = self.scopes[scope].self_receiver else {
+                    return Ok(false);
+                };
+                let (start, absolute) = path_start(tokens, receiver.ident, work)?;
+                let start = if absolute {
+                    start.saturating_sub(2)
+                } else {
+                    start
+                };
+                let end = match receiver.arguments {
+                    Some(open) => match file.group_ends[open] {
+                        Some(end) => end,
+                        None => return Ok(false),
+                    },
+                    None => receiver.ident + 1,
+                };
+                value.range = start..end;
+                continue;
+            }
+            let first = span.start + 2 * usize::from(is_path_separator(tokens, span.start));
+            let mut end = first;
+            let Some(name) = tokens.get(end).and_then(Token::ident) else {
+                return Ok(false);
+            };
+            while end + 3 < span.end
+                && is_path_separator(tokens, end + 1)
+                && tokens[end + 3].ident().is_some()
+            {
+                end += 3;
+            }
+            let bare_path = end + 1 == span.end;
+            let parameter = if let Some(current) = applications
+                .last()
+                .filter(|_| bare_path && span.start == end)
+            {
+                work.charge(current.alias.parameters.len())?;
+                let alias_tokens = &self.files[current.alias.source].tokens;
+                current.alias.type_parameter_slot(alias_tokens, name)
+            } else {
+                None
+            };
+            if let Some(slot) = parameter {
+                let current_index = applications.len() - 1;
+                let (outer, current) = applications.split_at_mut(current_index);
+                let current = &mut current[0];
+                if slot >= current.available {
+                    return Ok(false);
+                }
+                let fallback = TypeSpan {
+                    source: value.source,
+                    range: span.clone(),
+                };
+                if let Some(result) =
+                    self.conditional_parameter_resolution(current, outer, slot, fallback, work)?
+                {
+                    return Ok(result);
+                }
+                let Some(argument_slot) = slot.checked_sub(current.elided_lifetimes) else {
+                    return Ok(false);
+                };
+                if let Some(argument) = current.arguments.get(argument_slot) {
+                    value = TypeSpan {
+                        source: current.argument_source,
+                        range: argument.clone(),
+                    };
+                    applications.truncate(applications.len() - 1);
+                    continue;
+                }
+                work.charge(slot + 1 + current.alias.parameters[slot].len())?;
+                let alias_tokens = &self.files[current.alias.source].tokens;
+                let Some(default) = current.alias.type_parameter_default(alias_tokens, slot) else {
+                    return Ok(false);
+                };
+                value = TypeSpan {
+                    source: current.alias.source,
+                    range: default,
+                };
+                current.available = slot;
+                continue;
+            }
+            let alias = match self.binding_at(value.source, end, work)? {
+                Some(TypeBinding::RatatuiBuffer) if bare_path => return Ok(true),
+                Some(TypeBinding::Alias(alias)) => alias,
+                _ => return Ok(false),
+            };
+            let slots = if bare_path {
+                Vec::new()
+            } else {
+                let arguments = end + 1 + 2 * usize::from(is_path_separator(tokens, end + 1));
+                let Some((slots, boundary)) = generic_slots(&tokens[..span.end], arguments) else {
+                    return Ok(false);
+                };
+                if boundary != span.end {
+                    return Ok(false);
+                }
+                slots
+            };
+            work.charge(applications.len())?;
+            if applications.iter().any(|active| {
+                active.alias.source == alias.source && active.alias.declaration == alias.declaration
+            }) {
+                return Ok(false);
+            }
+            let Some(application) =
+                AliasApplication::new(self.files, alias, value.source, slots, work)?
+            else {
+                return Ok(false);
+            };
+            value = TypeSpan {
+                source: alias.source,
+                range: alias.value.clone(),
+            };
+            applications.push(application);
+        }
+    }
+
+    fn may_be_ratatui_buffer(
+        &self,
+        source: usize,
+        index: usize,
+        reference: BufferReference,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let tokens = &self.files[source].tokens;
+        let rust_scope = self
+            .proven_field_pattern_scope(source, index, work)?
+            .is_some();
+        Ok(match self.binding_at(source, index, work)? {
+            Some(TypeBinding::RatatuiBuffer) => true,
+            Some(binding) if binding.is_nominal() && rust_scope => false,
+            Some(TypeBinding::Alias(alias))
+                if reference == BufferReference::FieldPattern
+                    && rust_scope
+                    && self.alias_is_ratatui_buffer(source, alias, None, work)? =>
+            {
+                true
+            }
+            _ => {
+                tokens[index].is_ident("Buffer")
+                    && !is_path_separator(tokens, index.wrapping_sub(2))
+            }
+        })
+    }
+
+    fn self_is_ratatui_buffer(
+        &self,
+        source: usize,
+        index: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        work.charge(1)?;
+        let Some(scope) = self.proven_field_pattern_scope(source, index, work)? else {
+            return Ok(false);
+        };
+        let Some(receiver) = self.scopes[scope].self_receiver else {
+            return Ok(false);
+        };
+        let binding = self.binding_at(source, receiver.ident, work)?;
+        match (binding, receiver.arguments) {
+            (Some(TypeBinding::RatatuiBuffer), None) => Ok(true),
+            (Some(TypeBinding::Alias(alias)), arguments) => {
+                self.alias_is_ratatui_buffer(source, alias, arguments, work)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn proven_field_pattern_scope(
+        &self,
+        source: usize,
+        index: usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<usize>, AliasResolutionError> {
+        Ok(match self.sources[source].enclosing[index] {
+            Some(ScopePosition::Rust(scope)) => Some(scope),
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute(root)))
+                if self.matches_absolute_root_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    root,
+                    work,
+                )? =>
+            {
+                Some(scope)
+            }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Prelude))
+                if self.matches_prelude_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    work,
+                )? =>
+            {
+                Some(scope)
+            }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Relative(root)))
+                if self.matches_standard_root_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    root,
+                    work,
+                )? =>
+            {
+                Some(scope)
+            }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Named(name)))
+                if self.matches_named_visible(
+                    self.scopes[scope].guard_origin.unwrap_or(scope),
+                    name,
+                    work,
+                )? =>
+            {
+                Some(scope)
+            }
+            _ => None,
+        })
+    }
+
+    fn include_name_visible(
+        &self,
+        mut scope: usize,
+        invocation: usize,
+        name: &str,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        if !self.textual_name_visible(scope, invocation, name, work)? {
+            return Ok(false);
+        }
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            match current
+                .named_include_imports
+                .get(name)
+                .copied()
+                .unwrap_or_default()
+            {
+                MatchesImport::Standard(root) => {
+                    return self.matches_absolute_root_visible(scope, root, work);
+                }
+                MatchesImport::RelativeStandard(root) => {
+                    return self.matches_standard_root_visible(scope, root, work);
+                }
+                MatchesImport::Unknown => return Ok(false),
+                MatchesImport::Absent if current.glob_import => return Ok(false),
+                MatchesImport::Absent => {}
+            }
+            let Some(parent) = current.parent else {
+                return Ok(name == "include");
+            };
+            scope = parent;
+        }
+    }
+
+    fn matches_named_visible(
+        &self,
+        mut scope: usize,
+        name: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let invocation_scope = scope;
+        let invocation = name;
+        let source = self.scopes[scope].source;
+        let Some(name) = self.files[source].tokens.get(name).and_then(Token::ident) else {
+            return Ok(false);
+        };
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            match current
+                .named_matches_imports
+                .get(name)
+                .copied()
+                .unwrap_or_default()
+            {
+                MatchesImport::Standard(root) => {
+                    return Ok(self.matches_absolute_root_visible(scope, root, work)?
+                        && self.textual_name_visible(invocation_scope, invocation, name, work)?);
+                }
+                MatchesImport::RelativeStandard(root) => {
+                    return Ok(self.matches_standard_root_visible(scope, root, work)?
+                        && self.textual_name_visible(invocation_scope, invocation, name, work)?);
+                }
+                MatchesImport::Unknown => return Ok(false),
+                MatchesImport::Absent if current.glob_import => return Ok(false),
+                MatchesImport::Absent => {}
+            }
+            let Some(parent) = current.parent else {
+                return Ok(false);
+            };
+            scope = parent;
+        }
+    }
+
+    fn textual_name_visible(
+        &self,
+        mut scope: usize,
+        mut cutoff: usize,
+        name: &str,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope].textual_macros;
+            if current
+                .first_names
+                .get(name)
+                .is_some_and(|first| *first < cutoff)
+                || current.unknown_at.is_some_and(|first| first < cutoff)
+            {
+                return Ok(false);
+            }
+            let Some((parent, entered)) = current.parent else {
+                return Ok(true);
+            };
+            scope = parent;
+            cutoff = entered;
+        }
+    }
+
+    fn matches_prelude_visible(
+        &self,
+        mut scope: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        loop {
+            work.charge(1)?;
+            let current = &self.scopes[scope];
+            match current.matches_imported {
+                MatchesImport::Standard(root) => {
+                    return self.matches_absolute_root_visible(scope, root, work);
+                }
+                MatchesImport::RelativeStandard(root) => {
+                    return self.matches_standard_root_visible(scope, root, work);
+                }
+                MatchesImport::Unknown => return Ok(false),
+                MatchesImport::Absent if current.glob_import => return Ok(false),
+                MatchesImport::Absent => {}
+            }
+            let Some(parent) = current.parent else {
+                return Ok(true);
+            };
+            scope = parent;
+        }
+    }
+
+    fn matches_standard_root_visible(
+        &self,
+        mut scope: usize,
+        root: StandardMacroRoot,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let name = root.name();
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            if current.bindings.contains_key(name) {
+                return Ok(false);
+            }
+            if let Some(standard) = current.extern_macro_roots[root as usize] {
+                return Ok(standard);
+            }
+            if current.glob_import {
+                return Ok(false);
+            }
+            let Some(parent) = current.parent else {
+                return self.matches_absolute_root_visible(scope, root, work);
+            };
+            scope = parent;
+        }
+    }
+
+    fn matches_absolute_root_visible(
+        &self,
+        scope: usize,
+        root: StandardMacroRoot,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        work.charge_name(root.name())?;
+        let source = self.scopes[scope].source;
+        let crate_root = self.sources[source]
+            .connected
+            .then_some(self.crate_root)
+            .flatten();
+        Ok(crate_root.is_some_and(|root_scope| {
+            self.scopes[root_scope].extern_macro_roots[root as usize].unwrap_or(true)
+        }))
+    }
+
+    fn alias_is_ratatui_buffer(
+        &self,
+        source: usize,
+        alias: &TypeAlias,
+        start: Option<usize>,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let file = &self.files[source];
+        let slots = if let Some(start) = start {
+            let Some(end) = file.group_ends[start] else {
+                return Ok(false);
+            };
+            work.charge(end - start)?;
+            let Some((slots, _)) = generic_slots(&file.tokens[..end], start) else {
+                return Ok(false);
+            };
+            slots
+        } else {
+            Vec::new()
+        };
+        self.applied_alias_is_ratatui_buffer(source, alias, slots, work)
+    }
+
+    fn direct_import_is_ratatui(&self, scope: usize, leaf: &PathLeaf<'_>) -> bool {
+        leaf.segments.first().is_some_and(|root| {
+            if leaf.segments.len() == 1
+                && !leaf.absolute
+                && matches!(self.scopes[scope].bindings.get(root), Some(TypeBinding::Import(import)) if import.segments == leaf.segments && import.absolute == leaf.absolute)
+            {
+                if let Some(parent) = self.scopes[scope].parent {
+                    return self.external_root_visible_ignoring_globs(parent, root, false, true, &mut AliasWork::Unlimited).unwrap_or(false);
+                }
+                return self.external_root_visible_ignoring_globs(scope, root, true, true, &mut AliasWork::Unlimited).unwrap_or(false);
+            }
+            self.external_root_visible_ignoring_globs(
+                scope,
+                root,
+                leaf.absolute,
+                true,
+                &mut AliasWork::Unlimited,
+            )
+            .unwrap_or(false)
+        })
+    }
+
+    fn direct_import_violations(&self, source: usize) -> Vec<(usize, Violation)> {
+        let file = &self.files[source];
+        let mut violations = Vec::new();
+        for scope in self.source_scopes(source) {
+            for leaf in &self.scopes[scope].imports {
+                let conditional = !leaf.absolute
+                    && leaf
+                        .segments
+                        .first()
+                        .is_some_and(|root| self.conditional_root_at(source, leaf.root, root));
+                let rest = leaf.segments.get(1..).unwrap_or_default();
+                if conditional
+                    && (!RATATUI_ALLOWED
+                        .iter()
+                        .any(|prefix| rest.starts_with(prefix))
+                        || rest == ["buffer", "Buffer"] && leaf.rename.is_some())
+                {
+                    violations.push((
+                        leaf.root,
+                        Violation::at_line(
+                            CiStep::Screen,
+                            file.path,
+                            file.tokens[leaf.root].line,
+                            "C1: conditional module leaves ratatui root provenance uncertain",
+                        ),
+                    ));
+                }
+                if conditional {
+                    continue;
+                }
+                if !self.direct_import_is_ratatui(scope, leaf) {
+                    continue;
+                }
+                let rest = &leaf.segments[1..];
+                if rest == ["buffer", "Buffer"]
+                    && let Some((_, line)) = leaf.rename
+                {
+                    violations.push((
+                        leaf.terminal,
+                        Violation::at_line(CiStep::Screen, file.path, line, BUFFER_RENAME),
+                    ));
+                }
+                if !RATATUI_ALLOWED
+                    .iter()
+                    .any(|prefix| rest.starts_with(prefix))
+                {
+                    violations.push((leaf.terminal, Violation::at_line(CiStep::Screen, file.path, file.tokens[leaf.root].line,
+                        format!("C1: imports {}; jackin-tui may import only Frame, Rect, Buffer and crossterm::event from ratatui", leaf.segments.join("::")))));
+                }
+            }
+        }
+        violations
+    }
+
+    fn renamed_imports(&self, source: usize) -> Vec<(usize, Violation)> {
+        let path = self.files[source].path;
+        self.source_scopes(source)
+            .flat_map(|scope| {
+                self.scopes[scope]
+                    .renamed
+                    .iter()
+                    .filter(move |&&(name, _, _)| {
+                        if self.scopes[scope].imports.iter().any(|leaf| {
+                            leaf.rename.is_some_and(|(renamed, _)| renamed == name)
+                                && leaf
+                                    .segments
+                                    .get(1..)
+                                    .is_some_and(|rest| rest == ["buffer", "Buffer"])
+                                && self.direct_import_is_ratatui(scope, leaf)
+                        }) {
+                            return false;
+                        }
+                        matches!(
+                            self.resolve(scope, [name], false, &mut AliasWork::Unlimited),
+                            Ok(Some(TypeBinding::RatatuiBuffer))
+                        )
+                    })
+                    .map(move |&(_, line, token)| {
+                        (
+                            token,
+                            Violation::at_line(CiStep::Screen, path, line, BUFFER_RENAME),
+                        )
+                    })
+            })
+            .collect()
+    }
+}
+
+fn path_start(
+    tokens: &[Token],
+    end: usize,
+    work: &mut AliasWork,
+) -> Result<(usize, bool), AliasResolutionError> {
+    let mut start = end;
+    while is_path_separator(tokens, start.wrapping_sub(2)) {
+        work.charge(1)?;
+        let preceding = start.checked_sub(3).and_then(|at| tokens.get(at));
+        if preceding.is_none_or(|token| {
+            token.ident().is_none()
+                || KEYWORDS_BEFORE_PATH
+                    .iter()
+                    .any(|keyword| token.is_keyword(keyword))
+        }) {
+            return Ok((start, true));
+        }
+        start -= 3;
+    }
+    Ok((start, false))
+}
+
+struct FieldPatternIndex<'a> {
+    ends: &'a [Option<usize>],
+    excluded: Vec<bool>,
+    fields: Vec<bool>,
+    type_prefixes: Vec<bool>,
+}
+
+impl<'a> FieldPatternIndex<'a> {
+    fn new(file: &'a ScreenFile<'_>) -> Self {
+        let tokens = &file.tokens;
+        let ends = &file.group_ends;
+        let excluded = field_pattern_exclusions(file);
+        let fields = field_prefixes(tokens, ends);
+        let type_prefixes = pattern_type_prefixes(tokens);
+        Self {
+            ends,
+            excluded,
+            fields,
+            type_prefixes,
+        }
+    }
+
+    fn is_field_pattern(&self, tokens: &[Token], index: usize, open: usize) -> bool {
+        tokens.get(open).is_some_and(|t| t.is_punct('{'))
+            && !self.excluded[index]
+            && self.fields[open + 1]
+            && (!self.type_prefixes[index]
+                || self.ends[open]
+                    .and_then(|end| tokens.get(end))
+                    .is_some_and(|t| t.is_ident("in")))
+    }
+}
+
+fn buffer_pattern_matches(
+    source: usize,
+    index: usize,
+    types: &TypeScopes<'_>,
+    patterns: &FieldPatternIndex<'_>,
+    work_limit: usize,
+) -> Result<bool, AliasResolutionError> {
+    let tokens = &types.files[source].tokens;
+    let mut work = AliasWork::Limited(work_limit);
+    if tokens.get(index + 1).is_some_and(|t| t.is_punct('{')) {
+        if !patterns.is_field_pattern(tokens, index, index + 1) {
+            return Ok(false);
+        }
+        if tokens[index].is_ident("Self") && !is_path_separator(tokens, index.wrapping_sub(2)) {
+            return types.self_is_ratatui_buffer(source, index, &mut work);
+        }
+        return types.may_be_ratatui_buffer(
+            source,
+            index,
+            BufferReference::FieldPattern,
+            &mut work,
+        );
+    }
+    let start = index + 3;
+    if !is_path_separator(tokens, index + 1) || !tokens.get(start).is_some_and(|t| t.is_punct('<'))
+    {
+        return Ok(false);
+    }
+    let Some(open) = patterns.ends[start] else {
+        return Ok(false);
+    };
+    if !patterns.is_field_pattern(tokens, index, open) {
+        return Ok(false);
+    }
+    let Some(TypeBinding::Alias(alias)) = types.binding_at(source, index, &mut work)? else {
+        return Ok(false);
+    };
+    types.alias_is_ratatui_buffer(source, alias, Some(start), &mut work)
+}
+
+fn pattern_violations(
+    source: usize,
+    aliases: &TypeScopes<'_>,
+    work_limit: usize,
+) -> Vec<(usize, Violation)> {
+    let file = &aliases.files[source];
+    let tokens = &file.tokens;
+    let patterns = FieldPatternIndex::new(file);
+    (1..tokens.len())
+        .filter_map(|index| {
+            let message = match buffer_pattern_matches(source, index, aliases, &patterns, work_limit) {
+                Ok(true) => "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
+                Ok(false) => return None,
+                Err(AliasResolutionError::WorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
+                Err(AliasResolutionError::ConditionalParameters) => "C1: conditional alias parameters leave Buffer provenance unresolved for this pattern",
+                Err(AliasResolutionError::ConditionalRoot) => "C1: conditional module leaves ratatui root provenance uncertain",
+            };
+            Some((index, Violation::at_line(CiStep::Screen, file.path, tokens[index].line, message)))
+        })
+        .collect()
+}
+
+fn field_pattern_exclusions(file: &ScreenFile<'_>) -> Vec<bool> {
+    let tokens = &file.tokens;
+    let ends = &file.group_ends;
+    let mut test_ends = vec![0; tokens.len()];
+    for index in 0..tokens.len() {
+        if let Some(test) =
+            cfg_test_bounds(tokens, index, |open| ends[open].unwrap_or(tokens.len()))
+        {
+            test_ends[test.start] = test_ends[test.start].max(test.end);
+        }
+    }
+    let mut excluded = Vec::with_capacity(tokens.len());
+    let mut test_end = 0;
+    let mut braces = Vec::new();
+    let enum_bodies = enum_body_starts(file);
+    for (index, token) in tokens.iter().enumerate() {
+        test_end = test_end.max(test_ends[index]);
+        excluded.push(index < test_end || braces.last().copied().unwrap_or(false));
+        if token.is_punct('{') {
+            braces.push(enum_bodies[index]);
+        } else if token.is_punct('}') {
+            braces.truncate(braces.len().saturating_sub(1));
+        }
+    }
+    excluded
+}
+
+fn header_body_starts(tokens: &[Token], ends: &[Option<usize>]) -> Vec<Option<usize>> {
+    let mut where_bodies = vec![None; tokens.len() + 1];
+    for index in (0..tokens.len()).rev() {
+        let token = &tokens[index];
+        where_bodies[index] = match token.kind {
+            Tok::Punct('{')
+                if index
+                    .checked_sub(1)
+                    .and_then(|bang| opaque_group_open(tokens, bang))
+                    != Some(index) =>
+            {
+                Some(index)
+            }
+            Tok::Punct(';' | '}' | ')' | ']') => None,
+            Tok::Punct('{' | '<' | '(' | '[') => ends[index].and_then(|end| where_bodies[end]),
+            _ => where_bodies[index + 1],
+        };
+    }
+    where_bodies
+}
+
+fn enum_body_starts(file: &ScreenFile<'_>) -> Vec<bool> {
+    let tokens = &file.tokens;
+    let mut bodies = vec![false; tokens.len()];
+    for (index, token) in tokens.iter().enumerate() {
+        if token.is_ident("enum")
+            && let Some(body) =
+                enum_body_after_name(tokens, &file.group_ends, &file.header_bodies, index)
+        {
+            bodies[body] = true;
+        }
+    }
+    bodies
+}
+
+fn enum_body_after_name(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    where_bodies: &[Option<usize>],
+    declaration: usize,
+) -> Option<usize> {
+    tokens.get(declaration + 1)?.ident()?;
+    let after_name = declaration + 2;
+    let boundary = if tokens.get(after_name)?.is_punct('<') {
+        ends[after_name]?
+    } else {
+        after_name
+    };
+    let token = tokens.get(boundary)?;
+    if token.is_ident("where") {
+        where_bodies[boundary + 1]
+    } else {
+        token.is_punct('{').then_some(boundary)
+    }
+}
+
+fn field_prefixes(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
+    let mut fields = vec![false; tokens.len() + 1];
+    for index in (0..tokens.len()).rev() {
+        let token = &tokens[index];
+        let next = tokens.get(index + 1);
+        fields[index] = if token.is_punct('#') && next.is_some_and(|t| t.is_punct('[')) {
+            ends[index + 1].is_some_and(|end| fields[end])
+        } else if token.is_ident("ref") || token.is_ident("mut") {
+            fields[index + 1]
+        } else {
+            (token.ident().is_some()
+                && next.is_some_and(|t| t.is_punct(',') || t.is_punct(':') || t.is_punct('}')))
+                || (token.is_punct('.') && next.is_some_and(|t| t.is_punct('.')))
+        };
+    }
+    fields
+}
+
+fn pattern_type_prefixes(tokens: &[Token]) -> Vec<bool> {
+    let mut path_starts = Vec::with_capacity(tokens.len());
+    let mut prefixes = Vec::with_capacity(tokens.len());
+    let mut types = Vec::with_capacity(tokens.len());
+    for index in 0..tokens.len() {
+        let start = if index >= 3
+            && is_path_separator(tokens, index - 2)
+            && tokens[index - 3].ident().is_some()
+        {
+            path_starts[index - 3]
+        } else {
+            index
+        };
+        path_starts.push(start);
+        let prefix = if index > 0 && is_pattern_type_qualifier(&tokens[index - 1]) {
+            prefixes[index - 1]
+        } else {
+            index
+        };
+        prefixes.push(prefix);
+        let start = if start >= 2 && is_path_separator(tokens, start - 2) {
+            start - 2
+        } else {
+            start
+        };
+        let start = prefixes[start];
+        types.push(start.checked_sub(1).is_some_and(|before| {
+            let token = &tokens[before];
+            (token.is_punct('>') && before > 0 && tokens[before - 1].is_punct('-'))
+                || NON_PATTERN_KEYWORDS
+                    .iter()
+                    .any(|keyword| token.is_ident(keyword))
+        }));
+    }
+    types
+}
+
+fn is_pattern_type_qualifier(token: &Token) -> bool {
+    token.is_punct('&')
+        || token.is_punct('*')
+        || token.is_ident("mut")
+        || token.is_ident("const")
+        || matches!(token.kind, Tok::Other | Tok::Lifetime)
+}
+
 fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
     let mut violations = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
@@ -449,4 +4430,75 @@ fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         }
     }
     violations
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use std::fs;
+    use std::path::Path;
+
+    use super::{Check, CiStep, Repo, SCREEN_LIB, ScreenCheck, Violation};
+
+    #[test]
+    fn alias_budget_reports_an_explicit_screen_violation() -> Result<(), Box<dyn Error>> {
+        let directory = tempfile::tempdir()?;
+        let root = directory.path();
+        let status = jackin_testkit::git_command()
+            .args(["init", "-q"])
+            .current_dir(root)
+            .status()?;
+        assert!(status.success(), "git init exited with {status}");
+        fs::create_dir_all(root.join("crates/jackin-tui/src"))?;
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/jackin-tui\"]\nresolver = \"3\"\n",
+        )?;
+        fs::write(
+            root.join("crates/jackin-tui/Cargo.toml"),
+            "[package]\nname = \"jackin-tui\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        )?;
+        fs::write(
+            root.join(SCREEN_LIB),
+            "use ratatui::buffer::Buffer;\n\
+             pub type Identity<T> = T;\n\
+             mod aliases { pub use super::Identity as Forward; }\n\
+             fn view(buf: Buffer, imported: Buffer) {\n\
+             \x20   let _: Option<Identity::<Buffer>> = None;\n\
+             \x20   let Identity::<Buffer> { content, .. } = buf;\n\
+             \x20   let aliases::Forward::<Buffer> { content, .. } = imported;\n\
+             }\n",
+        )?;
+        let repo = Repo::open(root.to_owned())?;
+        let normal = ScreenCheck::with_allowed(&[]);
+        let import_limited = ScreenCheck {
+            alias_work_limit: 48,
+            ..normal
+        };
+        let capacity_limited = ScreenCheck {
+            alias_work_limit: 3,
+            ..normal
+        };
+        let path = Path::new(SCREEN_LIB);
+        let destructures = |line| {
+            Violation::at_line(
+                CiStep::Screen,
+                path,
+                line,
+                "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
+            )
+        };
+        let exhausted = |line| {
+            Violation::at_line(
+                CiStep::Screen,
+                path,
+                line,
+                "C1: Screen alias resolution exceeded its work limit for this pattern",
+            )
+        };
+        assert_eq!(normal.run(&repo), [destructures(6), destructures(7)]);
+        assert_eq!(import_limited.run(&repo), [destructures(6), exhausted(7)]);
+        assert_eq!(capacity_limited.run(&repo), [exhausted(6), exhausted(7)]);
+        Ok(())
+    }
 }

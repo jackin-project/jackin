@@ -774,6 +774,29 @@ async fn two_providers_on_one_folder_save_independently() -> TestResult {
     .await
 }
 
+async fn plant_native_kimi(folder: &Path) -> TestResult {
+    tokio::fs::create_dir_all(folder.join("credentials")).await?;
+    tokio::fs::write(
+        folder.join("config.toml"),
+        "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"https://api.kimi.com/coding/v1\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/kimi-code\"\n",
+    )
+    .await?;
+    tokio::fs::write(
+        folder.join("credentials/kimi-code.json"),
+        serde_json::json!({
+            "access_token": "FAKE-KIMI-ACCESS",
+            "refresh_token": "FAKE-KIMI-REFRESH",
+            "expires_at": 4_102_444_800_u64,
+            "expires_in": 3600,
+            "scope": "membership.read",
+            "token_type": "Bearer"
+        })
+        .to_string(),
+    )
+    .await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn native_kimi_folder_saves_as_host_login_and_malformed_native_config_is_not_a_file()
 -> TestResult {
@@ -786,43 +809,34 @@ async fn native_kimi_folder_saves_as_host_login_and_malformed_native_config_is_n
             .position(|choice| jackin_tui::core_provider(choice.provider) == Provider::Kimi)
             .ok_or("no Kimi provider")?;
         let folder = lab.code.join("kimi-native");
-        tokio::fs::create_dir_all(folder.join("credentials")).await?;
-        tokio::fs::write(
-            folder.join("config.toml"),
-            "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"https://api.kimi.com/coding/v1\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/kimi-code\"\n",
-        )
-        .await?;
-        tokio::fs::write(
-            folder.join("credentials/kimi-code.json"),
-            serde_json::json!({
-                "access_token": "FAKE-KIMI-ACCESS",
-                "refresh_token": "FAKE-KIMI-REFRESH",
-                "expires_at": 1_800_000_000,
-                "expires_in": 3600,
-                "scope": "membership.read",
-                "token_type": "Bearer"
-            })
-            .to_string(),
-        )
-        .await?;
+        plant_native_kimi(&folder).await?;
         lab.reopen().await?;
-        lab.folder_form("native", index, "~/code/kimi-native").await?;
+        lab.folder_form("native", index, "~/code/kimi-native")
+            .await?;
         lab.save_form().await?;
         let config = lab.config().await?;
         let account = config
             .accounts()
             .find(|account| account.name().as_str() == "native")
             .ok_or("native account was not saved")?;
-        assert!(matches!(account.credential(), CredentialSource::HostLogin { .. }));
+        assert!(matches!(
+            account.credential(),
+            CredentialSource::HostLogin { .. }
+        ));
 
         tokio::fs::write(folder.join("config.toml"), "not toml").await?;
         let before = lab.console.config_text().await?;
         lab.reopen().await?;
-        lab.folder_form("broken", index, "~/code/kimi-native").await?;
+        lab.folder_form("broken", index, "~/code/kimi-native")
+            .await?;
         lab.save_form().await?;
         assert_eq!(lab.console.config_text().await?, before);
         let config = lab.config().await?;
-        assert!(config.accounts().all(|account| account.name().as_str() != "broken"));
+        assert!(
+            config
+                .accounts()
+                .all(|account| account.name().as_str() != "broken")
+        );
         Ok(())
     })
     .await
@@ -857,6 +871,74 @@ async fn a_folder_without_the_providers_login_fails_the_check_and_not_only_the_s
         let screen = lab.console.screen();
         assert!(screen.contains("✓ material"), "{screen}");
         assert!(!screen.contains(&refused), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+fn provider_index(
+    form: &AccountForm,
+    wanted: Provider,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    form.providers
+        .iter()
+        .position(|choice| jackin_tui::core_provider(choice.provider) == wanted)
+        .ok_or_else(|| format!("no {wanted:?} provider").into())
+}
+
+#[tokio::test]
+async fn a_native_kimi_folder_passes_the_check_and_a_malformed_one_fails_it() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let index = provider_index(&AccountForm::openshell(), Provider::Kimi)?;
+        let folder = lab.code.join("kimi-check");
+        plant_native_kimi(&folder).await?;
+        lab.reopen().await?;
+        lab.folder_form("native", index, "~/code/kimi-check")
+            .await?;
+        lab.step("tab tab enter").await?;
+        let screen = lab.console.screen();
+        assert!(screen.contains("✓ material"), "{screen}");
+
+        tokio::fs::write(folder.join("config.toml"), "not toml").await?;
+        let before = lab.console.config_text().await?;
+        lab.reopen().await?;
+        lab.folder_form("broken", index, "~/code/kimi-check")
+            .await?;
+        lab.step("tab tab enter").await?;
+        let screen = lab.console.screen();
+        assert!(!screen.contains("✓ material"), "{screen}");
+        assert!(screen.contains("native kimi login is invalid"), "{screen}");
+        assert_eq!(lab.console.config_text().await?, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_empty_minimax_or_mimo_folder_fails_the_check() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let before = lab.console.config_text().await?;
+        for (wanted, name, refusal) in [
+            (
+                Provider::Minimax,
+                "minimax-empty",
+                "native minimax login is invalid",
+            ),
+            (Provider::Mimo, "mimo-empty", "cannot read the login"),
+        ] {
+            let index = provider_index(&AccountForm::openshell(), wanted)?;
+            tokio::fs::create_dir_all(lab.code.join(name)).await?;
+            lab.reopen().await?;
+            lab.folder_form("native", index, &format!("~/code/{name}"))
+                .await?;
+            lab.step("tab tab enter").await?;
+            let screen = lab.console.screen();
+            assert!(!screen.contains("✓ material"), "{wanted:?}: {screen}");
+            assert!(screen.contains(refusal), "{wanted:?}: {screen}");
+            assert_eq!(lab.console.config_text().await?, before, "{wanted:?}");
+        }
         Ok(())
     })
     .await

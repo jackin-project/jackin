@@ -1961,6 +1961,51 @@ mod error_paths {
     }
 
     #[test]
+    fn a_qualified_display_call_and_a_multi_line_attribute_are_reported() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"qualified {}\", Path::display(.path.as_path()))] // p_qualified",
+            "    A { path: PathBuf },",
+            "    #[error(\"full {}\", std::path::Path::display(.0.as_path()))] // p_full",
+            "    B(HostPath),",
+            "    #[error(",
+            "        \"multi {}\",",
+            "        .dir.display() // p_multi",
+            "    )]",
+            "    C { dir: PathBuf },",
+            "    #[error(\"mapped {}\", .paths.iter().map(Path::display).count())] // p_mapped",
+            "    D { paths: Vec<PathBuf> },",
+            "    #[error(\"aliased {}\", P::display(.0.as_path()))] // p_aliased",
+            "    E(PathBuf),",
+            "    #[error(\"ufcs {}\", <std::path::Path>::display(.0.as_path()))] // p_ufcs",
+            "    F(PathBuf),",
+            "    #[error(\"turbofish {}\", Render::<u8>::display(.0))] // p_turbofish",
+            "    G(Label),",
+            "    #[error(\"wrapped {}\", plain(Path::display(.path.as_path())))]",
+            "    H { path: PathBuf },",
+            "}",
+        ]);
+        assert_eq!(
+            summary(&run(&source)?),
+            lines(
+                CiStep::Errors,
+                LIB,
+                &source,
+                &[
+                    "p_qualified",
+                    "p_full",
+                    "p_multi",
+                    "p_mapped",
+                    "p_aliased",
+                    "p_ufcs",
+                    "p_turbofish"
+                ]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
     fn a_display_call_wrapped_in_plain_or_outside_an_error_attribute_passes() -> TestResult {
         let source = text(&[
             "enum E {",

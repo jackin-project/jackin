@@ -630,3 +630,52 @@ async fn a_git_sourced_role_stays_cached_while_local_roles_are_reread_on_refresh
     })
     .await
 }
+
+#[tokio::test]
+async fn a_check_running_while_the_manifest_changes_does_not_restore_its_stale_result() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let twin = lab.add_role("twin").await?;
+        lab.reopen().await?;
+        lab.console.keys("R v")?;
+        lab.console.settle().await?;
+        assert!(check_state_is_unchecked(&mut lab, "twin")?);
+
+        let hold = lab.rig.world.hold_read("Dockerfile");
+        lab.console.keys("down v")?;
+        for _ in 0..500 {
+            if hold.has_arrived() {
+                break;
+            }
+            lab.console.pump(1).await;
+        }
+        assert!(hold.has_arrived(), "the check never reached its inspection");
+
+        let manifest_reads = |lab: &Lab| lab.rig.world.reads_of(twin.root(), "jackin.role.toml");
+        let before = manifest_reads(&lab);
+        edit_manifest(twin.root(), true).await?;
+        for _ in 0..500 {
+            if manifest_reads(&lab) > before + 1 {
+                break;
+            }
+            lab.console.elapse(1);
+            lab.console.tick(1);
+            lab.console.pump(2).await;
+        }
+        assert!(
+            manifest_reads(&lab) > before + 1,
+            "the refresh never reloaded the edited role while the check was parked"
+        );
+        hold.release();
+        lab.console.settle().await?;
+        after_refresh(&mut lab).await?;
+
+        assert!(
+            check_state_is_unchecked(&mut lab, "twin")?,
+            "the result of the check that read the old manifest was restored"
+        );
+        Ok(())
+    })
+    .await
+}

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use unicode_ident::{is_xid_continue, is_xid_start};
+
 #[derive(Debug)]
 pub(crate) struct Cursor {
     chars: Vec<char>,
@@ -71,14 +73,17 @@ pub(crate) struct Lexed {
 pub(crate) struct Token {
     pub(crate) kind: Tok,
     pub(crate) line: u32,
+    pub(crate) joins_next_pipe: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Tok {
     Ident(String),
+    RawIdent(String),
     Str(String),
     Number(String),
     Punct(char),
+    Lifetime,
     Other,
 }
 
@@ -92,7 +97,7 @@ pub(crate) struct Comment {
 impl Token {
     pub(crate) fn ident(&self) -> Option<&str> {
         match &self.kind {
-            Tok::Ident(name) => Some(name),
+            Tok::Ident(name) | Tok::RawIdent(name) => Some(name),
             _ => None,
         }
     }
@@ -118,14 +123,18 @@ impl Token {
     pub(crate) fn is_ident(&self, expected: &str) -> bool {
         self.ident() == Some(expected)
     }
+
+    pub(crate) fn is_keyword(&self, expected: &str) -> bool {
+        matches!(&self.kind, Tok::Ident(name) if name == expected)
+    }
 }
 
 fn is_ident_start(c: char) -> bool {
-    c == '_' || c.is_alphabetic()
+    c == '_' || is_xid_start(c)
 }
 
 fn is_ident_continue(c: char) -> bool {
-    c == '_' || c.is_alphanumeric()
+    is_xid_continue(c) && !matches!(c, '\u{200c}' | '\u{200d}')
 }
 
 pub(crate) fn lex_rust(text: &str) -> Lexed {
@@ -176,7 +185,12 @@ impl Lexer {
     }
 
     fn push(&mut self, kind: Tok, line: u32) {
-        self.out.tokens.push(Token { kind, line });
+        let joins_next_pipe = kind == Tok::Punct('|') && self.cur.peek(0) == Some('|');
+        self.out.tokens.push(Token {
+            kind,
+            line,
+            joins_next_pipe,
+        });
     }
 
     fn line_comment(&mut self, line: u32) {
@@ -253,7 +267,7 @@ impl Lexer {
     }
 
     fn quote(&mut self, line: u32) {
-        match (self.cur.peek(1), self.cur.peek(2)) {
+        let kind = match (self.cur.peek(1), self.cur.peek(2)) {
             (Some('\\'), _) => {
                 self.cur.skip(3);
                 while let Some(c) = self.cur.bump() {
@@ -261,16 +275,44 @@ impl Lexer {
                         break;
                     }
                 }
+                Tok::Other
             }
-            (Some(c), Some('\'')) if c != '\'' => self.cur.skip(3),
-            _ => {
-                self.cur.bump();
-                while self.cur.peek(0).is_some_and(is_ident_continue) {
-                    self.cur.bump();
-                }
+            (Some(c), Some('\'')) if c != '\'' => {
+                self.cur.skip(3);
+                Tok::Other
             }
+            _ => self.lifetime_or_opaque(),
+        };
+        self.push(kind, line);
+    }
+
+    fn lifetime_or_opaque(&mut self) -> Tok {
+        self.cur.bump();
+        let valid_start = self.cur.peek(0).is_some_and(is_ident_start);
+        let raw = self.cur.peek(0) == Some('r')
+            && self.cur.peek(1) == Some('#')
+            && self.cur.peek(2).is_some_and(is_ident_start);
+        if raw {
+            self.cur.skip(2);
         }
-        self.push(Tok::Other, line);
+        let start = self.cur.pos;
+        while self.cur.peek(0).is_some_and(is_ident_continue) {
+            self.cur.bump();
+        }
+        if self.cur.peek(0) == Some('\'') {
+            self.cur.bump();
+            return Tok::Other;
+        }
+        let name = &self.cur.chars[start..self.cur.pos];
+        let reserved = raw
+            && ["_", "crate", "self", "Self", "super"]
+                .iter()
+                .any(|reserved| name.iter().copied().eq(reserved.chars()));
+        if valid_start && !reserved {
+            Tok::Lifetime
+        } else {
+            Tok::Other
+        }
     }
 
     fn word(&mut self, line: u32) {
@@ -297,7 +339,7 @@ impl Lexer {
                         self.cur.bump();
                     }
                     let name = self.cur.slice(raw_start, self.cur.pos);
-                    self.push(Tok::Ident(name), line);
+                    self.push(Tok::RawIdent(name), line);
                 } else {
                     self.push(Tok::Ident(word), line);
                 }

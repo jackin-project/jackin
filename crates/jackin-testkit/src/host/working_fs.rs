@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -10,6 +11,8 @@ use jackin_core::{
     DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, Hold, HostPath,
     LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
+
+use tokio::sync::watch;
 
 use super::FakeClock;
 
@@ -21,11 +24,36 @@ pub enum FsFault {
 }
 
 #[derive(Debug)]
+struct Parked {
+    file: String,
+    arrived: Arc<AtomicBool>,
+    open: watch::Receiver<bool>,
+}
+
+#[derive(Debug)]
+pub struct ReadHold {
+    arrived: Arc<AtomicBool>,
+    open: watch::Sender<bool>,
+}
+
+impl ReadHold {
+    pub fn has_arrived(&self) -> bool {
+        self.arrived.load(Ordering::SeqCst)
+    }
+
+    pub fn release(&self) {
+        self.open.send_replace(true);
+    }
+}
+
+#[derive(Debug)]
 pub struct WorkingFs {
     inner: Arc<dyn FileSystem>,
     clock: Arc<FakeClock>,
     fault: Mutex<Option<FsFault>>,
     cancel: Mutex<Option<(FsFault, CancellationToken)>>,
+    parked: Mutex<Option<Parked>>,
+    reads: Mutex<std::collections::BTreeMap<String, usize>>,
 }
 
 impl WorkingFs {
@@ -35,6 +63,54 @@ impl WorkingFs {
             clock: Arc::clone(clock),
             fault: Mutex::new(None),
             cancel: Mutex::new(None),
+            parked: Mutex::new(None),
+            reads: Mutex::new(std::collections::BTreeMap::new()),
+        }
+    }
+
+    pub fn hold_read(&self, file: &str) -> ReadHold {
+        let arrived = Arc::new(AtomicBool::new(false));
+        let (open, receiver) = watch::channel(false);
+        let mut armed = self.parked.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(armed.is_none(), "a read is already held");
+        *armed = Some(Parked {
+            file: file.to_owned(),
+            arrived: Arc::clone(&arrived),
+            open: receiver,
+        });
+        drop(armed);
+        ReadHold { arrived, open }
+    }
+
+    pub fn reads_of(&self, root: &HostPath, file: &str) -> usize {
+        let reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        reads.get(&Self::key(root, file)).copied().unwrap_or(0)
+    }
+
+    fn key(root: &HostPath, file: &str) -> String {
+        root.as_path().join(file).display().to_string()
+    }
+
+    fn counted(&self, root: &HostPath, file: &RepoPath) {
+        let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        *reads.entry(Self::key(root, file.as_str())).or_insert(0) += 1;
+    }
+
+    async fn parked_at(&self, file: &RepoPath) {
+        let parked = {
+            let mut armed = self.parked.lock().unwrap_or_else(PoisonError::into_inner);
+            if armed
+                .as_ref()
+                .is_some_and(|hold| hold.file == file.as_str())
+            {
+                armed.take()
+            } else {
+                None
+            }
+        };
+        if let Some(mut hold) = parked {
+            hold.arrived.store(true, Ordering::SeqCst);
+            drop(hold.open.wait_for(|open| *open).await);
         }
     }
 
@@ -200,8 +276,11 @@ impl FileSystem for WorkingFs {
         file: &RepoPath,
         max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.parked_at(file).await;
         let _working = self.clock.working();
-        self.inner.read_regular(root, file, max_bytes).await
+        let read = self.inner.read_regular(root, file, max_bytes).await;
+        self.counted(root, file);
+        read
     }
 
     async fn read_regular_holding(

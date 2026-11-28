@@ -158,6 +158,7 @@ pub struct Member {
     dir: PathBuf,
     dependencies: Vec<Dependency>,
     features: Vec<(String, Vec<String>)>,
+    targets: Vec<PathBuf>,
 }
 
 impl Member {
@@ -184,6 +185,11 @@ impl Member {
     #[must_use]
     pub fn features(&self) -> &[(String, Vec<String>)] {
         &self.features
+    }
+
+    #[must_use]
+    pub fn targets(&self) -> &[PathBuf] {
+        &self.targets
     }
 }
 
@@ -256,6 +262,13 @@ struct MetaPackage {
     manifest_path: PathBuf,
     dependencies: Vec<MetaDependency>,
     features: BTreeMap<String, Vec<String>>,
+    targets: Vec<MetaTarget>,
+}
+
+#[derive(Deserialize)]
+struct MetaTarget {
+    kind: Vec<String>,
+    src_path: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -300,6 +313,25 @@ fn read_members(path: &Path) -> Result<(PathBuf, Vec<Member>), CiError> {
 fn member_of(package: MetaPackage, workspace_root: &Path) -> Result<Member, CiError> {
     let manifest = relative(&package.manifest_path, workspace_root)?;
     let dir = manifest.parent().map(Path::to_path_buf).unwrap_or_default();
+    let targets = package
+        .targets
+        .into_iter()
+        .filter(|target| {
+            target.kind.iter().any(|kind| {
+                matches!(
+                    kind.as_str(),
+                    "bin" | "lib" | "rlib" | "dylib" | "cdylib" | "staticlib" | "proc-macro"
+                )
+            })
+        })
+        .filter_map(|target| {
+            target
+                .src_path
+                .strip_prefix(workspace_root)
+                .ok()
+                .map(Path::to_path_buf)
+        })
+        .collect();
     let dependencies = package
         .dependencies
         .into_iter()
@@ -333,6 +365,7 @@ fn member_of(package: MetaPackage, workspace_root: &Path) -> Result<Member, CiEr
         dir,
         dependencies,
         features: package.features.into_iter().collect(),
+        targets,
     })
 }
 

@@ -88,7 +88,9 @@ fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
             if let Some(message) = literal_problem(literal, attribute) {
                 problems.push((token.line, message));
             }
-        } else if token.is_punct('.') && is_display_call(arguments, index) {
+        } else if (token.is_punct('.') && is_display_call(arguments, index))
+            || is_qualified_display(arguments, index)
+        {
             if !inside_plain(arguments, index) {
                 problems.push((token.line, display_message()));
             }
@@ -123,6 +125,15 @@ fn is_display_call(arguments: &[Token], index: usize) -> bool {
         && arguments.get(index + 3).is_some_and(|t| t.is_punct(')'))
 }
 
+fn is_qualified_display(arguments: &[Token], index: usize) -> bool {
+    arguments[index].is_ident("display") && is_path_separator(arguments, index.wrapping_sub(2))
+}
+
+fn is_path_separator(arguments: &[Token], index: usize) -> bool {
+    arguments.get(index).is_some_and(|t| t.is_punct(':'))
+        && arguments.get(index + 1).is_some_and(|t| t.is_punct(':'))
+}
+
 fn inside_plain(arguments: &[Token], index: usize) -> bool {
     let mut depth = 0usize;
     for position in (0..index).rev() {
@@ -143,7 +154,7 @@ fn inside_plain(arguments: &[Token], index: usize) -> bool {
 }
 
 fn display_message() -> String {
-    "`.display()` in an #[error] message prints a path as it is; it can hold terminal controls, so print a HostPath through its Display or pass the path through plain".to_owned()
+    "`.display()` or a `::display(..)` call in an #[error] message prints a path as it is; it can hold terminal controls, so print a HostPath through its Display or pass the path through plain".to_owned()
 }
 
 fn is_source(argument: &str, sources: &[String]) -> bool {

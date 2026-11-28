@@ -15,7 +15,7 @@ use jackin_core::{
 use jackin_image::ImageEngine;
 use jackin_openshell::{
     Gateway, GatewayError, GatewayHealth, GatewayOp, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
+    ProgramRun, ProgramStdin, ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
     ProviderWriteError, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
     TerminalRequest, TerminalSession,
 };
@@ -25,6 +25,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 const RM: &str = "/usr/bin/rm";
+const SH: &str = "/bin/sh";
 
 #[derive(Clone, Debug)]
 pub(crate) struct Gate {
@@ -47,6 +48,7 @@ struct Hooks {
     rm_runs: Vec<RmRun>,
     download_dir_modes: Vec<u32>,
     program_delay: Duration,
+    failing_git: Option<(&'static str, &'static str)>,
     stalled_all: bool,
     stalled_listing: bool,
     relabel_after_failed_delete: Option<(String, String)>,
@@ -210,6 +212,29 @@ impl Tap {
                 });
             }
         }
+        let failing = self.hooks().failing_git;
+        if let Some((script_part, git)) = failing
+            && run.program.as_str() == SH
+            && run
+                .args
+                .get(1)
+                .is_some_and(|script| script.contains(script_part))
+            && matches!(run.stdin, ProgramStdin::Closed)
+        {
+            let mut args = run.args.clone();
+            args[3] = git.to_owned();
+            let broken = ProgramRun {
+                sandbox: run.sandbox.clone(),
+                program: run.program.clone(),
+                args,
+                workdir: run.workdir.clone(),
+                env: run.env.clone(),
+                stdin: ProgramStdin::Closed,
+                touch_on_success: run.touch_on_success.clone(),
+                timeout: run.timeout,
+            };
+            return self.inner.run_program(&broken, cancel).await;
+        }
         let delay = self.hooks().program_delay;
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
@@ -243,6 +268,10 @@ impl Tap {
 
     pub(crate) fn slow_programs(&self, delay: Duration) {
         self.hooks().program_delay = delay;
+    }
+
+    pub(crate) fn fail_git_in_shell(&self, script_part: &'static str, git: &'static str) {
+        self.hooks().failing_git = Some((script_part, git));
     }
 
     pub(crate) fn download_dir_modes(&self) -> Vec<u32> {

@@ -891,6 +891,72 @@ async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publi
 }
 
 #[tokio::test]
+async fn a_gateway_entry_that_changed_after_the_plan_is_refused_before_anything_is_published()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([false, false, false]).await?;
+        let other = Home::new(&login_json()).await?;
+        let added = Account::new(
+            name("other")?,
+            jackin_core::Provider::Codex,
+            codex_account(&other.path, ACCOUNT_ID)?.credential().clone(),
+        )?;
+        let plan = plan_account_edits(
+            &fleet.world.desk(),
+            vec![ConfigEdit::AddAccount(added)],
+            &CancellationToken::new(),
+        )
+        .await?;
+        let AccountPlan::Gateway(retained) = &plan else {
+            return Err("the add needs the gateway".into());
+        };
+        let gateways = fleet.dial(retained.config(), &[]).await?;
+        let third = GatewayName::parse("third")?;
+        let mut entry = fleet
+            .store
+            .load()
+            .await?
+            .gateway(&third)
+            .ok_or("the fleet has no third gateway")?
+            .clone();
+        entry.openshell_workspace = OpenShellWorkspace::parse("moved")?;
+        fleet
+            .store
+            .edit(
+                vec![
+                    ConfigEdit::RemoveGateway(third.clone()),
+                    ConfigEdit::AddGateway {
+                        name: third.clone(),
+                        entry,
+                    },
+                ],
+                &CancellationToken::new(),
+            )
+            .await?;
+        fleet.world.gateway.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::FailedPrecondition {
+                message: "a write reached the home gateway".to_owned(),
+            },
+        });
+
+        let refused = plan.apply(&gateways, &CancellationToken::new()).await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::Account(AccountError::GatewayChanged { gateway }))
+                    if *gateway == third
+            ),
+            "{refused:?}"
+        );
+        assert!(fleet.store.load().await?.account(&name("other")?).is_none());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_refusal_on_a_later_gateway_restores_the_providers_it_removed_and_adds_none() -> TestResult
 {
     guard(async {

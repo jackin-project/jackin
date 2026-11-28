@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::os::unix::fs::PermissionsExt;
 
 use jackin_core::{AttemptId, EnvName, HookKind, Phase, SupervisorState, sandbox_layout};
 use jackin_openshell::{GatewayError, GatewayOp};
@@ -79,6 +80,29 @@ async fn restart_refuses_a_running_agent_and_otherwise_runs_preflight_and_reques
                     result: StepResult::Done
                 },
             ]
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_restart_tightens_a_cache_directory_that_was_left_broad() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        handle.exit_codex(3);
+        let cache = rig.world.cache_dir().as_path();
+        std::fs::set_permissions(cache, std::fs::Permissions::from_mode(0o755))?;
+        let (events, _feed) = launch_events(LineDelivery::Reliable);
+        rig.world
+            .session
+            .restart_agent(&handle.name(), events, CancellationToken::new())
+            .await?;
+        assert_eq!(
+            std::fs::metadata(cache)?.permissions().mode() & 0o777,
+            0o700
         );
         Ok(())
     })

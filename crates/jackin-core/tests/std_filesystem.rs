@@ -493,6 +493,73 @@ async fn a_lock_never_follows_a_symlink_and_never_creates_through_one() -> TestR
     Ok(())
 }
 
+fn read_within_ten_seconds(
+    path: &HostPath,
+    ranged: bool,
+) -> Result<Result<Vec<u8>, FsError>, std::sync::mpsc::RecvTimeoutError> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let owned = path.clone();
+    std::thread::spawn(move || {
+        let fs = StdFileSystem::default();
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .map(|runtime| {
+                runtime.block_on(async {
+                    if ranged {
+                        fs.read_at(&owned, 0, 16).await
+                    } else {
+                        fs.read(&owned).await.map(Option::unwrap_or_default)
+                    }
+                })
+            });
+        if let Ok(outcome) = outcome {
+            drop(sender.send(outcome));
+        }
+    });
+    let received = receiver.recv_timeout(Duration::from_secs(10));
+    if received.is_err() {
+        let flags = rustix::fs::OFlags::RDWR | rustix::fs::OFlags::NONBLOCK;
+        drop(rustix::fs::open(
+            path.as_path(),
+            flags,
+            rustix::fs::Mode::empty(),
+        ));
+    }
+    received
+}
+
+#[tokio::test]
+async fn a_read_of_a_pipe_a_socket_or_a_device_is_refused_without_blocking() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let pipe = at(&dir, "pipe")?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(pipe.as_path())
+            .status()?
+            .success()
+    );
+    let socket = at(&dir, "engine.sock")?;
+    let _listener = std::os::unix::net::UnixListener::bind(socket.as_path())?;
+    let device = HostPath::parse(std::path::Path::new("/dev/null"))?;
+    for (label, target) in [("pipe", &pipe), ("socket", &socket), ("device", &device)] {
+        for ranged in [false, true] {
+            let refused = read_within_ten_seconds(target, ranged)
+                .map_err(|error| format!("read (ranged {ranged}) of a {label}: {error}"))?;
+            assert!(
+                matches!(
+                    refused,
+                    Err(FsError::UnsafeEntry {
+                        problem: EntryProblem::NotARegularFile,
+                        ..
+                    })
+                ),
+                "{label}, ranged {ranged}: {refused:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn a_lock_refuses_a_pipe_a_directory_and_a_hard_linked_file_without_blocking() -> TestResult {
     let dir = tempfile::tempdir()?;
@@ -591,6 +658,22 @@ async fn an_existing_private_leaf_is_tightened_and_its_parent_is_left_alone() ->
 }
 
 #[tokio::test]
+async fn a_private_leaf_the_owner_cannot_read_is_tightened_not_refused() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let leaf = dir.path().join("leaf");
+    std::fs::create_dir(&leaf)?;
+    std::fs::set_permissions(&leaf, std::fs::Permissions::from_mode(0o377))?;
+
+    let tightened = fs.create_private_dir_all(&at(&dir, "leaf")?).await;
+    let mode = std::fs::metadata(&leaf)?.permissions().mode() & 0o7777;
+    std::fs::set_permissions(&leaf, std::fs::Permissions::from_mode(0o700))?;
+    tightened?;
+    assert_eq!(mode, 0o300);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_private_leaf_that_is_a_symlink_is_refused_and_its_target_is_not_touched() -> TestResult {
     let dir = tempfile::tempdir()?;
     let fs = StdFileSystem::default();
@@ -685,7 +768,7 @@ async fn listing_refuses_a_name_that_is_not_utf8_instead_of_aliasing_it() -> Tes
 async fn a_lock_on_a_file_owned_by_another_user_is_refused_and_leaves_it_alone() -> TestResult {
     let dir = tempfile::tempdir()?;
     let fs = StdFileSystem::default();
-    let foreign = if rustix::process::geteuid().is_root() {
+    let foreigns = if rustix::process::geteuid().is_root() {
         let owned = at(&dir, "foreign.lock")?;
         fs.write_new(&owned, b"", FileMode(0o600)).await?;
         rustix::fs::chown(
@@ -693,31 +776,30 @@ async fn a_lock_on_a_file_owned_by_another_user_is_refused_and_leaves_it_alone()
             Some(rustix::fs::Uid::from_raw(65534)),
             None,
         )?;
-        owned
+        vec![owned]
     } else {
-        HostPath::parse(std::path::Path::new("/etc/hosts"))?
+        ["/etc/passwd", "/dev/null"]
+            .iter()
+            .map(|path| HostPath::parse(std::path::Path::new(path)))
+            .collect::<Result<Vec<_>, _>>()?
     };
-    let before = std::fs::metadata(foreign.as_path())?;
-    assert_ne!(before.uid(), rustix::process::geteuid().as_raw());
-    let refused = fs.lock(&foreign).await;
-    assert!(
-        matches!(
-            refused,
-            Err(FsError::UnsafeEntry {
-                problem: EntryProblem::ForeignOwner,
-                ..
-            } | FsError::Io {
-                kind: std::io::ErrorKind::PermissionDenied,
-                ..
-            })
-        ),
-        "{refused:?}"
-    );
-    let after = std::fs::metadata(foreign.as_path())?;
-    assert_eq!(
-        (after.mode(), after.mtime()),
-        (before.mode(), before.mtime())
-    );
+    for foreign in foreigns {
+        let before = std::fs::metadata(foreign.as_path())?;
+        assert_ne!(before.uid(), rustix::process::geteuid().as_raw());
+        let refused = fs.lock(&foreign).await;
+        assert!(
+            matches!(
+                refused,
+                Err(FsError::UnsafeEntry {
+                    problem: EntryProblem::ForeignOwner,
+                    ..
+                })
+            ),
+            "{foreign}: {refused:?}"
+        );
+        let after = std::fs::metadata(foreign.as_path())?;
+        assert_eq!((after.mode(), after.uid()), (before.mode(), before.uid()));
+    }
     Ok(())
 }
 
