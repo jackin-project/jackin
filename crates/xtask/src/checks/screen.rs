@@ -786,7 +786,6 @@ struct TypeScope<'a> {
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
-    macro_glob_import: bool,
     matches_imported: MatchesImport<'a>,
     matches_textual: bool,
     matches_to_parent: bool,
@@ -808,24 +807,27 @@ impl<'a> TypeScope<'a> {
         }
         let mut paths = Vec::new();
         path_tree(tokens, &mut position, &[], &mut paths);
+        if macro_item_disabled(tokens, index) {
+            return position;
+        }
         let attributed = has_outer_attribute(tokens, index);
-        let active_macros = !macro_item_disabled(tokens, index);
+        let macro_attributed = attributed
+            && has_macro_attribute(tokens, index, |attribute| !inert_lint_attribute(attribute));
         for mut path in paths {
             let segments = path.segments.as_slice();
             let name = match (path.rename, segments) {
                 (Some((name, _)), _) => name,
                 (None, [.., "*"]) => {
                     self.glob_import = true;
-                    self.macro_glob_import |= active_macros;
                     continue;
                 }
                 (None, [.., name, "self"] | [.., name]) => *name,
                 _ => continue,
             };
-            if active_macros && name == "matches" {
-                self.matches_imported = self
-                    .matches_imported
-                    .include(segments, absolute, attributed);
+            if name == "matches" {
+                self.matches_imported =
+                    self.matches_imported
+                        .include(segments, absolute, macro_attributed);
             }
             let binding = match segments {
                 ["ratatui", "buffer", "Buffer"] => TypeBinding::RatatuiBuffer,
@@ -934,11 +936,20 @@ fn has_macro_attribute(
 }
 
 fn imports_macro_rules(tokens: &[Token], declaration: usize) -> bool {
-    has_macro_attribute(
-        tokens,
-        declaration,
-        |attribute| matches!(attribute, [name] if name.is_keyword("macro_use")),
-    )
+    has_macro_attribute(tokens, declaration, macro_use_attribute)
+}
+
+fn macro_use_attribute(attribute: &[Token]) -> bool {
+    matches!(attribute, [name] if name.is_keyword("macro_use"))
+}
+
+fn inert_lint_attribute(attribute: &[Token]) -> bool {
+    let [name, open, .., close] = attribute else {
+        return false;
+    };
+    matches!(&name.kind, Tok::Ident(name) if matches!(name.as_str(), "allow" | "warn" | "deny" | "forbid" | "expect"))
+        && open.is_punct('(')
+        && close.is_punct(')')
 }
 
 fn macro_item_disabled(tokens: &[Token], declaration: usize) -> bool {
@@ -1037,16 +1048,15 @@ fn file_may_supply_matches(tokens: &[Token], ends: &[Option<usize>]) -> bool {
             continue;
         };
         if tokens[index].is_punct('#') {
-            let inert = tokens
-                .get(open + 1)
-                .and_then(Token::ident)
-                .is_some_and(|name| {
-                    matches!(
-                        name,
-                        "cfg" | "allow" | "warn" | "deny" | "forbid" | "expect"
-                    )
-                });
-            if !inert {
+            let Some(end) = ends[open] else {
+                return true;
+            };
+            let attribute = &tokens[open + 1..end - 1];
+            if !attribute
+                .first()
+                .is_some_and(|token| token.is_keyword("cfg"))
+                && !inert_lint_attribute(attribute)
+            {
                 return true;
             }
         } else if !tokens[index - 1].is_keyword("macro_rules")
@@ -1604,7 +1614,7 @@ impl<'a> TypeScopes<'a> {
         if !self.sources[source].connected
             || scope != module.module
             || has_macro_attribute(tokens, declaration, |attribute| {
-                attribute.first().and_then(Token::ident) != Some("macro_use")
+                !macro_use_attribute(attribute) && !inert_lint_attribute(attribute)
             })
         {
             return true;
@@ -2037,7 +2047,7 @@ impl<'a> TypeScopes<'a> {
                     return self.matches_standard_root_visible(scope, root, work);
                 }
                 MatchesImport::Unknown => return Ok(false),
-                MatchesImport::Absent if current.macro_glob_import => return Ok(false),
+                MatchesImport::Absent if current.glob_import => return Ok(false),
                 MatchesImport::Absent => {}
             }
             let Some(parent) = current.parent else {
@@ -2056,7 +2066,7 @@ impl<'a> TypeScopes<'a> {
         loop {
             work.charge_name(name)?;
             let current = &self.scopes[scope];
-            if current.macro_glob_import || current.bindings.contains_key(name) {
+            if current.glob_import || current.bindings.contains_key(name) {
                 return Ok(false);
             }
             let Some(parent) = current.parent else {
