@@ -482,8 +482,15 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
          \x20   let Identity::<Buffer> { content, .. } = a;\n\
          \x20   let Identity::<crate::model::Buffer> { value } = b;\n\
          \x20   let Wrapper::<Buffer> { item } = c;\n\
+         }\n\
+         mod nested {\n\
+         \x20   use ratatui::buffer::Buffer;\n\
+         \x20   type Wrapper<T> = T;\n\
+         \x20   fn check(buf: Buffer) {\n\
+         \x20       let Wrapper::<Buffer> { content, .. } = buf;\n\
+         \x20   }\n\
          }\n",
-        &[("C1", 6, "destructures")],
+        &[("C1", 6, "destructures"), ("C1", 14, "destructures")],
     )
 }
 

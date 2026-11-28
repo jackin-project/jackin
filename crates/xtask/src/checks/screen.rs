@@ -294,7 +294,7 @@ fn literal_violations<'a>(
 
 struct PathLeaf<'a> {
     segments: Vec<&'a str>,
-    rename_line: Option<u32>,
+    rename: Option<(&'a str, u32)>,
 }
 
 fn path_tree<'a>(
@@ -304,7 +304,7 @@ fn path_tree<'a>(
     out: &mut Vec<PathLeaf<'a>>,
 ) {
     let mut path = prefix.to_vec();
-    let mut rename_line = None;
+    let mut rename = None;
     while let Some(token) = tokens.get(*position) {
         if token.is_punct('{') {
             *position += 1;
@@ -334,7 +334,10 @@ fn path_tree<'a>(
             continue;
         }
         if tokens.get(*position).is_some_and(|t| t.is_ident("as")) {
-            rename_line = Some(token.line);
+            rename = tokens
+                .get(*position + 1)
+                .and_then(Token::ident)
+                .map(|name| (name, token.line));
             *position += 2;
         }
         break;
@@ -342,7 +345,7 @@ fn path_tree<'a>(
     if path.len() > prefix.len() || prefix.is_empty() {
         out.push(PathLeaf {
             segments: path,
-            rename_line,
+            rename,
         });
     }
 }
@@ -368,7 +371,7 @@ fn import_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
                 .iter()
                 .any(|prefix| rest.starts_with(prefix));
             if rest == ["buffer", "Buffer"]
-                && let Some(line) = leaf.rename_line
+                && let Some((_, line)) = leaf.rename
             {
                 violations.push(Violation::at_line(
                     CiStep::Screen,
@@ -496,42 +499,119 @@ fn generic_slots(tokens: &[Token], open: usize) -> Option<(Vec<Range<usize>>, us
     None
 }
 
-fn projected_aliases(tokens: &[Token]) -> BTreeMap<&str, usize> {
-    (0..tokens.len())
-        .filter(|&index| tokens[index].is_ident("type"))
-        .filter_map(|index| {
-            let name = tokens.get(index + 1)?.ident()?;
-            let (slots, end) = generic_slots(tokens, index + 2)?;
-            let [equals, target, terminator, ..] = tokens.get(end..)? else {
-                return None;
-            };
-            if !equals.is_punct('=') || !terminator.is_punct(';') {
-                return None;
-            }
-            let target = target.ident()?;
-            let slot = slots.iter().position(|range| {
-                tokens
-                    .get(range.clone())
-                    .and_then(|param| param.first())
-                    .is_some_and(|param| param.is_ident(target))
-            })?;
-            Some((name, slot))
-        })
-        .collect()
+fn projected_slot(tokens: &[Token], index: usize) -> Option<usize> {
+    let (slots, end) = generic_slots(tokens, index + 2)?;
+    let [equals, target, terminator, ..] = tokens.get(end..)? else {
+        return None;
+    };
+    if !equals.is_punct('=') || !terminator.is_punct(';') {
+        return None;
+    }
+    let target = target.ident()?;
+    slots.iter().position(|range| {
+        tokens
+            .get(range.clone())
+            .and_then(|param| param.first())
+            .is_some_and(|param| param.is_ident(target))
+    })
 }
 
-fn buffer_pattern_open(
-    tokens: &[Token],
-    index: usize,
-    aliases: &BTreeMap<&str, usize>,
-) -> Option<usize> {
+#[derive(Default)]
+struct TypeScope<'a> {
+    parent: Option<usize>,
+    bindings: BTreeMap<&'a str, Option<usize>>,
+    glob_import: bool,
+}
+
+impl<'a> TypeScope<'a> {
+    fn bind(&mut self, name: &'a str, slot: Option<usize>) {
+        self.bindings
+            .entry(name)
+            .and_modify(|existing| *existing = None)
+            .or_insert(slot);
+    }
+
+    fn import(&mut self, tokens: &'a [Token], mut position: usize) {
+        if is_path_separator(tokens, position) {
+            position += 2;
+        }
+        let mut paths = Vec::new();
+        path_tree(tokens, &mut position, &[], &mut paths);
+        for path in paths {
+            match (path.rename, path.segments.as_slice()) {
+                (Some((name, _)), _) => self.bind(name, None),
+                (None, [.., "*"]) => self.glob_import = true,
+                (None, [.., name, "self"] | [.., name]) => self.bind(name, None),
+                _ => {}
+            }
+        }
+    }
+}
+
+struct TypeScopes<'a> {
+    scopes: Vec<TypeScope<'a>>,
+    enclosing: Vec<usize>,
+}
+
+impl<'a> TypeScopes<'a> {
+    fn collect(tokens: &'a [Token]) -> Self {
+        let mut scopes = vec![TypeScope::default()];
+        let mut enclosing = Vec::with_capacity(tokens.len());
+        let mut stack = vec![0];
+        for (index, token) in tokens.iter().enumerate() {
+            let scope = *stack.last().unwrap_or(&0);
+            enclosing.push(scope);
+            if token.is_punct('{') {
+                let module = index >= 2
+                    && tokens[index - 2].is_ident("mod")
+                    && tokens[index - 1].ident().is_some();
+                stack.push(scopes.len());
+                scopes.push(TypeScope {
+                    parent: (!module).then_some(scope),
+                    ..TypeScope::default()
+                });
+            } else if token.is_punct('}') && stack.len() > 1 {
+                stack.pop();
+            } else if token.is_ident("use") {
+                scopes[scope].import(tokens, index + 1);
+            } else if ["type", "struct", "enum", "union"]
+                .iter()
+                .any(|kind| token.is_ident(kind))
+                && let Some(name) = tokens.get(index + 1).and_then(Token::ident)
+            {
+                let slot = token
+                    .is_ident("type")
+                    .then(|| projected_slot(tokens, index))
+                    .flatten();
+                scopes[scope].bind(name, slot);
+            }
+        }
+        Self { scopes, enclosing }
+    }
+
+    fn slot(&self, index: usize, name: &str) -> Option<usize> {
+        let mut scope = self.enclosing[index];
+        loop {
+            let current = &self.scopes[scope];
+            if let Some(slot) = current.bindings.get(name) {
+                return *slot;
+            }
+            if current.glob_import {
+                return None;
+            }
+            scope = current.parent?;
+        }
+    }
+}
+
+fn buffer_pattern_open(tokens: &[Token], index: usize, aliases: &TypeScopes<'_>) -> Option<usize> {
     if tokens[index].is_ident("Buffer") && is_ratatui_path(tokens, index) {
         return Some(index + 1);
     }
     if is_path_separator(tokens, index.wrapping_sub(2)) || !is_path_separator(tokens, index + 1) {
         return None;
     }
-    let slot = *aliases.get(tokens[index].ident()?)?;
+    let slot = aliases.slot(index, tokens[index].ident()?)?;
     let (slots, open) = generic_slots(tokens, index + 3)?;
     let argument = &tokens[slots.get(slot)?.clone()];
     let arg = if is_path_separator(argument, 0) {
@@ -556,7 +636,7 @@ fn buffer_pattern_open(
 
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
     let tests = test_modules(tokens);
-    let aliases = projected_aliases(tokens);
+    let aliases = TypeScopes::collect(tokens);
     (1..tokens.len())
         .filter_map(|index| {
             let open = buffer_pattern_open(tokens, index, &aliases)?;
