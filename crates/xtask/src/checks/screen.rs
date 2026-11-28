@@ -703,7 +703,45 @@ struct TypeAlias {
     source: usize,
     declaration: usize,
     parameters: Vec<Range<usize>>,
+    conditional: Vec<bool>,
+    opaque: Vec<bool>,
+    has_conditional: bool,
     value: Range<usize>,
+}
+
+fn parameter_attributes(
+    tokens: &[Token],
+    mut range: Range<usize>,
+) -> Option<(Range<usize>, bool, bool)> {
+    let mut conditional = false;
+    let mut opaque = false;
+    while range.start < range.end && tokens[range.start].is_punct('#') {
+        let open = range.start + 1;
+        if !tokens.get(open).is_some_and(|token| token.is_punct('[')) {
+            return None;
+        }
+        let close = closing(&tokens[..range.end], open);
+        if close >= range.end {
+            return None;
+        }
+        let attribute = &tokens[open + 1..close];
+        let constant = |name: &str| {
+            matches!(attribute, [cfg, outer, inner, args, args_end, outer_end]
+            if cfg.is_keyword("cfg") && outer.is_punct('(') && inner.is_ident(name)
+                && args.is_punct('(') && args_end.is_punct(')') && outer_end.is_punct(')'))
+        };
+        if constant("any") {
+            return None;
+        }
+        if !constant("all") && !inert_lint_attribute(attribute) {
+            conditional = true;
+            opaque |= !attribute
+                .first()
+                .is_some_and(|token| token.is_keyword("cfg"));
+        }
+        range.start = close + 1;
+    }
+    (!range.is_empty()).then_some((range, conditional, opaque))
 }
 
 impl TypeAlias {
@@ -728,10 +766,25 @@ impl TypeAlias {
         } else {
             end
         };
+        let mut normalized = Vec::new();
+        let mut conditional = Vec::new();
+        let mut opaque = Vec::new();
+        for (range, presence, transform) in parameters
+            .into_iter()
+            .filter_map(|range| parameter_attributes(tokens, range))
+        {
+            normalized.push(range);
+            conditional.push(presence);
+            opaque.push(transform);
+        }
+        let has_conditional = conditional.iter().any(|value| *value);
         (start < end && tokens[terminator].is_punct(';')).then_some(Self {
             source,
             declaration: index,
-            parameters,
+            parameters: normalized,
+            conditional,
+            opaque,
+            has_conditional,
             value: start..end,
         })
     }
@@ -765,6 +818,7 @@ struct AliasApplication<'a> {
     arguments: Vec<Range<usize>>,
     argument_source: usize,
     elided_lifetimes: usize,
+    conditional_lifetimes: bool,
     available: usize,
 }
 
@@ -780,18 +834,20 @@ impl<'a> AliasApplication<'a> {
         argument_source: usize,
         arguments: Vec<Range<usize>>,
         work: &mut AliasWork,
-    ) -> Result<Option<Self>, AliasWorkLimit> {
+    ) -> Result<Option<Self>, AliasResolutionError> {
         let declared =
             count_leading_lifetimes(&files[alias.source].tokens, &alias.parameters, work)?;
+        let conditional_lifetimes = alias.conditional[..declared].iter().any(|value| *value);
         let supplied = count_leading_lifetimes(&files[argument_source].tokens, &arguments, work)?;
-        if supplied != 0 && supplied != declared {
+        if !conditional_lifetimes && supplied != 0 && supplied != declared {
             return Ok(None);
         }
         Ok(Some(Self {
             alias,
             arguments,
             argument_source,
-            elided_lifetimes: declared - supplied,
+            elided_lifetimes: declared.saturating_sub(supplied),
+            conditional_lifetimes,
             available: alias.parameters.len(),
         }))
     }
@@ -801,7 +857,7 @@ fn count_leading_lifetimes(
     tokens: &[Token],
     slots: &[Range<usize>],
     work: &mut AliasWork,
-) -> Result<usize, AliasWorkLimit> {
+) -> Result<usize, AliasResolutionError> {
     for (index, slot) in slots.iter().enumerate() {
         work.charge(1)?;
         if slot.is_empty() || tokens[slot.start].kind != Tok::Lifetime {
@@ -816,21 +872,26 @@ enum AliasWork {
     Unlimited,
 }
 
-struct AliasWorkLimit;
+enum AliasResolutionError {
+    WorkLimit,
+    ConditionalParameters,
+}
 
 impl AliasWork {
     fn permits_file_modules(&self) -> bool {
         matches!(self, Self::Limited(_))
     }
 
-    fn charge(&mut self, units: usize) -> Result<(), AliasWorkLimit> {
+    fn charge(&mut self, units: usize) -> Result<(), AliasResolutionError> {
         if let Self::Limited(remaining) = self {
-            *remaining = remaining.checked_sub(units).ok_or(AliasWorkLimit)?;
+            *remaining = remaining
+                .checked_sub(units)
+                .ok_or(AliasResolutionError::WorkLimit)?;
         }
         Ok(())
     }
 
-    fn charge_name(&mut self, name: &str) -> Result<(), AliasWorkLimit> {
+    fn charge_name(&mut self, name: &str) -> Result<(), AliasResolutionError> {
         self.charge(name.len().saturating_add(1))
     }
 }
@@ -2177,7 +2238,7 @@ impl<'a> TypeScopes<'a> {
         mut scope: usize,
         name: &str,
         work: &mut AliasWork,
-    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasWorkLimit> {
+    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasResolutionError> {
         loop {
             work.charge_name(name)?;
             let current = &self.scopes[scope];
@@ -2200,7 +2261,7 @@ impl<'a> TypeScopes<'a> {
         name: &str,
         absolute: bool,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         self.external_root_visible_ignoring_globs(scope, name, absolute, false, work)
     }
 
@@ -2211,7 +2272,7 @@ impl<'a> TypeScopes<'a> {
         absolute: bool,
         ignore_globs: bool,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         if absolute {
             let source = self.scopes[scope].source;
             let root = if self.sources[source].connected {
@@ -2282,7 +2343,7 @@ impl<'a> TypeScopes<'a> {
         scope: usize,
         path: &mut VecDeque<&str>,
         work: &mut AliasWork,
-    ) -> Result<Option<usize>, AliasWorkLimit> {
+    ) -> Result<Option<usize>, AliasResolutionError> {
         let mut module = self.scopes[scope].module;
         loop {
             work.charge(1)?;
@@ -2308,7 +2369,7 @@ impl<'a> TypeScopes<'a> {
         segments: impl IntoIterator<Item = &'a str>,
         absolute: bool,
         work: &mut AliasWork,
-    ) -> Result<Option<&TypeBinding<'a>>, AliasWorkLimit> {
+    ) -> Result<Option<&TypeBinding<'a>>, AliasResolutionError> {
         let mut path = VecDeque::new();
         for segment in segments {
             work.charge(1)?;
@@ -2408,7 +2469,7 @@ impl<'a> TypeScopes<'a> {
         source: usize,
         end: usize,
         work: &mut AliasWork,
-    ) -> Result<Option<&TypeBinding<'a>>, AliasWorkLimit> {
+    ) -> Result<Option<&TypeBinding<'a>>, AliasResolutionError> {
         work.charge(1)?;
         let tokens = &self.files[source].tokens;
         if tokens[end].ident().is_none() {
@@ -2434,13 +2495,51 @@ impl<'a> TypeScopes<'a> {
         )
     }
 
+    fn span_is_nominal(
+        &self,
+        source: usize,
+        mut range: Range<usize>,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let file = &self.files[source];
+        let tokens = &file.tokens;
+        work.charge(range.len().max(1))?;
+        while !range.is_empty()
+            && tokens[range.start].is_punct('(')
+            && file.group_ends[range.start] == Some(range.end)
+        {
+            range.start += 1;
+            range.end -= 1;
+        }
+        if range.is_empty() {
+            return Ok(false);
+        }
+        let mut index = range.start + 2 * usize::from(is_path_separator(tokens, range.start));
+        if tokens.get(index).and_then(Token::ident).is_none() {
+            return Ok(false);
+        }
+        while index + 3 < range.end
+            && is_path_separator(tokens, index + 1)
+            && tokens[index + 3].ident().is_some()
+        {
+            index += 3;
+        }
+        if index + 1 != range.end {
+            return Ok(false);
+        }
+        Ok(matches!(
+            self.binding_at(source, index, work)?,
+            Some(TypeBinding::Nominal)
+        ))
+    }
+
     fn applied_alias_is_ratatui_buffer(
         &self,
         argument_source: usize,
         alias: &TypeAlias,
         arguments: Vec<Range<usize>>,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         let mut value = TypeSpan {
             source: alias.source,
             range: alias.value.clone(),
@@ -2520,6 +2619,52 @@ impl<'a> TypeScopes<'a> {
                 if slot >= current.available {
                     return Ok(false);
                 }
+                let uncertain = if current.alias.has_conditional {
+                    work.charge((slot + 1).saturating_mul(3))?;
+                    let conditional_before =
+                        current.alias.conditional[..slot].iter().any(|value| *value);
+                    let all_present = current
+                        .arguments
+                        .len()
+                        .saturating_add(current.elided_lifetimes)
+                        == current.alias.parameters.len();
+                    current.conditional_lifetimes
+                        || current.alias.opaque[..=slot].iter().any(|value| *value)
+                        || (conditional_before || current.alias.conditional[slot]) && !all_present
+                } else {
+                    false
+                };
+                if uncertain {
+                    work.charge(slot + 1 + current.alias.parameters[slot].len())?;
+                    let alias_tokens = &self.files[current.alias.source].tokens;
+                    let default = current.alias.type_parameter_default(alias_tokens, slot);
+                    let mut nominal = (!current.arguments.is_empty() || default.is_some())
+                        && !current.alias.opaque[..=slot].iter().any(|value| *value);
+                    for argument in &current.arguments {
+                        if self.files[current.argument_source].tokens[argument.start].kind
+                            != Tok::Lifetime
+                        {
+                            nominal &= self.span_is_nominal(
+                                current.argument_source,
+                                argument.clone(),
+                                work,
+                            )?;
+                        }
+                    }
+                    if let Some(default) = default {
+                        nominal &= self.span_is_nominal(current.alias.source, default, work)?;
+                    }
+                    if current.alias.conditional[slot] {
+                        nominal &= matches!(
+                            self.binding_at(value.source, end, work)?,
+                            Some(TypeBinding::Nominal)
+                        );
+                    }
+                    if nominal {
+                        return Ok(false);
+                    }
+                    return Err(AliasResolutionError::ConditionalParameters);
+                }
                 let Some(argument_slot) = slot.checked_sub(current.elided_lifetimes) else {
                     return Ok(false);
                 };
@@ -2585,7 +2730,7 @@ impl<'a> TypeScopes<'a> {
         index: usize,
         reference: BufferReference,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         let tokens = &self.files[source].tokens;
         let rust_scope = self
             .proven_field_pattern_scope(source, index, work)?
@@ -2612,7 +2757,7 @@ impl<'a> TypeScopes<'a> {
         source: usize,
         index: usize,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         work.charge(1)?;
         let Some(scope) = self.proven_field_pattern_scope(source, index, work)? else {
             return Ok(false);
@@ -2635,7 +2780,7 @@ impl<'a> TypeScopes<'a> {
         source: usize,
         index: usize,
         work: &mut AliasWork,
-    ) -> Result<Option<usize>, AliasWorkLimit> {
+    ) -> Result<Option<usize>, AliasResolutionError> {
         Ok(match self.sources[source].enclosing[index] {
             Some(ScopePosition::Rust(scope)) => Some(scope),
             Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Absolute(root)))
@@ -2661,7 +2806,7 @@ impl<'a> TypeScopes<'a> {
         &self,
         mut scope: usize,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         loop {
             work.charge(1)?;
             let current = &self.scopes[scope];
@@ -2688,7 +2833,7 @@ impl<'a> TypeScopes<'a> {
         mut scope: usize,
         root: StandardMacroRoot,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         let name = root.name();
         loop {
             work.charge_name(name)?;
@@ -2714,7 +2859,7 @@ impl<'a> TypeScopes<'a> {
         scope: usize,
         root: StandardMacroRoot,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         work.charge_name(root.name())?;
         let source = self.scopes[scope].source;
         let crate_root = if self.sources[source].connected {
@@ -2733,7 +2878,7 @@ impl<'a> TypeScopes<'a> {
         alias: &TypeAlias,
         start: Option<usize>,
         work: &mut AliasWork,
-    ) -> Result<bool, AliasWorkLimit> {
+    ) -> Result<bool, AliasResolutionError> {
         let file = &self.files[source];
         let slots = if let Some(start) = start {
             let Some(end) = file.group_ends[start] else {
@@ -2838,7 +2983,7 @@ fn path_start(
     tokens: &[Token],
     end: usize,
     work: &mut AliasWork,
-) -> Result<(usize, bool), AliasWorkLimit> {
+) -> Result<(usize, bool), AliasResolutionError> {
     let mut start = end;
     while is_path_separator(tokens, start.wrapping_sub(2)) {
         work.charge(1)?;
@@ -2890,7 +3035,7 @@ fn buffer_pattern_matches(
     types: &TypeScopes<'_>,
     patterns: &FieldPatternIndex<'_>,
     work_limit: usize,
-) -> Result<bool, AliasWorkLimit> {
+) -> Result<bool, AliasResolutionError> {
     let tokens = &types.files[source].tokens;
     let mut work = AliasWork::Limited(work_limit);
     if tokens.get(index + 1).is_some_and(|t| t.is_punct('{')) {
@@ -2937,7 +3082,8 @@ fn pattern_violations(
             let message = match buffer_pattern_matches(source, index, aliases, &patterns, work_limit) {
                 Ok(true) => "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
                 Ok(false) => return None,
-                Err(AliasWorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
+                Err(AliasResolutionError::WorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
+                Err(AliasResolutionError::ConditionalParameters) => "C1: conditional alias parameters leave Buffer provenance unresolved for this pattern",
             };
             Some(Violation::at_line(CiStep::Screen, file.path, tokens[index].line, message))
         })
