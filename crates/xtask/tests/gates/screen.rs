@@ -1296,7 +1296,10 @@ fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
 
 #[test]
 fn nominal_enum_named_buffer_can_be_aliased() -> TestResult {
-    expect("enum Buffer { Packet { value: u8 } }\ntype PacketBuffer = Buffer;\n", &[])
+    expect(
+        "enum Buffer { Packet { value: u8 } }\ntype PacketBuffer = Buffer;\n",
+        &[],
+    )
 }
 
 #[test]
