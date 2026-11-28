@@ -2499,6 +2499,8 @@ impl<'a> TypeScopes<'a> {
         &self,
         source: usize,
         mut range: Range<usize>,
+        frames: &[AliasApplication<'_>],
+        current: Option<&AliasApplication<'_>>,
         work: &mut AliasWork,
     ) -> Result<bool, AliasResolutionError> {
         let file = &self.files[source];
@@ -2514,9 +2516,30 @@ impl<'a> TypeScopes<'a> {
         if range.is_empty() {
             return Ok(false);
         }
-        let mut index = range.start + 2 * usize::from(is_path_separator(tokens, range.start));
+        let absolute = is_path_separator(tokens, range.start);
+        let mut index = range.start + 2 * usize::from(absolute);
         if tokens.get(index).and_then(Token::ident).is_none() {
             return Ok(false);
+        }
+        if !absolute {
+            let Some(name) = tokens[index].ident() else {
+                return Ok(false);
+            };
+            for frame in frames.iter().chain(current) {
+                work.charge(1)?;
+                if frame.alias.source != source {
+                    continue;
+                }
+                work.charge(frame.alias.parameters.len().saturating_mul(2))?;
+                let contains = |candidate: &Range<usize>| {
+                    candidate.start <= range.start && range.end <= candidate.end
+                };
+                if (contains(&frame.alias.value) || frame.alias.parameters.iter().any(contains))
+                    && frame.alias.type_parameter_slot(tokens, name).is_some()
+                {
+                    return Ok(false);
+                }
+            }
         }
         while index + 3 < range.end
             && is_path_separator(tokens, index + 1)
@@ -2531,6 +2554,70 @@ impl<'a> TypeScopes<'a> {
             self.binding_at(source, index, work)?,
             Some(TypeBinding::Nominal)
         ))
+    }
+
+    fn conditional_parameter_resolution(
+        &self,
+        current: &AliasApplication<'_>,
+        outer: &[AliasApplication<'_>],
+        slot: usize,
+        fallback: TypeSpan,
+        work: &mut AliasWork,
+    ) -> Result<Option<bool>, AliasResolutionError> {
+        if !current.alias.has_conditional {
+            return Ok(None);
+        }
+        work.charge((slot + 1).saturating_mul(3))?;
+        let conditional_before = current.alias.conditional[..slot].iter().any(|value| *value);
+        let all_present = current
+            .arguments
+            .len()
+            .saturating_add(current.elided_lifetimes)
+            == current.alias.parameters.len();
+        let uncertain = current.conditional_lifetimes
+            || current.alias.opaque[..=slot].iter().any(|value| *value)
+            || (conditional_before || current.alias.conditional[slot]) && !all_present;
+        if !uncertain {
+            return Ok(None);
+        }
+        if self.conditional_arguments_are_nominal(current, outer, slot, fallback, work)? {
+            return Ok(Some(false));
+        }
+        Err(AliasResolutionError::ConditionalParameters)
+    }
+
+    fn conditional_arguments_are_nominal(
+        &self,
+        current: &AliasApplication<'_>,
+        outer: &[AliasApplication<'_>],
+        slot: usize,
+        fallback: TypeSpan,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        work.charge(slot + 1 + current.alias.parameters[slot].len())?;
+        let alias_tokens = &self.files[current.alias.source].tokens;
+        let default = current.alias.type_parameter_default(alias_tokens, slot);
+        let mut nominal = (!current.arguments.is_empty() || default.is_some())
+            && !current.alias.opaque[..=slot].iter().any(|value| *value);
+        for argument in &current.arguments {
+            if self.files[current.argument_source].tokens[argument.start].kind != Tok::Lifetime {
+                nominal &= self.span_is_nominal(
+                    current.argument_source,
+                    argument.clone(),
+                    outer,
+                    None,
+                    work,
+                )?;
+            }
+        }
+        if let Some(default) = default {
+            nominal &=
+                self.span_is_nominal(current.alias.source, default, outer, Some(current), work)?;
+        }
+        if current.alias.conditional[slot] {
+            nominal &= self.span_is_nominal(fallback.source, fallback.range, outer, None, work)?;
+        }
+        Ok(nominal)
     }
 
     fn applied_alias_is_ratatui_buffer(
@@ -2603,67 +2690,30 @@ impl<'a> TypeScopes<'a> {
             }
             let bare_path = end + 1 == span.end;
             let parameter = if let Some(current) = applications
-                .last_mut()
+                .last()
                 .filter(|_| bare_path && span.start == end)
             {
                 work.charge(current.alias.parameters.len())?;
                 let alias_tokens = &self.files[current.alias.source].tokens;
-                current
-                    .alias
-                    .type_parameter_slot(alias_tokens, name)
-                    .map(|slot| (current, slot))
+                current.alias.type_parameter_slot(alias_tokens, name)
             } else {
                 None
             };
-            if let Some((current, slot)) = parameter {
+            if let Some(slot) = parameter {
+                let current_index = applications.len() - 1;
+                let (outer, current) = applications.split_at_mut(current_index);
+                let current = &mut current[0];
                 if slot >= current.available {
                     return Ok(false);
                 }
-                let uncertain = if current.alias.has_conditional {
-                    work.charge((slot + 1).saturating_mul(3))?;
-                    let conditional_before =
-                        current.alias.conditional[..slot].iter().any(|value| *value);
-                    let all_present = current
-                        .arguments
-                        .len()
-                        .saturating_add(current.elided_lifetimes)
-                        == current.alias.parameters.len();
-                    current.conditional_lifetimes
-                        || current.alias.opaque[..=slot].iter().any(|value| *value)
-                        || (conditional_before || current.alias.conditional[slot]) && !all_present
-                } else {
-                    false
+                let fallback = TypeSpan {
+                    source: value.source,
+                    range: span.clone(),
                 };
-                if uncertain {
-                    work.charge(slot + 1 + current.alias.parameters[slot].len())?;
-                    let alias_tokens = &self.files[current.alias.source].tokens;
-                    let default = current.alias.type_parameter_default(alias_tokens, slot);
-                    let mut nominal = (!current.arguments.is_empty() || default.is_some())
-                        && !current.alias.opaque[..=slot].iter().any(|value| *value);
-                    for argument in &current.arguments {
-                        if self.files[current.argument_source].tokens[argument.start].kind
-                            != Tok::Lifetime
-                        {
-                            nominal &= self.span_is_nominal(
-                                current.argument_source,
-                                argument.clone(),
-                                work,
-                            )?;
-                        }
-                    }
-                    if let Some(default) = default {
-                        nominal &= self.span_is_nominal(current.alias.source, default, work)?;
-                    }
-                    if current.alias.conditional[slot] {
-                        nominal &= matches!(
-                            self.binding_at(value.source, end, work)?,
-                            Some(TypeBinding::Nominal)
-                        );
-                    }
-                    if nominal {
-                        return Ok(false);
-                    }
-                    return Err(AliasResolutionError::ConditionalParameters);
+                if let Some(result) =
+                    self.conditional_parameter_resolution(current, outer, slot, fallback, work)?
+                {
+                    return Ok(result);
                 }
                 let Some(argument_slot) = slot.checked_sub(current.elided_lifetimes) else {
                     return Ok(false);
