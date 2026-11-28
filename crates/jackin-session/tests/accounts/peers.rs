@@ -298,6 +298,47 @@ async fn a_plan_that_must_reach_a_gateway_it_cannot_reach_changes_nothing() -> T
 }
 
 #[tokio::test]
+async fn a_login_plan_cannot_remove_its_provider_gateway_in_the_same_edit() -> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, false]).await?;
+        let (_other, added) = other_login_account().await?;
+        let home = fleet.world.gateway.name().clone();
+        let other_provider = ProviderName::for_account(added.name(), jackin_core::Agent::Codex);
+        let before = fleet.store.load().await?;
+        fleet.world.gateway.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::PermissionDenied {
+                what: "provider work".to_owned(),
+            },
+        });
+
+        let refused = fleet
+            .apply(
+                &[],
+                vec![
+                    ConfigEdit::AddAccount(added),
+                    ConfigEdit::RemoveGateway(home.clone()),
+                ],
+            )
+            .await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::Account(AccountError::GatewayRemoved { gateway }))
+                    if gateway == &home
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(fleet.store.load().await?, before);
+        assert!(fleet.world.gateway.provider(&other_provider).is_none());
+        assert_eq!(fleet.holders()?, [true, true, false]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_new_login_account_needs_only_the_home_gateway() -> TestResult {
     guard(async {
         let fleet = fleet([false, false, false]).await?;

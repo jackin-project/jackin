@@ -804,6 +804,7 @@ impl GatewayPlan {
             GatewayScope::Every => gateways.every().map_err(AccountEditError::Unreachable)?,
             GatewayScope::Home => vec![gateways.home()],
         };
+        check_gateway_entries(&locked.config, prepared.candidate())?;
         let mut journal = Vec::new();
         let written = async {
             forget(&sessions, &effects.forget, &mut journal, cancel).await?;
