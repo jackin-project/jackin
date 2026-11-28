@@ -1160,3 +1160,20 @@ fn attributed_alias_parameters_preserve_effective_positions() -> TestResult {
         ],
     )
 }
+
+#[test]
+fn conditional_nominal_proof_respects_outer_alias_parameters() -> TestResult {
+    expect(
+        "use ratatui::buffer::Buffer;\n\
+         struct T { value: u8 }\n\
+         struct Local { value: u8 }\n\
+         type Ambiguous<#[cfg(windows)] X = Local, U = Local> = U;\n\
+         type Outer<T> = Ambiguous<T>;\n\
+         type Certain<T> = T;\n\
+         fn inspect(buf: Buffer, local: Local) {\n\
+         \x20   let Outer::<Buffer> { content, .. } = buf;\n\
+         \x20   let Certain::<Local> { value } = local;\n\
+         }\n",
+        &[("C1", 8, "conditional")],
+    )
+}
