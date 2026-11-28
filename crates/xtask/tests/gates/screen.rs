@@ -136,6 +136,34 @@ fn wildcard_super_obeys_file_module_policy() -> TestResult {
 }
 
 #[test]
+fn conditional_canonical_root_reports_uncertainty() -> TestResult {
+    expect(
+        "fn normal() { let _: Option<ratatui::widgets::Block> = None; }\n\
+         mod uncertain {\n\
+         #[cfg(windows)] mod ratatui { pub mod widgets { pub struct Block; } }\n\
+         fn view() { let _: Option<ratatui::widgets::Block> = None; }\n\
+         }\n\
+         mod active { mod ratatui { pub mod widgets { pub struct Block; } } fn view() { let _: Option<ratatui::widgets::Block> = None; } }\n",
+        &[("C1", 1, "widgets"), ("C1", 4, "uncertain")],
+    )
+}
+
+#[test]
+fn standard_matches_guard_preserves_field_provenance() -> TestResult {
+    expect(
+        "use ratatui::buffer::Buffer;\n\
+         fn checked(value: Buffer) {\n\
+         let _ = matches!((), _ if {\n\
+         let Buffer { content, .. } = value; true\n\
+         });\n\
+         }\n\
+         fn shadowed(value: Buffer) { macro_rules! matches { ($($t:tt)*) => { true } } let _ = matches!((), _ if { let Buffer { content, .. } = value; true }); }\n\
+         fn opaque(value: Buffer) { let _ = matches!((), _ if { opaque!(let Buffer { content, .. } = value); true }); }\n",
+        &[("C1", 4, "destructures")],
+    )
+}
+
+#[test]
 fn literals_in_display_pass() -> TestResult {
     expect(
         "use std::fmt;\n\
