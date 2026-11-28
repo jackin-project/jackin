@@ -120,6 +120,7 @@ impl Check for ScreenCheck {
             let path = file.path;
             let tokens = &file.tokens;
             violations.extend(import_violations(source, &types));
+            violations.extend(types.direct_import_violations(source));
             violations.extend(types.renamed_imports(source));
             violations.extend(index_violations(path, tokens));
             violations.extend(silencing_violations(path, tokens));
@@ -388,24 +389,37 @@ fn literal_violations<'a>(
     violations
 }
 
+#[derive(Clone)]
 struct PathLeaf<'a> {
     segments: Vec<&'a str>,
     rename: Option<(&'a str, u32)>,
+    root: usize,
+    absolute: bool,
 }
 
 fn path_tree<'a>(
     tokens: &'a [Token],
     position: &mut usize,
     prefix: &[&'a str],
+    inherited_root: Option<usize>,
+    inherited_absolute: bool,
     out: &mut Vec<PathLeaf<'a>>,
 ) {
     let mut path = prefix.to_vec();
+    let mut root = inherited_root;
+    let mut absolute = inherited_absolute;
+    if is_path_separator(tokens, *position) {
+        *position += 2;
+        path.clear();
+        root = None;
+        absolute = true;
+    }
     let mut rename = None;
     while let Some(token) = tokens.get(*position) {
         if token.is_punct('{') {
             *position += 1;
             loop {
-                path_tree(tokens, position, &path, out);
+                path_tree(tokens, position, &path, root, absolute, out);
                 match tokens.get(*position) {
                     Some(next) if next.is_punct(',') => *position += 1,
                     Some(next) if next.is_punct('}') => {
@@ -423,6 +437,7 @@ fn path_tree<'a>(
         } else {
             break;
         };
+        root.get_or_insert(*position);
         path.push(segment);
         *position += 1;
         if segment != "*" && is_path_separator(tokens, *position) {
@@ -442,6 +457,8 @@ fn path_tree<'a>(
         out.push(PathLeaf {
             segments: path,
             rename,
+            root: root.unwrap_or(*position),
+            absolute,
         });
     }
 }
@@ -452,6 +469,11 @@ fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
     let tokens = &file.tokens;
     let mut violations = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
+        if types.sources[source].use_enclosing[index].is_some()
+            || !is_path_separator(tokens, index + 1)
+        {
+            continue;
+        }
         let continues_path = index >= 3
             && is_path_separator(tokens, index - 2)
             && tokens[index - 3]
@@ -466,7 +488,7 @@ fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
         }
         let mut position = index;
         let mut paths = Vec::new();
-        path_tree(tokens, &mut position, &[], &mut paths);
+        path_tree(tokens, &mut position, &[], None, false, &mut paths);
         for leaf in paths {
             let rest = &leaf.segments[1..];
             let allowed = RATATUI_ALLOWED
@@ -851,12 +873,13 @@ struct TypeScope<'a> {
     self_receiver: Option<ImplReceiver>,
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
     renamed: Vec<(&'a str, u32)>,
+    imports: Vec<PathLeaf<'a>>,
     glob_import: bool,
-    glob_count: usize,
     matches_imported: MatchesImport,
     matches_textual: bool,
     matches_to_parent: bool,
     extern_macro_roots: [Option<bool>; 2],
+    extern_roots: BTreeMap<&'a str, Option<&'a str>>,
 }
 
 impl<'a> TypeScope<'a> {
@@ -869,12 +892,9 @@ impl<'a> TypeScope<'a> {
 
     fn import(&mut self, tokens: &'a [Token], index: usize) -> usize {
         let mut position = index + 1;
-        let absolute = is_path_separator(tokens, position);
-        if absolute {
-            position += 2;
-        }
         let mut paths = Vec::new();
-        path_tree(tokens, &mut position, &[], &mut paths);
+        path_tree(tokens, &mut position, &[], None, false, &mut paths);
+        self.imports.extend(paths.iter().cloned());
         if macro_item_disabled(tokens, index) {
             return position;
         }
@@ -882,12 +902,12 @@ impl<'a> TypeScope<'a> {
         let macro_attributed = attributed
             && has_macro_attribute(tokens, index, |attribute| !inert_lint_attribute(attribute));
         for mut path in paths {
+            let absolute = path.absolute;
             let segments = path.segments.as_slice();
             let name = match (path.rename, segments) {
                 (Some((name, _)), _) => name,
                 (None, [.., "*"]) => {
                     self.glob_import = true;
-                    self.glob_count += 1;
                     continue;
                 }
                 (None, [.., name, "self"] | [.., name]) => *name,
@@ -919,12 +939,31 @@ impl<'a> TypeScope<'a> {
     }
 
     fn bind_item(&mut self, tokens: &'a [Token], index: usize, file_module: Option<FileModule>) {
+        if tokens[index].is_keyword("mod") && macro_item_disabled(tokens, index) {
+            return;
+        }
         if tokens[index].is_keyword("extern")
             && tokens
                 .get(index + 1)
                 .is_some_and(|token| token.is_keyword("crate"))
         {
             self.bind_extern_macro_root(tokens, index);
+            if !macro_item_disabled(tokens, index)
+                && let Some(source) = tokens.get(index + 2).and_then(Token::ident)
+            {
+                let name = if tokens
+                    .get(index + 3)
+                    .is_some_and(|token| token.is_keyword("as"))
+                {
+                    tokens.get(index + 4).and_then(Token::ident)
+                } else {
+                    Some(source)
+                };
+                if let Some(name) = name {
+                    self.extern_roots
+                        .insert(name, (source != "self").then_some(source));
+                }
+            }
             return;
         }
         let Some(name) = tokens.get(index + 1).and_then(Token::ident) else {
@@ -1841,7 +1880,6 @@ impl<'a> ModulePaths<'a> {
 struct SourceScopes {
     enclosing: Vec<Option<ScopePosition>>,
     use_enclosing: Vec<Option<usize>>,
-    use_globs: Vec<usize>,
     inner_scopes: Range<usize>,
     connected: bool,
 }
@@ -1898,10 +1936,11 @@ impl<'a> TypeScopes<'a> {
                     && import.segments.len() == 3
                     && import.segments[1..] == ["buffer", "Buffer"]
                     && graph
-                        .external_root_visible(
+                        .external_root_visible_ignoring_globs(
                             scope,
                             import.segments[0],
                             import.absolute,
+                            true,
                             &mut AliasWork::Unlimited,
                         )
                         .unwrap_or(false)
@@ -1953,7 +1992,6 @@ impl<'a> TypeScopes<'a> {
         let inner_start = self.scopes.len();
         let mut enclosing = vec![None; tokens.len()];
         let mut use_enclosing = vec![None; tokens.len()];
-        let mut use_globs = vec![0; tokens.len()];
         let mut stack = vec![source];
         let mut local_macros = LocalMacroTemplates::default();
         let mut index = 0;
@@ -2005,11 +2043,6 @@ impl<'a> TypeScopes<'a> {
             } else if token.is_ident("use") {
                 let end = self.scopes[scope].import(tokens, index);
                 use_enclosing[index..end].fill(Some(scope));
-                let globs = tokens[index..end]
-                    .iter()
-                    .filter(|token| token.is_punct('*'))
-                    .count();
-                use_globs[index..end].fill(globs);
                 index = end;
                 continue;
             } else {
@@ -2029,7 +2062,6 @@ impl<'a> TypeScopes<'a> {
         }
         self.sources[source].enclosing = enclosing;
         self.sources[source].use_enclosing = use_enclosing;
-        self.sources[source].use_globs = use_globs;
         self.sources[source].inner_scopes = inner_start..self.scopes.len();
     }
 
@@ -2097,6 +2129,9 @@ impl<'a> TypeScopes<'a> {
             .filter(|&index| tokens[index].is_ident("mod"))
             .and_then(|index| tokens[index + 1].ident().map(|name| (index, name)));
         let directory = module.and_then(|(declaration, name)| {
+            if macro_item_disabled(tokens, declaration) {
+                return None;
+            }
             let attributed = has_macro_attribute(tokens, declaration, |attribute| {
                 !inert_lint_attribute(attribute)
             });
@@ -2166,7 +2201,7 @@ impl<'a> TypeScopes<'a> {
         absolute: bool,
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
-        self.external_root_visible_ignoring_globs(scope, name, absolute, 0, work)
+        self.external_root_visible_ignoring_globs(scope, name, absolute, false, work)
     }
 
     fn external_root_visible_ignoring_globs(
@@ -2174,24 +2209,36 @@ impl<'a> TypeScopes<'a> {
         mut scope: usize,
         name: &str,
         absolute: bool,
-        mut ignored_globs: usize,
+        ignore_globs: bool,
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
-        if !self.roots.get(name).copied().unwrap_or(false) {
-            return Ok(false);
-        }
         if absolute {
-            return Ok(true);
+            let source = self.scopes[scope].source;
+            let root = if self.sources[source].connected {
+                self.crate_root.unwrap_or(source)
+            } else {
+                source
+            };
+            if let Some(source) = self.scopes[root].extern_roots.get(name) {
+                return Ok(
+                    source.is_some_and(|source| self.roots.get(source).copied().unwrap_or(false))
+                );
+            }
+            return Ok(self.roots.get(name).copied().unwrap_or(false));
         }
         loop {
             work.charge_name(name)?;
             let current = &self.scopes[scope];
-            if current.bindings.contains_key(name) || current.glob_count > ignored_globs {
+            if let Some(source) = current.extern_roots.get(name) {
+                return Ok(
+                    source.is_some_and(|source| self.roots.get(source).copied().unwrap_or(false))
+                );
+            }
+            if current.bindings.contains_key(name) || current.glob_import && !ignore_globs {
                 return Ok(false);
             }
-            ignored_globs = 0;
             let Some(parent) = current.parent else {
-                return Ok(true);
+                return Ok(self.roots.get(name).copied().unwrap_or(false));
             };
             scope = parent;
         }
@@ -2216,7 +2263,7 @@ impl<'a> TypeScopes<'a> {
             scope,
             name,
             absolute,
-            scopes.use_globs[index],
+            false,
             &mut AliasWork::Unlimited,
         )
         .unwrap_or(false)
@@ -2265,7 +2312,7 @@ impl<'a> TypeScopes<'a> {
         loop {
             work.charge(1)?;
             let edge = state.take();
-            if let Some((_, absolute, edge_len)) = edge {
+            if let Some((start, absolute, edge_len)) = edge {
                 if edge_len == 3
                     && path
                         .iter()
@@ -2273,7 +2320,7 @@ impl<'a> TypeScopes<'a> {
                         .take(2)
                         .copied()
                         .eq(["buffer", "Buffer"])
-                    && self.external_root_visible(edge.unwrap().0, path[0], absolute, work)?
+                    && self.external_root_visible(start, path[0], absolute, work)?
                 {
                     return Ok((path.len() == edge_len).then_some(&TypeBinding::RatatuiBuffer));
                 }
@@ -2695,6 +2742,50 @@ impl<'a> TypeScopes<'a> {
         self.applied_alias_is_ratatui_buffer(source, alias, slots, work)
     }
 
+    fn direct_import_is_ratatui(&self, scope: usize, leaf: &PathLeaf<'_>) -> bool {
+        leaf.segments.first().is_some_and(|root| {
+            self.external_root_visible_ignoring_globs(
+                scope,
+                root,
+                leaf.absolute,
+                true,
+                &mut AliasWork::Unlimited,
+            )
+            .unwrap_or(false)
+        })
+    }
+
+    fn direct_import_violations(&self, source: usize) -> Vec<Violation> {
+        let file = &self.files[source];
+        let mut violations = Vec::new();
+        for scope in self.source_scopes(source) {
+            for leaf in &self.scopes[scope].imports {
+                if !self.direct_import_is_ratatui(scope, leaf) {
+                    continue;
+                }
+                let rest = &leaf.segments[1..];
+                if rest == ["buffer", "Buffer"]
+                    && let Some((_, line)) = leaf.rename
+                {
+                    violations.push(Violation::at_line(
+                        CiStep::Screen,
+                        file.path,
+                        line,
+                        BUFFER_RENAME,
+                    ));
+                }
+                if !RATATUI_ALLOWED
+                    .iter()
+                    .any(|prefix| rest.starts_with(prefix))
+                {
+                    violations.push(Violation::at_line(CiStep::Screen, file.path, file.tokens[leaf.root].line,
+                        format!("C1: imports {}; jackin-tui may import only Frame, Rect, Buffer and crossterm::event from ratatui", leaf.segments.join("::"))));
+                }
+            }
+        }
+        violations
+    }
+
     fn renamed_imports(&self, source: usize) -> Vec<Violation> {
         let path = self.files[source].path;
         self.source_scopes(source)
@@ -2703,6 +2794,16 @@ impl<'a> TypeScopes<'a> {
                     .renamed
                     .iter()
                     .filter(move |&&(name, _)| {
+                        if self.scopes[scope].imports.iter().any(|leaf| {
+                            leaf.rename.is_some_and(|(renamed, _)| renamed == name)
+                                && leaf
+                                    .segments
+                                    .get(1..)
+                                    .is_some_and(|rest| rest == ["buffer", "Buffer"])
+                                && self.direct_import_is_ratatui(scope, leaf)
+                        }) {
+                            return false;
+                        }
                         matches!(
                             self.resolve(scope, [name], false, &mut AliasWork::Unlimited),
                             Ok(Some(TypeBinding::RatatuiBuffer))

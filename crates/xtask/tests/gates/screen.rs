@@ -1036,21 +1036,28 @@ fn unrelated_cargo_alias_does_not_gain_ratatui_provenance() -> TestResult {
     )?;
     workspace.write("crates/other/Cargo.toml", &member_manifest("other", ""))?;
     workspace.write("crates/other/src/lib.rs", "")?;
-    workspace.write(LIB, "use rt::widgets::Paragraph;\ntrait Inspect { fn inspect(&self); }\nimpl Inspect for rt::buffer::Buffer { fn inspect(&self) { let Self { value } = self; } }\n")?;
+    workspace.write(LIB, "use rt::{widgets::Paragraph, buffer::Buffer as Cells};\ntrait Inspect { fn inspect(&self); }\nimpl Inspect for rt::buffer::Buffer { fn inspect(&self) { let Self { value } = self; } }\n")?;
     expect_workspace(ScreenCheck::with_allowed(&[]), &workspace, &[])
 }
 
 #[test]
 fn cargo_alias_import_trees_keep_root_provenance() -> TestResult {
     let workspace = Workspace::empty()?;
-    workspace.write("Cargo.toml", &workspace_manifest(&["jackin-tui", "ratatui"], &[]))?;
+    workspace.write(
+        "Cargo.toml",
+        &workspace_manifest(&["jackin-tui", "ratatui"], &[]),
+    )?;
     workspace.write(
         "crates/jackin-tui/Cargo.toml",
-        &member_manifest("jackin-tui", "[dev-dependencies]\nrt = { package = \"ratatui\", path = \"../ratatui\" }\n"),
+        &member_manifest(
+            "jackin-tui",
+            "[dev-dependencies]\nrt = { package = \"ratatui\", path = \"../ratatui\" }\n",
+        ),
     )?;
     workspace.write("crates/ratatui/Cargo.toml", &member_manifest("ratatui", ""))?;
     workspace.write("crates/ratatui/src/lib.rs", "")?;
-    workspace.write(LIB,
+    workspace.write(
+        LIB,
         "mod grouped {\n\
          \x20   use rt::{widgets::Paragraph, buffer::Buffer as Cells};\n\
          }\n\
@@ -1072,16 +1079,39 @@ fn cargo_alias_import_trees_keep_root_provenance() -> TestResult {
          mod attributed {\n\
          \x20   #[cfg(unix)] use rt::buffer::Buffer as Cells;\n\
          }\n\
-         fn value(rt: u8) -> u8 { rt }\n")?;
-    expect_workspace(ScreenCheck::with_allowed(&[]), &workspace,
-        &[("C1", 2, "renames"), ("C1", 2, "widgets"), ("C1", 6, "widgets"), ("C1", 7, "renames"), ("C1", 12, "widgets"), ("C1", 15, "widgets"), ("C1", 16, "style"), ("C1", 17, "widgets"), ("C1", 20, "renames")])
+         fn value(rt: u8) -> u8 { rt }\n",
+    )?;
+    expect_workspace(
+        ScreenCheck::with_allowed(&[]),
+        &workspace,
+        &[
+            ("C1", 2, "widgets"),
+            ("C1", 2, "renames"),
+            ("C1", 6, "widgets"),
+            ("C1", 7, "renames"),
+            ("C1", 12, "widgets"),
+            ("C1", 15, "widgets"),
+            ("C1", 16, "style"),
+            ("C1", 17, "widgets"),
+            ("C1", 20, "renames"),
+        ],
+    )
 }
 
 #[test]
 fn explicit_extern_self_precedes_cargo_alias() -> TestResult {
     let workspace = Workspace::empty()?;
-    workspace.write("Cargo.toml", &workspace_manifest(&["jackin-tui", "ratatui"], &[]))?;
-    workspace.write("crates/jackin-tui/Cargo.toml", &member_manifest("jackin-tui", "[dev-dependencies]\nrt = { package = \"ratatui\", path = \"../ratatui\" }\n"))?;
+    workspace.write(
+        "Cargo.toml",
+        &workspace_manifest(&["jackin-tui", "ratatui"], &[]),
+    )?;
+    workspace.write(
+        "crates/jackin-tui/Cargo.toml",
+        &member_manifest(
+            "jackin-tui",
+            "[dev-dependencies]\nrt = { package = \"ratatui\", path = \"../ratatui\" }\n",
+        ),
+    )?;
     workspace.write("crates/ratatui/Cargo.toml", &member_manifest("ratatui", ""))?;
     workspace.write("crates/ratatui/src/lib.rs", "")?;
     workspace.write(LIB, "extern crate self as rt;\nmod widgets { pub struct Paragraph; }\nuse {::rt::widgets::Paragraph};\n")?;
