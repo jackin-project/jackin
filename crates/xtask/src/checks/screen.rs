@@ -1548,13 +1548,13 @@ impl<'a> TypeScopes<'a> {
         )
     }
 
-    fn apply_alias(
+    fn applied_alias_is_ratatui_buffer(
         &self,
         argument_source: usize,
         alias: &TypeAlias,
         arguments: Vec<Range<usize>>,
         work: &mut AliasWork,
-    ) -> Result<Option<TypeSpan>, AliasWorkLimit> {
+    ) -> Result<bool, AliasWorkLimit> {
         let mut value = TypeSpan {
             source: alias.source,
             range: alias.value.clone(),
@@ -1562,17 +1562,28 @@ impl<'a> TypeScopes<'a> {
         let Some(application) =
             AliasApplication::new(self.files, alias, argument_source, arguments, work)?
         else {
-            return Ok(None);
+            return Ok(false);
         };
         let mut applications = vec![application];
         loop {
-            let tokens = &self.files[value.source].tokens;
-            let span = &value.range;
+            let file = &self.files[value.source];
+            let tokens = &file.tokens;
+            let span = &mut value.range;
             work.charge(span.len().max(1))?;
+            while !Range::is_empty(span)
+                && tokens[span.start].is_punct('(')
+                && file.group_ends[span.start] == Some(span.end)
+            {
+                span.start += 1;
+                span.end -= 1;
+            }
+            if Range::is_empty(span) {
+                return Ok(false);
+            }
             let first = span.start + 2 * usize::from(is_path_separator(tokens, span.start));
             let mut end = first;
             let Some(name) = tokens.get(end).and_then(Token::ident) else {
-                return Ok(None);
+                return Ok(false);
             };
             while end + 3 < span.end
                 && is_path_separator(tokens, end + 1)
@@ -1580,20 +1591,26 @@ impl<'a> TypeScopes<'a> {
             {
                 end += 3;
             }
-            if end + 1 == span.end {
-                let Some(current) = applications.last_mut().filter(|_| span.start == end) else {
-                    return Ok(Some(value));
-                };
+            let bare_path = end + 1 == span.end;
+            let parameter = if let Some(current) = applications
+                .last_mut()
+                .filter(|_| bare_path && span.start == end)
+            {
                 work.charge(current.alias.parameters.len())?;
                 let alias_tokens = &self.files[current.alias.source].tokens;
-                let Some(slot) = current.alias.type_parameter_slot(alias_tokens, name) else {
-                    return Ok(Some(value));
-                };
+                current
+                    .alias
+                    .type_parameter_slot(alias_tokens, name)
+                    .map(|slot| (current, slot))
+            } else {
+                None
+            };
+            if let Some((current, slot)) = parameter {
                 if slot >= current.available {
-                    return Ok(None);
+                    return Ok(false);
                 }
                 let Some(argument_slot) = slot.checked_sub(current.elided_lifetimes) else {
-                    return Ok(None);
+                    return Ok(false);
                 };
                 if let Some(argument) = current.arguments.get(argument_slot) {
                     value = TypeSpan {
@@ -1604,8 +1621,9 @@ impl<'a> TypeScopes<'a> {
                     continue;
                 }
                 work.charge(slot + 1 + current.alias.parameters[slot].len())?;
+                let alias_tokens = &self.files[current.alias.source].tokens;
                 let Some(default) = current.alias.type_parameter_default(alias_tokens, slot) else {
-                    return Ok(None);
+                    return Ok(false);
                 };
                 value = TypeSpan {
                     source: current.alias.source,
@@ -1614,26 +1632,33 @@ impl<'a> TypeScopes<'a> {
                 current.available = slot;
                 continue;
             }
-            let Some(TypeBinding::Alias(alias)) = self.binding_at(value.source, end, work)? else {
-                return Ok(None);
+            let alias = match self.binding_at(value.source, end, work)? {
+                Some(TypeBinding::RatatuiBuffer) if bare_path => return Ok(true),
+                Some(TypeBinding::Alias(alias)) => alias,
+                _ => return Ok(false),
             };
-            let arguments = end + 1 + 2 * usize::from(is_path_separator(tokens, end + 1));
-            let Some((slots, boundary)) = generic_slots(&tokens[..span.end], arguments) else {
-                return Ok(None);
+            let slots = if bare_path {
+                Vec::new()
+            } else {
+                let arguments = end + 1 + 2 * usize::from(is_path_separator(tokens, end + 1));
+                let Some((slots, boundary)) = generic_slots(&tokens[..span.end], arguments) else {
+                    return Ok(false);
+                };
+                if boundary != span.end {
+                    return Ok(false);
+                }
+                slots
             };
-            if boundary != span.end {
-                return Ok(None);
-            }
             work.charge(applications.len())?;
             if applications.iter().any(|active| {
                 active.alias.source == alias.source && active.alias.declaration == alias.declaration
             }) {
-                return Ok(None);
+                return Ok(false);
             }
             let Some(application) =
                 AliasApplication::new(self.files, alias, value.source, slots, work)?
             else {
-                return Ok(None);
+                return Ok(false);
             };
             value = TypeSpan {
                 source: alias.source,
@@ -1683,8 +1708,8 @@ impl<'a> TypeScopes<'a> {
         let binding = self.binding_at(source, receiver.ident, work)?;
         match (binding, receiver.arguments) {
             (Some(TypeBinding::RatatuiBuffer), None) => Ok(true),
-            (Some(TypeBinding::Alias(alias)), Some(start)) => {
-                self.alias_is_ratatui_buffer(source, alias, start, work)
+            (Some(TypeBinding::Alias(alias)), arguments) => {
+                self.alias_is_ratatui_buffer(source, alias, arguments, work)
             }
             _ => Ok(false),
         }
@@ -1694,24 +1719,23 @@ impl<'a> TypeScopes<'a> {
         &self,
         source: usize,
         alias: &TypeAlias,
-        start: usize,
+        start: Option<usize>,
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         let file = &self.files[source];
-        let Some(end) = file.group_ends[start] else {
-            return Ok(false);
+        let slots = if let Some(start) = start {
+            let Some(end) = file.group_ends[start] else {
+                return Ok(false);
+            };
+            work.charge(end - start)?;
+            let Some((slots, _)) = generic_slots(&file.tokens[..end], start) else {
+                return Ok(false);
+            };
+            slots
+        } else {
+            Vec::new()
         };
-        work.charge(end - start)?;
-        let Some((slots, _)) = generic_slots(&file.tokens[..end], start) else {
-            return Ok(false);
-        };
-        let Some(argument) = self.apply_alias(source, alias, slots, work)? else {
-            return Ok(false);
-        };
-        Ok(matches!(
-            self.binding_at(argument.source, argument.range.end - 1, work)?,
-            Some(TypeBinding::RatatuiBuffer)
-        ))
+        self.applied_alias_is_ratatui_buffer(source, alias, slots, work)
     }
 
     fn renamed_imports(&self, source: usize) -> Vec<Violation> {
@@ -1817,7 +1841,7 @@ fn buffer_pattern_matches(
     let Some(TypeBinding::Alias(alias)) = types.binding_at(source, index, &mut work)? else {
         return Ok(false);
     };
-    types.alias_is_ratatui_buffer(source, alias, start, &mut work)
+    types.alias_is_ratatui_buffer(source, alias, Some(start), &mut work)
 }
 
 fn pattern_violations(
