@@ -4,7 +4,7 @@ Verifier: Haiku 5.5 (effort high), read-only. Fetch run with the HTTPS rewrite; 
 
 `origin/main` at verification time: `f151478146fb335ab4540ed058e3c430464335aa`. It contains #1321 merge `51f2d80885c58e0edcd9dc29d03bd61f07f0f4bc` (P08 landed as part of batch 1; commit body cites #1309).
 
-Plan: `/Users/donbeave/Projects/jackin-project/jackin/jackin-branch-porting-plan.md`, section 5 (P08, line 190) and section 3 (preserve rules).
+Plan: `<workspace>/jackin/jackin-branch-porting-plan.md`, section 5 (P08, line 190) and section 3 (preserve rules).
 
 ## Verdicts
 
