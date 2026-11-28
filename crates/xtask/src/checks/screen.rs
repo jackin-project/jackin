@@ -1100,6 +1100,11 @@ struct GlobPath<'a> {
     public: Option<bool>,
 }
 
+enum GlobVisit {
+    Enter(usize, bool),
+    Exit(usize, bool),
+}
+
 #[derive(Default)]
 struct GlobPaths<'a> {
     known: Vec<GlobPath<'a>>,
@@ -2778,7 +2783,7 @@ impl<'a> TypeScopes<'a> {
             } else if first && *name == "self" {
                 current = self.scopes[current].module;
             } else if first && *name == "super" {
-                let Some(parent) = self.scopes[self.scopes[current].module].module_parent else {
+                let Some(parent) = self.super_module(current, &mut VecDeque::new(), work)? else {
                     return Ok(None);
                 };
                 current = parent;
@@ -2813,17 +2818,30 @@ impl<'a> TypeScopes<'a> {
         work: &mut AliasWork,
     ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasResolutionError> {
         let mut budget = 4096usize;
-        let mut pending = vec![(scope, export)];
-        let mut visited = BTreeSet::new();
+        let mut pending = vec![GlobVisit::Enter(scope, export)];
+        let mut active = BTreeSet::new();
+        let mut complete = BTreeSet::new();
         let mut found = None;
-        while let Some((current, export)) = pending.pop() {
+        while let Some(visit) = pending.pop() {
             budget = budget
                 .checked_sub(name.len() + 1)
                 .ok_or(AliasResolutionError::WorkLimit)?;
             work.charge_name(name)?;
-            if !visited.insert((current, export)) {
+            let (current, export) = match visit {
+                GlobVisit::Exit(current, export) => {
+                    active.remove(&(current, export));
+                    complete.insert((current, export));
+                    continue;
+                }
+                GlobVisit::Enter(current, export) => (current, export),
+            };
+            if complete.contains(&(current, export)) {
+                continue;
+            }
+            if !active.insert((current, export)) {
                 return Ok(None);
             }
+            pending.push(GlobVisit::Exit(current, export));
             let entry = &self.scopes[current];
             if current != scope && entry.uncertain_visibility.contains(name) {
                 return Ok(None);
@@ -2858,7 +2876,7 @@ impl<'a> TypeScopes<'a> {
                 let Some(target) = self.glob_module(current, &glob.path, &mut budget, work)? else {
                     return Ok(None);
                 };
-                pending.push((target, true));
+                pending.push(GlobVisit::Enter(target, true));
             }
         }
         Ok(found)
@@ -2926,11 +2944,28 @@ impl<'a> TypeScopes<'a> {
                     source.is_some_and(|source| self.roots.get(source).copied().unwrap_or(false))
                 );
             }
-            if current.glob_import
-                && name == "ratatui"
-                && self.glob_binding(scope, name, false, work)?.is_some()
-            {
-                return Ok(false);
+            if current.glob_import && name == "ratatui" {
+                let binding = match self.glob_binding(scope, name, false, work) {
+                    Err(AliasResolutionError::WorkLimit)
+                        if matches!(work, AliasWork::Unlimited) =>
+                    {
+                        None
+                    }
+                    result => result?,
+                };
+                if binding.is_some_and(|(_, binding)| {
+                    matches!(
+                        binding,
+                        TypeBinding::Alias(_)
+                            | TypeBinding::RatatuiBuffer
+                            | TypeBinding::Nominal
+                            | TypeBinding::NominalEnum(_)
+                            | TypeBinding::InlineModule(_)
+                            | TypeBinding::FileModule(_)
+                    )
+                }) {
+                    return Ok(false);
+                }
             }
             if current.bindings.contains_key(name)
                 || current.glob_import && !ignore_globs && name != "ratatui"
