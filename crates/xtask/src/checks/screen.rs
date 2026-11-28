@@ -1397,9 +1397,16 @@ fn enum_body_starts(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
     for index in (0..tokens.len()).rev() {
         let token = &tokens[index];
         where_bodies[index] = match token.kind {
-            Tok::Punct('{') => Some(index),
+            Tok::Punct('{')
+                if index
+                    .checked_sub(1)
+                    .and_then(|bang| opaque_group_open(tokens, bang))
+                    != Some(index) =>
+            {
+                Some(index)
+            }
             Tok::Punct(';' | '}' | ')' | ']') => None,
-            Tok::Punct('<' | '(' | '[') => ends[index].and_then(|end| where_bodies[end]),
+            Tok::Punct('{' | '<' | '(' | '[') => ends[index].and_then(|end| where_bodies[end]),
             _ => where_bodies[index + 1],
         };
         if token.is_ident("enum")

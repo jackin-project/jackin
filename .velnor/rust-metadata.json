@@ -3136,6 +3136,11 @@
               ]
             },
             {
+              "name": "unicode-ident",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
               "name": "zeroize",
               "kind": "normal",
               "manifest": null,
@@ -3230,7 +3235,7 @@
     }
   },
   "manifests": {
-    "Cargo.toml": "8d12116f1cfce78af8b27f0589c78378f8f033e23f33205c78932082679958c6",
+    "Cargo.toml": "c5c49b920a7a7a7b8dbcc2a90266f345b8ad629aa69057e1eabfd8f6116df307",
     "crates/jackin-core/Cargo.toml": "04c029db8cc2ff115fa862c51d6362514737c8fb906dd6554d19e1b1ffc09fb3",
     "crates/jackin-image/Cargo.toml": "9b97498a682f4cb9550f4019c4839a2c3a5ff99c142235d9e34edab30cb062f3",
     "crates/jackin-openshell/Cargo.toml": "6f0bc40a09df45272e0697b20345ed999e8f0118abc80a860c9fd57adfc7a4f3",
@@ -3251,7 +3256,7 @@
     "crates/usage/jackin-usage-provider-openrouter/Cargo.toml": "be1a7c49fcb5964c7e90a271020a206a4cfb4dfc6faa4f6526e7f2ff7da062aa",
     "crates/usage/jackin-usage-provider-zai/Cargo.toml": "96721af941ffee4a68c58efbc6bd0473921a6fa73edc1bd80a9ed4e54bc84381",
     "crates/usage/jackin-usage/Cargo.toml": "d2f38eff19a1d8fdb59357d822759a9871c7b5b0932cf60a4746b13aebe750dd",
-    "crates/xtask/Cargo.toml": "8a80645825f1a28861ca030bcc830651a97e2ec12f9528d47c9f8dbc46ef8048"
+    "crates/xtask/Cargo.toml": "78145da1ec70a4d3d9cd7f5d00433e70c541e6af5366a1661cf2fee49f847298"
   },
   "layout": "7701cc9508da4f40a1f15e0a6b4ba57d0d90c328f0bc4498af1e71ee8f9802d1"
 }

@@ -601,9 +601,9 @@ fn alias_patterns_align_elided_lifetimes() -> TestResult {
 fn generic_enum_variants_are_not_buffer_patterns() -> TestResult {
     expect(
         "use ratatui::buffer::Buffer;\n\
-         macro_rules! ty { () => { u8 }; }\n\
+         macro_rules! ℘ { () => { u8 }; }\n\
          enum View<T, U> { Buffer { first: T, second: U } }\n\
-         enum Checked<T, U> where ty!{}: Copy, U: Copy {\n\
+         enum Checked<T, U> where ℘!{}: Copy, U: Copy {\n\
          \x20   Buffer { first: T, second: U }\n\
          }\n\
          fn check(buf: Buffer) {\n\

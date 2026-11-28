@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use unicode_ident::{is_xid_continue, is_xid_start};
+
 #[derive(Debug)]
 pub(crate) struct Cursor {
     chars: Vec<char>,
@@ -127,6 +129,10 @@ fn is_ident_start(c: char) -> bool {
 
 fn is_ident_continue(c: char) -> bool {
     c == '_' || c.is_alphanumeric()
+}
+
+fn is_lifetime_start(c: char) -> bool {
+    c == '_' || is_xid_start(c)
 }
 
 pub(crate) fn lex_rust(text: &str) -> Lexed {
@@ -266,11 +272,23 @@ impl Lexer {
             }
             (Some(c), Some('\'')) if c != '\'' => self.cur.skip(3),
             _ => {
-                if self.cur.peek(1).is_some_and(is_ident_start) {
-                    kind = Tok::Lifetime;
-                }
                 self.cur.bump();
-                while self.cur.peek(0).is_some_and(is_ident_continue) {
+                let is_lifetime = self.cur.peek(0).is_some_and(is_lifetime_start);
+                if is_lifetime {
+                    kind = Tok::Lifetime;
+                    if self.cur.peek(0) == Some('r')
+                        && self.cur.peek(1) == Some('#')
+                        && self.cur.peek(2).is_some_and(is_lifetime_start)
+                    {
+                        self.cur.skip(2);
+                    }
+                }
+                let continuation: fn(char) -> bool = if is_lifetime {
+                    is_xid_continue
+                } else {
+                    is_ident_continue
+                };
+                while self.cur.peek(0).is_some_and(continuation) {
                     self.cur.bump();
                 }
             }
