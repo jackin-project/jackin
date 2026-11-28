@@ -126,6 +126,7 @@ impl Check for ScreenCheck {
 struct ScreenFile<'a> {
     path: &'a Path,
     tokens: Vec<Token>,
+    doc_before: Vec<bool>,
     group_ends: Vec<Option<usize>>,
     header_bodies: Vec<Option<usize>>,
     may_supply_matches: bool,
@@ -148,18 +149,37 @@ fn is_standard_binary_root(path: &Path) -> bool {
 
 impl<'a> ScreenFile<'a> {
     fn new(path: &'a Path, text: &str) -> Self {
-        let tokens = lex_rust(text).tokens;
+        let lexed = lex_rust(text);
+        let tokens = lexed.tokens;
+        let mut doc_before = vec![false; tokens.len() + 1];
+        for comment in lexed.comments {
+            if is_doc_comment(&comment.text) {
+                doc_before[comment.tokens_before] = true;
+            }
+        }
         let group_ends = pattern_group_ends(&tokens);
         let header_bodies = header_body_starts(&tokens, &group_ends);
         let may_supply_matches = file_may_supply_matches(&tokens, &group_ends);
         Self {
             path,
             tokens,
+            doc_before,
             group_ends,
             header_bodies,
             may_supply_matches,
         }
     }
+
+    fn is_empty_macro_group(&self, group: &Range<usize>) -> bool {
+        group.len() == 2 && !self.doc_before[group.start + 1]
+    }
+}
+
+fn is_doc_comment(text: &str) -> bool {
+    text.starts_with("//!")
+        || text.starts_with("///") && !text.starts_with("////")
+        || text.starts_with("/*!")
+        || text.starts_with("/**") && !text.starts_with("/***") && text != "/**/"
 }
 
 fn closing(tokens: &[Token], open: usize) -> usize {
@@ -1345,7 +1365,7 @@ impl<'a> LocalMacroTemplates<'a> {
             }
             return None;
         }
-        if group.len() != 2 {
+        if !file.is_empty_macro_group(&group) {
             return None;
         }
         let template = self.active.get_mut(tokens[invoked].ident()?)?;
@@ -1398,15 +1418,28 @@ impl<'a> LocalMacroTemplates<'a> {
 
 fn is_direct_template_invocation(tokens: &[Token], name: usize) -> bool {
     let mut start = name;
-    while let Some(attribute) = outer_attribute_before(tokens, start) {
-        if !inert_lint_attribute(&tokens[attribute.start + 2..attribute.end - 1]) {
+    while let Some((begin, attribute)) = invocation_attribute_before(tokens, start) {
+        if !inert_lint_attribute(attribute) {
             return false;
         }
-        start = attribute.start;
+        start = begin;
     }
     tokens
         .get(start.wrapping_sub(1))
         .is_none_or(|token| matches!(token.kind, Tok::Punct('{' | '}' | ';')))
+}
+
+fn invocation_attribute_before(tokens: &[Token], end: usize) -> Option<(usize, &[Token])> {
+    let close = end.checked_sub(1)?;
+    if !tokens[close].is_punct(']') {
+        return None;
+    }
+    let open = group_start(tokens, close, '[', ']')?;
+    let before = open.checked_sub(1)?;
+    let start = before.checked_sub(usize::from(tokens[before].is_punct('!')))?;
+    tokens[start]
+        .is_punct('#')
+        .then_some((start, &tokens[open + 1..close]))
 }
 
 fn macro_arm_group_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Option<usize> {
@@ -1424,7 +1457,9 @@ fn first_empty_macro_transcriber(
     let limit = definition.end - 1;
     let matcher = definition.start + 1;
     let arrow = macro_arm_group_end(file, matcher, limit)?;
-    if arrow != matcher + 2 || !tokens[arrow].is_punct('=') || !tokens.get(arrow + 1)?.is_punct('>')
+    if !file.is_empty_macro_group(&(matcher..arrow))
+        || !tokens[arrow].is_punct('=')
+        || !tokens.get(arrow + 1)?.is_punct('>')
     {
         return None;
     }
@@ -1864,10 +1899,9 @@ impl<'a> TypeScopes<'a> {
                 let child = &self.scopes[scope];
                 if child.matches_to_parent {
                     local_macros.observe_import(index);
-                    if child.matches_textual {
-                        let parent = *stack.last().unwrap_or(&source);
-                        self.scopes[parent].matches_textual = true;
-                    }
+                    let imports_matches = child.matches_textual;
+                    let parent = *stack.last().unwrap_or(&source);
+                    self.scopes[parent].matches_textual |= imports_matches;
                 }
             } else if token.is_ident("use") {
                 index = self.scopes[scope].import(tokens, index);
@@ -1879,9 +1913,8 @@ impl<'a> TypeScopes<'a> {
                     && !macro_item_disabled(tokens, index)
                 {
                     local_macros.observe_import(index);
-                    if self.file_may_import_matches(source, scope, index, paths) {
-                        self.scopes[scope].matches_textual = true;
-                    }
+                    let imports_matches = self.file_may_import_matches(source, scope, index, paths);
+                    self.scopes[scope].matches_textual |= imports_matches;
                 }
                 let file_module = self.file_module(source, scope, index, paths);
                 self.scopes[scope].bind_item(tokens, index, file_module);
