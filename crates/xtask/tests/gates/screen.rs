@@ -142,9 +142,13 @@ fn conditional_canonical_root_reports_uncertainty() -> TestResult {
          mod uncertain {\n\
          #[cfg(windows)] mod ratatui { pub mod widgets { pub struct Block; } }\n\
          fn view() { let _: Option<ratatui::widgets::Block> = None; }\n\
+         fn pattern(value: ratatui::buffer::Buffer) { let ratatui::buffer::Buffer { content, .. } = value; }\n\
+         type Cells = ratatui::buffer::Buffer;\n\
+         use ::{ratatui::widgets::Block};\n\
+         fn allowed() { let _: Option<ratatui::Frame> = None; }\n\
          }\n\
-         mod active { mod ratatui { pub mod widgets { pub struct Block; } } fn view() { let _: Option<ratatui::widgets::Block> = None; } }\n",
-        &[("C1", 1, "widgets"), ("C1", 4, "uncertain")],
+         mod active { #[cfg(all())] mod ratatui { pub mod widgets { pub struct Block; } pub mod buffer { pub struct Buffer { pub content: u8 } } } fn view(value: ratatui::buffer::Buffer) { let ratatui::buffer::Buffer { content } = value; let _: Option<ratatui::widgets::Block> = None; } }\n",
+        &[("C1", 1, "widgets"), ("C1", 4, "uncertain"), ("C1", 5, "uncertain"), ("C1", 6, "uncertain"), ("C1", 7, "widgets")],
     )
 }
 
@@ -158,11 +162,27 @@ fn standard_matches_guard_preserves_field_provenance() -> TestResult {
          let Self { content, .. } = self; true\n\
          });\n\
          }\n\
-         fn shadowed(&self) { macro_rules! matches { ($($t:tt)*) => { true } } let _ = matches!((), _ if { let Self { content, .. } = self; true }); }\n\
-         fn opaque(&self) { let _ = matches!((), _ if { ::core::stringify!(let Self { content, .. } = self); true }); }\n\
+         fn shadowed(&self) { macro_rules! matches { ($($t:tt)*) => { true } } let _ = matches!((), _ if { type Identity<T> = T; let Identity::<Self> { content, .. } = self; true }); }\n\
+         fn opaque(&self) { let _ = matches!((), _ if { ::core::stringify!(type Identity<T> = T; let Identity::<Self> { content, .. } = self); true }); }\n\
          }\n",
         &[("C1", 5, "destructures")],
     )
+}
+
+#[test]
+fn builtin_include_reports_unchecked_source() -> TestResult {
+    let workspace = tui("fn load() {\n\
+        include!(\"fragment.inc\");\n\
+        include!(\"fragment.rs\");\n\
+        let _ = include_str!(\"fragment.inc\");\n\
+        let _ = include_bytes!(\"fragment.inc\");\n\
+        }\n\
+        fn shadow() { macro_rules! include { ($t:tt) => { () } } include!(\"fragment.inc\"); }\n\
+        fn inert() { ::core::stringify!(include!(\"fragment.inc\")); }\n")?;
+    workspace.write("crates/jackin-tui/src/fragment.inc", "const ITEM: u8 = 0;\n")?;
+    workspace.write("crates/jackin-tui/src/fragment.rs", "const ITEM: u8 = 0;\n")?;
+    expect_workspace(ScreenCheck::with_allowed(&["fragment.inc", "fragment.rs"]), &workspace,
+        &[("C1", 2, "include"), ("C1", 3, "include")])
 }
 
 #[test]
