@@ -577,7 +577,7 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
 
 #[test]
 fn self_patterns_follow_trait_impl_receivers() -> TestResult {
-    expect(
+    let extern_alias = tui(
         "extern crate self as core;\n\
          #[macro_export]\n\
          macro_rules! matches { ($($tokens:tt)*) => { false }; }\n\
@@ -591,8 +591,35 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20       }\n\
          \x20   }\n\
          }\n",
-        &[("C1", 10, "destructures")],
     )?;
+    let main = "crates/jackin-tui/src/main.rs";
+    extern_alias.write(
+        main,
+        "#[macro_use(matches)] extern crate core;\n\
+         trait Inspect { fn inspect(&self); }\n\
+         impl Inspect for ratatui::buffer::Buffer {\n\
+         \x20   fn inspect(&self) { let _ = ::core::matches!(self, Self { content, .. }); }\n\
+         }\n\
+         fn main() {}\n",
+    )?;
+    let violations = ScreenCheck::with_allowed(&[]).run(&extern_alias.repo()?);
+    let locations: Vec<_> = violations
+        .iter()
+        .map(|violation| (violation.path.as_deref(), violation.line))
+        .collect();
+    assert_eq!(
+        locations,
+        [
+            (Some(Path::new(LIB)), Some(10)),
+            (Some(Path::new(main)), Some(4)),
+        ],
+        "{violations:#?}"
+    );
+    assert!(
+        violations
+            .iter()
+            .all(|violation| violation.message.starts_with("C1: destructures"))
+    );
     expect(
         "mod model { pub struct Buffer { pub value: u8 } }\n\
          trait View { fn inspect(&self); }\n\
