@@ -260,6 +260,7 @@ fn context_violations(
         violations.extend(types.renamed_imports(source));
         violations.extend(pattern_violations(source, types, work_limit));
         violations.extend(type_alias_violations(source, types));
+        violations.extend(macro_lint_level_violations(source, types));
         occurrences.extend(
             violations
                 .into_iter()
@@ -1830,6 +1831,130 @@ fn macro_arm_group_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Opti
         return None;
     }
     file.group_ends[open].filter(|&end| end <= limit)
+}
+
+fn macro_lint_transcribers(
+    file: &ScreenFile<'_>,
+    start: usize,
+    end: usize,
+) -> Vec<(Range<usize>, bool)> {
+    let tokens = &file.tokens;
+    let mut pending = Vec::new();
+    let mut matcher = start;
+    while let Some(arrow) = macro_arm_group_end(file, matcher, end - 1) {
+        if !tokens.get(arrow).is_some_and(|token| token.is_punct('='))
+            || !tokens
+                .get(arrow + 1)
+                .is_some_and(|token| token.is_punct('>'))
+        {
+            break;
+        }
+        let open = arrow + 2;
+        let Some(arm_end) = macro_arm_group_end(file, open, end - 1) else {
+            break;
+        };
+        pending.push((open + 1..arm_end - 1, true));
+        if !tokens
+            .get(arm_end)
+            .is_some_and(|token| token.is_punct(';') || token.is_punct(','))
+        {
+            break;
+        }
+        matcher = arm_end + 1;
+    }
+    pending
+}
+
+fn macro_lint_level_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(usize, Violation)> {
+    let file = &types.files[source];
+    let tokens = &file.tokens;
+    let mut pending = vec![(0..tokens.len(), false)];
+    let mut violations = Vec::new();
+    while let Some((range, transcriber)) = pending.pop() {
+        let mut index = range.start;
+        while index < range.end {
+            if tokens[index].is_ident("macro_rules")
+                && tokens
+                    .get(index + 1)
+                    .is_some_and(|token| token.is_punct('!'))
+                && tokens
+                    .get(index + 2)
+                    .is_some_and(|token| token.ident().is_some())
+                && let Some(end) = macro_arm_group_end(file, index + 3, range.end)
+            {
+                pending.extend(macro_lint_transcribers(file, index + 4, end));
+                index = end;
+                continue;
+            }
+            if transcriber
+                && tokens[index].is_punct('!')
+                && index >= 6
+                && tokens[index - 1].is_ident("stringify")
+                && is_path_separator(tokens, index - 3)
+                && tokens[index - 4].is_ident("core")
+                && is_path_separator(tokens, index - 6)
+                && tokens
+                    .get(index.wrapping_sub(7))
+                    .is_none_or(|token| token.ident().is_none())
+                && let Some(position) = types.sources[source].enclosing[index]
+            {
+                let scope = match position {
+                    ScopePosition::Rust(scope)
+                    | ScopePosition::Opaque(scope)
+                    | ScopePosition::MatchesPattern(scope, _) => scope,
+                };
+                if types
+                    .matches_absolute_root_visible(
+                        scope,
+                        StandardMacroRoot::Core,
+                        &mut AliasWork::Unlimited,
+                    )
+                    .unwrap_or(false)
+                    && let Some(end) = macro_arm_group_end(file, index + 1, range.end)
+                {
+                    index = end;
+                    continue;
+                }
+            }
+            if transcriber
+                && tokens[index].is_punct('#')
+                && tokens
+                    .get(index + 1)
+                    .is_some_and(|token| token.is_punct('['))
+                && tokens
+                    .get(index + 2)
+                    .is_some_and(|token| token.is_punct('$'))
+                && tokens
+                    .get(index + 3)
+                    .is_some_and(|token| token.ident().is_some())
+                && tokens
+                    .get(index + 4)
+                    .is_some_and(|token| token.is_punct('('))
+                && let Some(end) = macro_arm_group_end(file, index + 4, range.end)
+                && tokens[index + 5..end - 1]
+                    .split(|token| token.is_punct(','))
+                    .any(|path| {
+                        path.len() == 4
+                            && path[0].is_ident("clippy")
+                            && path[1].is_punct(':')
+                            && path[2].is_punct(':')
+                            && DRAWING_LINTS.iter().any(|lint| path[3].is_ident(lint))
+                    })
+            {
+                violations.push((
+                    index,
+                    Violation::at_line(
+                        CiStep::Screen,
+                        file.path,
+                        tokens[index].line,
+                        "C1: macro-generated drawing lint level cannot be proven safe",
+                    ),
+                ));
+            }
+            index += 1;
+        }
+    }
+    violations
 }
 
 fn literal_macro_transcribers<'a>(
