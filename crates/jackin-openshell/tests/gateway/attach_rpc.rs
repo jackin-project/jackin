@@ -53,23 +53,31 @@ impl Fake {
             scope_name(request.workspace_scope.as_ref())?,
             request.sandbox,
         );
-        let mut state = self.shared.lock();
-        lookup(&state, &key)?;
-        let token = format!("token-{}", Fake::next_id(&mut state));
-        if let Some(mut hook) = state.after_ssh_session.take() {
-            hook(&mut state);
+        let (token, fingerprint, reply) = {
+            let mut state = self.shared.lock();
+            lookup(&state, &key)?;
+            let token = format!("token-{}", Fake::next_id(&mut state));
+            if let Some(mut hook) = state.after_ssh_session.take() {
+                hook(&mut state);
+            }
+            let fingerprint = state.ssh.as_ref().map_or(FINGERPRINT, |model| {
+                model.note_created(&token);
+                model.advertised()
+            });
+            (token, fingerprint.to_owned(), state.ssh_create_reply.take())
+        };
+        if let Some(reply) = reply {
+            reply
+                .await
+                .map_err(|_| Status::cancelled("create reply released without a response"))?;
         }
-        let fingerprint = state.ssh.as_ref().map_or(FINGERPRINT, |model| {
-            model.note_created(&token);
-            model.advertised()
-        });
         Ok(Response::new(CreateSshSessionResponse {
             sandbox_id: key.1,
             token,
             gateway_host: "127.0.0.1".to_owned(),
             gateway_port: 1,
             gateway_scheme: "https".to_owned(),
-            host_key_fingerprint: fingerprint.to_owned(),
+            host_key_fingerprint: fingerprint,
             ..CreateSshSessionResponse::default()
         }))
     }
@@ -79,9 +87,17 @@ impl Fake {
         request: Request<RevokeSshSessionRequest>,
     ) -> Result<Response<RevokeSshSessionResponse>, Status> {
         self.enter("revoke_ssh_session").await?;
-        let model = self.shared.lock().ssh.clone();
+        let (model, reply) = {
+            let mut state = self.shared.lock();
+            (state.ssh.clone(), state.ssh_revoke_reply.take())
+        };
         if let Some(model) = model {
             model.note_revoked(&request.into_inner().token);
+        }
+        if let Some(reply) = reply {
+            reply
+                .await
+                .map_err(|_| Status::cancelled("revoke reply released without a response"))?;
         }
         Ok(Response::new(RevokeSshSessionResponse {
             outcome: DeletionOutcome::Completed as i32,

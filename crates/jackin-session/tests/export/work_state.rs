@@ -138,7 +138,9 @@ async fn what_jackin_cannot_inspect_is_unknown_and_a_forged_supervisor_changes_n
         gateway.force_phase(&name, Phase::Ready);
 
         let session = &rig.world.session;
-        let bare = session.work_state(&Config::empty(), &name).await;
+        let bare = session
+            .work_state(&Config::empty(), &name, &CancellationToken::new())
+            .await;
         assert!(
             matches!(bare, WorkState::Unknown(UnknownReason::WorkspaceUnknown(_))),
             "{bare:?}"
@@ -240,7 +242,12 @@ async fn a_corrupt_sandbox_index_still_exports_the_branches_but_the_work_state_i
         let purge = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(purge, Err(PurgeError::WorkNotExported { .. })),
@@ -279,7 +286,12 @@ async fn a_stash_counts_from_its_ref_so_an_expired_reflog_still_blocks_a_guarded
         let purge = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(purge, Err(PurgeError::WorkNotExported { .. })),
@@ -295,7 +307,12 @@ async fn refuses_a_guarded_purge(rig: &Rig, name: &SandboxName) -> TestResult {
     let result = rig
         .world
         .session
-        .purge(&rig.config, name, PurgeMode::Guarded)
+        .purge(
+            &rig.config,
+            name,
+            PurgeMode::Guarded,
+            &CancellationToken::new(),
+        )
         .await;
     assert!(
         matches!(result, Err(PurgeError::WorkNotExported { .. })),
@@ -325,7 +342,12 @@ async fn a_repository_setting_cannot_hide_an_untracked_file_from_the_purge_check
         let forced = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Forced)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
             .await?;
         assert!(matches!(forced, PurgeOutcome::Deleted { .. }), "{forced:?}");
         assert!(rig.world.gateway.sandbox(&name).is_none());

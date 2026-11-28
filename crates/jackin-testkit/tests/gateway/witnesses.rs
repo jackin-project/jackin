@@ -16,6 +16,7 @@ use super::support::{
     TestResult, attach, collect_until, drain, eventually, fake, guard, output_text, path, ready,
     sh, size, supervised, write,
 };
+use tokio_util::sync::CancellationToken;
 
 const BANNER: &str = "echo banner; sleep 3600";
 
@@ -47,14 +48,17 @@ async fn the_fake_repaint_nudge_fires_only_on_advance_for_every_shared_case() ->
                 RepaintPolicy::Never
             };
             let session = fake
-                .open_terminal(&TerminalRequest {
-                    sandbox: handle.name(),
-                    kind: TerminalKind::MainProcess {
-                        input: InputMode::Owner,
-                        repaint: policy,
+                .open_terminal(
+                    &TerminalRequest {
+                        sandbox: handle.name(),
+                        kind: TerminalKind::MainProcess {
+                            input: InputMode::Owner,
+                            repaint: policy,
+                        },
+                        size: size(case.open.0, case.open.1)?,
                     },
-                    size: size(case.open.0, case.open.1)?,
-                })
+                    &CancellationToken::new(),
+                )
                 .await?;
             for &(cols, rows) in case.resize_before {
                 session.resize(size(cols, rows)?).await?;
@@ -98,8 +102,12 @@ async fn the_nudge_uses_the_size_each_attachment_has_now() -> TestResult {
             },
             size: size(100, 30).unwrap(),
         };
-        let first = fake.open_terminal(&request(InputMode::Owner)).await?;
-        let second = fake.open_terminal(&request(InputMode::Viewer)).await?;
+        let first = fake
+            .open_terminal(&request(InputMode::Owner), &CancellationToken::new())
+            .await?;
+        let second = fake
+            .open_terminal(&request(InputMode::Viewer), &CancellationToken::new())
+            .await?;
         first.resize(size(70, 12)?).await?;
         eventually("the first resize", || history(&handle).len(), 1).await?;
         handle.advance_repaint();
@@ -299,14 +307,17 @@ async fn a_shell_witness_records_where_it_ran_what_it_was_given_and_when_it_clos
         assert!(handle.shells().is_empty());
         let env = BTreeMap::from([(EnvName::parse("JACKIN_PANE")?, "shell-1".to_owned())]);
         let mut shell = fake
-            .open_terminal(&TerminalRequest {
-                sandbox: name.clone(),
-                kind: TerminalKind::Shell {
-                    workdir: path("/sandbox")?,
-                    env: env.clone(),
+            .open_terminal(
+                &TerminalRequest {
+                    sandbox: name.clone(),
+                    kind: TerminalKind::Shell {
+                        workdir: path("/sandbox")?,
+                        env: env.clone(),
+                    },
+                    size: size(100, 30)?,
                 },
-                size: size(100, 30)?,
-            })
+                &CancellationToken::new(),
+            )
             .await?;
         shell.resize(size(90, 20)?).await?;
         shell.input(b"echo hi\n".to_vec()).await?;

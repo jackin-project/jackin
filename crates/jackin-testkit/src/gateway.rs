@@ -1103,9 +1103,16 @@ impl Gateway for FakeGateway {
     async fn open_terminal(
         &self,
         request: &TerminalRequest,
+        cancel: &CancellationToken,
     ) -> Result<TerminalSession, GatewayError> {
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Terminal, None, None).await?;
+        self.pause(GatewayOp::Terminal, None, Some(cancel)).await?;
+        if cancel.is_cancelled() {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::Terminal,
+                group: None,
+            });
+        }
         let (cell, phase) = self.settled_at(GatewayOp::Terminal, None, &request.sandbox)?;
         match &request.kind {
             TerminalKind::MainProcess { .. } => {

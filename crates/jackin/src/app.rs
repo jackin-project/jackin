@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 use std::fmt::{self, Debug};
 use std::io::Write;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayName, HostPath};
 use jackin_image::ImageEngine;
@@ -42,6 +42,7 @@ pub struct AppEnv {
     pub cache_dir: HostPath,
     pub env: EnvSnapshot,
     pub cancel: CancellationToken,
+    pub abandon: CancellationToken,
 }
 
 impl Debug for AppEnv {
@@ -54,6 +55,7 @@ impl Debug for AppEnv {
             .field("cache_dir", &self.cache_dir)
             .field("env", &self.env)
             .field("cancel", &self.cancel)
+            .field("abandon", &self.abandon)
             .finish_non_exhaustive()
     }
 }
@@ -68,9 +70,28 @@ pub(crate) struct App {
     pub(crate) env: EnvSnapshot,
     pub(crate) cancel: CancellationToken,
     pub(crate) gateway: Option<GatewayName>,
+    pub(crate) unsettled: Mutex<Option<String>>,
 }
 
 impl App {
+    pub(crate) fn unsettled(&self, text: String) {
+        *self
+            .unsettled
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(text);
+    }
+
+    pub(crate) fn settled(&self) {
+        drop(self.take_unsettled());
+    }
+
+    pub(crate) fn take_unsettled(&self) -> Option<String> {
+        self.unsettled
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
+
     pub(crate) fn catalog(&self) -> RoleCatalog {
         RoleCatalog::new(
             Arc::clone(&self.deps.host.fs),

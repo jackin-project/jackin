@@ -129,7 +129,7 @@ async fn stop_and_start_on_a_provisioning_failed_sandbox_follow_the_p4_4_capture
                 assert_unchanged_failure(&fake, &name).await?;
             }
             let main = fake
-                .open_terminal(&main_request(&name, InputMode::Owner)?)
+                .open_terminal(&main_request(&name, InputMode::Owner)?, &CancellationToken::new())
                 .await;
             assert!(matches!(
                 main,
@@ -203,18 +203,24 @@ async fn call(
             .await
         }
         Op::Shell => fake
-            .open_terminal(&TerminalRequest {
-                sandbox: name.clone(),
-                kind: TerminalKind::Shell {
-                    workdir: path("/sandbox")?,
-                    env: BTreeMap::new(),
+            .open_terminal(
+                &TerminalRequest {
+                    sandbox: name.clone(),
+                    kind: TerminalKind::Shell {
+                        workdir: path("/sandbox")?,
+                        env: BTreeMap::new(),
+                    },
+                    size: size(100, 30)?,
                 },
-                size: size(100, 30)?,
-            })
+                &CancellationToken::new(),
+            )
             .await
             .map(drop),
         Op::Main => fake
-            .open_terminal(&main_request(name, InputMode::Owner)?)
+            .open_terminal(
+                &main_request(name, InputMode::Owner)?,
+                &CancellationToken::new(),
+            )
             .await
             .map(drop),
         Op::Stop => fake.set_power(name, PowerAction::Stop).await.map(drop),

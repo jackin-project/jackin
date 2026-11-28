@@ -574,7 +574,8 @@ impl Gateway for ScenarioGateway {
     async fn open_terminal(
         &self,
         request: &TerminalRequest,
+        cancel: &CancellationToken,
     ) -> Result<TerminalSession, GatewayError> {
-        self.fake.open_terminal(request).await
+        self.fake.open_terminal(request, cancel).await
     }
 }

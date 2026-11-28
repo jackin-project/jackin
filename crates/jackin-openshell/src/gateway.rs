@@ -87,6 +87,7 @@ pub trait Gateway: Send + Sync + Debug {
     async fn open_terminal(
         &self,
         request: &TerminalRequest,
+        cancel: &CancellationToken,
     ) -> Result<TerminalSession, GatewayError>;
 }
 
@@ -182,6 +183,7 @@ impl GatewayError {
             | GatewayError::OutputTooLarge { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
+            | GatewayError::TerminalCleanupUnconfirmed
             | GatewayError::WriteUnconfirmed { .. }
             | GatewayError::WriteNotDurable { .. }
             | GatewayError::Protocol { .. } => true,

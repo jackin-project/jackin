@@ -79,7 +79,7 @@ async fn work_in_any_linked_worktree_counts_and_a_missing_worktree_does_not() ->
         let refused = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(&rig.config, &name, PurgeMode::Guarded, &CancellationToken::new())
             .await;
         assert!(
             matches!(&refused, Err(PurgeError::WorkNotExported { state, .. }) if **state == dirty()),
@@ -151,7 +151,12 @@ async fn moved_worktree_keeps_its_unique_commit(locked: bool) -> TestResult {
         let refused = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(&refused, Err(PurgeError::WorkNotExported { state, .. }) if **state == wanted),
@@ -170,7 +175,12 @@ async fn moved_worktree_keeps_its_unique_commit(locked: bool) -> TestResult {
         assert_eq!(state(&rig, &name).await, WorkState::Exported);
         rig.world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await?;
         assert!(rig.world.gateway.sandbox(&name).is_none());
         Ok(())
@@ -422,7 +432,12 @@ async fn a_linked_worktree_whose_head_is_symbolic_outside_heads_is_unexported_wo
         let purge = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(purge, Err(PurgeError::WorkNotExported { .. })),

@@ -587,9 +587,12 @@ async fn shell_terminal_stream_shape_and_raw_output() {
         Box::pin(record_until_resize(ctx, Arc::clone(&log)))
     }));
     let gateway = connect(&env, WORKSPACE).await;
-    let mut session = guard(gateway.open_terminal(&shell_request(&sandbox_name(SANDBOX))))
-        .await
-        .unwrap();
+    let mut session = guard(gateway.open_terminal(
+        &shell_request(&sandbox_name(SANDBOX)),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(
         guard(session.next_event()).await,
         Some(TerminalEvent::Attached)
@@ -657,9 +660,12 @@ async fn shell_failure_refusal_and_drop() {
         })
     }));
     let gateway = connect(&env, WORKSPACE).await;
-    let mut session = guard(gateway.open_terminal(&shell_request(&sandbox_name(SANDBOX))))
-        .await
-        .unwrap();
+    let mut session = guard(gateway.open_terminal(
+        &shell_request(&sandbox_name(SANDBOX)),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     let mut events = Vec::new();
     while let Some(event) = guard(session.next_event()).await {
         events.push(event);
@@ -684,9 +690,12 @@ async fn shell_failure_refusal_and_drop() {
         None,
         &[],
     );
-    let error = guard(gateway.open_terminal(&shell_request(&sandbox_name("jackin-off"))))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.open_terminal(
+        &shell_request(&sandbox_name("jackin-off")),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         GatewayError::NotReady {
@@ -701,9 +710,12 @@ async fn shell_failure_refusal_and_drop() {
         })
     }));
     env.server.state().observed.request_stream_ended = false;
-    let session = guard(gateway.open_terminal(&shell_request(&sandbox_name(SANDBOX))))
-        .await
-        .unwrap();
+    let session = guard(gateway.open_terminal(
+        &shell_request(&sandbox_name(SANDBOX)),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     drop(session);
     wait_until(|| env.server.state().observed.request_stream_ended).await;
 }

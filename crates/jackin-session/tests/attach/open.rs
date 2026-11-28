@@ -102,7 +102,7 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
                 &CancellationToken::new(),
             )
             .await;
-        assert!(matches!(ghost, Err(AttachError::NotFound(found)) if found == foreign));
+        assert!(matches!(ghost, Err(AttachError::NotManaged(found)) if found == foreign));
 
         let request = AttachRequest::owner(target(&rig, 1).await?, size()?);
         session
@@ -172,4 +172,76 @@ async fn a_cancel_interrupts_a_hung_lookup_before_an_attach_and_opens_nothing() 
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn cancelling_main_attach_while_opening_the_terminal_leaves_the_sandbox_running() -> TestResult
+{
+    guard(main_attach_cancellation(GatewayOp::Terminal)).await
+}
+
+#[tokio::test]
+async fn cancelling_main_attach_while_reading_supervisor_detaches_the_terminal() -> TestResult {
+    guard(main_attach_cancellation(GatewayOp::ReadFiles)).await
+}
+
+async fn main_attach_cancellation(op: GatewayOp) -> TestResult {
+    let rig = Rig::new().await?;
+    rig.launch(1).await?;
+    let handle = rig.handle(1).await?;
+    let before = handle.supervisor();
+    let terminal = Trigger::Op(GatewayOp::Terminal);
+    let supervisor = Trigger::Op(GatewayOp::ReadFiles);
+    rig.gateway().inject(Fault::HoldAt {
+        trigger: terminal.clone(),
+    });
+    let cancel = CancellationToken::new();
+    let driver = async {
+        assert!(rig.gateway().until_held(&terminal).await);
+        if op == GatewayOp::ReadFiles {
+            rig.gateway().inject(Fault::HoldAt {
+                trigger: supervisor.clone(),
+            });
+            assert!(rig.gateway().release(&terminal));
+            assert!(rig.gateway().until_held(&supervisor).await);
+            assert_eq!(handle.attachments(), 1);
+        }
+        cancel.cancel();
+    };
+    let request = AttachRequest::owner(target(&rig, 1).await?, size()?);
+    let attach = rig.world.session.attach(request, &cancel);
+    let result = tokio::time::timeout(Duration::from_secs(8), async {
+        tokio::join!(driver, attach)
+    })
+    .await;
+    let held = if op == GatewayOp::ReadFiles {
+        &supervisor
+    } else {
+        &terminal
+    };
+    let released = rig.gateway().release(held);
+    let Ok(((), result)) = result else {
+        return Err(format!("main attach waited for {op:?} after cancellation").into());
+    };
+    assert!(released);
+    let error = result.err().ok_or("a cancelled main attach succeeded")?;
+    assert!(
+        matches!(
+            error,
+            AttachError::Gateway(GatewayError::Cancelled { op: actual, .. }) if actual == op
+        ),
+        "{error:?}"
+    );
+    until(|| handle.attachments() == 0).await?;
+    assert_eq!(handle.phase(), Phase::Ready);
+    assert_eq!(handle.supervisor(), before);
+    let mut reattached = owner(&rig, 1).await?;
+    assert_eq!(
+        events(&mut reattached, 2).await?,
+        vec![
+            TerminalEvent::Attached,
+            TerminalEvent::Lease(InputLease::Owner)
+        ]
+    );
+    Ok(())
 }

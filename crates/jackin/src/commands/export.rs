@@ -6,10 +6,16 @@ use jackin_session::{ExportReport, Uncommitted};
 use crate::app::App;
 use crate::cli::SandboxArg;
 use crate::error::CommandError;
+use crate::report::gateway_command;
 
 pub(crate) async fn run(app: &mut App, arg: SandboxArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
+    let follow_up = gateway_command("export", session.gateway_name());
+    app.unsettled(format!(
+        "sandbox {}: the export may have written refs and files on the host; run {follow_up} {} to finish it",
+        arg.sandbox, arg.sandbox
+    ));
     let report = session
         .export(&config, &arg.sandbox, app.cancel.clone())
         .await?;

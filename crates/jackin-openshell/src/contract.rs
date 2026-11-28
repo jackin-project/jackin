@@ -550,11 +550,17 @@ async fn absent_sandbox_is_not_found(ctx: &Ctx<'_>) -> Outcome<()> {
         ),
         (
             "open_terminal(Shell)",
-            gateway.open_terminal(&shell).await.map(drop),
+            gateway
+                .open_terminal(&shell, &CancellationToken::new())
+                .await
+                .map(drop),
         ),
         (
             "open_terminal(MainProcess)",
-            gateway.open_terminal(&main).await.map(drop),
+            gateway
+                .open_terminal(&main, &CancellationToken::new())
+                .await
+                .map(drop),
         ),
     ];
     for (entry, result) in results {
@@ -1652,7 +1658,11 @@ async fn shell_exit_code(ctx: &Ctx<'_>) -> Outcome<()> {
             },
             size: term_size()?,
         };
-        let mut session = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut session = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         session.input(b"exit 3\n".to_vec()).await.map_err(text)?;
         let exit = tokio::time::timeout(ctx.fixture.shell_end_timeout, async {
             let mut exit = None;
@@ -1778,7 +1788,11 @@ async fn main_attach_detach_replay(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.ready(Ctx::main("/bin/sh", &["-c", &script])?).await?;
     let result = async {
         let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
-        let mut first = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut first = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         let (lease, _) = read_until(&mut first, BANNER).await?;
         expect(
             lease == InputLease::Owner,
@@ -1786,7 +1800,11 @@ async fn main_attach_detach_replay(ctx: &Ctx<'_>) -> Outcome<()> {
         )?;
         first.detach().await.map_err(text)?;
         drop(first);
-        let mut second = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut second = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         read_until(&mut second, BANNER).await?;
         second.input(vec![CTRL_D]).await.map_err(text)?;
         let events = remaining(&mut second).await?;
@@ -1805,13 +1823,21 @@ async fn main_second_attachment_read_only(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.ready(echo_main()?).await?;
     let result = async {
         let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
-        let mut first = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut first = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         let (lease, _) = read_until(&mut first, BANNER).await?;
         expect(
             lease == InputLease::Owner,
             "the first attachment is not the owner",
         )?;
-        let mut second = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut second = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         expect(
             lease_of(&mut second).await? == InputLease::ReadOnly,
             "a second attachment is not read-only",
@@ -1826,7 +1852,11 @@ async fn main_viewer_read_only(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.ready(echo_main()?).await?;
     let result = async {
         let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
-        let mut owner = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut owner = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         read_until(&mut owner, BANNER).await?;
         let viewer_request = Ctx::terminal(
             &sandbox,
@@ -1837,7 +1867,7 @@ async fn main_viewer_read_only(ctx: &Ctx<'_>) -> Outcome<()> {
         )?;
         let mut viewer = ctx
             .gateway
-            .open_terminal(&viewer_request)
+            .open_terminal(&viewer_request, &CancellationToken::new())
             .await
             .map_err(text)?;
         expect(
@@ -1871,9 +1901,17 @@ async fn main_read_only_takes_lease_after_owner_leaves(ctx: &Ctx<'_>) -> Outcome
     let sandbox = ctx.ready(echo_main()?).await?;
     let result = async {
         let request = Ctx::terminal(&sandbox, Ctx::owner_kind())?;
-        let mut first = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut first = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         read_until(&mut first, BANNER).await?;
-        let mut second = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut second = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         expect(
             lease_of(&mut second).await? == InputLease::ReadOnly,
             "a second attachment is not read-only",
@@ -1907,7 +1945,11 @@ async fn main_ended_is_refused(ctx: &Ctx<'_>) -> Outcome<()> {
         })
         .await?;
         let request = Ctx::terminal(spec.name(), Ctx::owner_kind())?;
-        let mut session = ctx.gateway.open_terminal(&request).await.map_err(text)?;
+        let mut session = ctx
+            .gateway
+            .open_terminal(&request, &CancellationToken::new())
+            .await
+            .map_err(text)?;
         let events = remaining(&mut session).await?;
         expect(
             matches!(

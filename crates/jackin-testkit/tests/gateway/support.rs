@@ -210,7 +210,9 @@ pub(crate) async fn attach(
     sandbox: &SandboxName,
     input: InputMode,
 ) -> Result<TerminalSession, Box<dyn Error>> {
-    Ok(fake.open_terminal(&main_request(sandbox, input)?).await?)
+    Ok(fake
+        .open_terminal(&main_request(sandbox, input)?, &CancellationToken::new())
+        .await?)
 }
 
 pub(crate) async fn collect_until(

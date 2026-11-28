@@ -276,6 +276,11 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     let plan = plan(app, &config, &role, &request, &mut values).await?;
     let launch = plan.launch_id().clone();
     let session = app.session(&config).await?;
+    app.unsettled(format!(
+        "launch {launch}: sandbox {} may exist; repeat the same jackin load command with --gateway {} --launch-id {launch}",
+        plan.draft().name(),
+        session.gateway_name()
+    ));
     let (events, mut feed) = launch_events(LineDelivery::Reliable);
     let cancel = app.cancel.clone();
     let show = async {
@@ -284,6 +289,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         }
     };
     let (outcome, ()) = tokio::join!(session.launch(plan, events, cancel), show);
+    app.settled();
     match outcome {
         Err(failure) => Err(CommandError::Launch(failure)),
         Ok(LaunchOutcome::Cancelled(candidate)) => Err(cancelled(&candidate)),

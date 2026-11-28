@@ -8,6 +8,7 @@ use super::progress::launch_event;
 use crate::app::App;
 use crate::cli::{AttachArgs, parse_agent};
 use crate::error::CommandError;
+use crate::report::restart_unsettled;
 use crate::term;
 
 pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandError> {
@@ -26,6 +27,7 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
         }
         (true, None) => {
             let (events, mut feed) = launch_events(LineDelivery::Reliable);
+            app.unsettled(restart_unsettled(&args.sandbox, session.gateway_name()));
             let cancel = app.cancel.clone();
             let show = async {
                 while let Some(event) = feed.recv().await {
@@ -34,6 +36,7 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
             };
             let (restarted, ()) =
                 tokio::join!(session.restart_agent(&args.sandbox, events, cancel), show);
+            app.settled();
             AttachRequest::owner(restarted?, size)
         }
         (false, agent) => AttachRequest {

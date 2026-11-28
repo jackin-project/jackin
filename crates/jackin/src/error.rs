@@ -10,7 +10,7 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountEditError, AccountError, AttachError, BuildError, ConnectError, CredentialError,
     ExportError, IntegrateError, LaunchFailure, LifecycleError, LockError, PlanError, PurgeError,
-    RestartError, RoleError, WorkspaceGuardError,
+    RestartError, RoleError, SecondaryAttachError, WorkspaceGuardError,
 };
 use jackin_tui::ConsoleError;
 use jackin_usage::UsageError;
@@ -168,10 +168,18 @@ impl CommandError {
             | CommandError::EnvValue { .. }
             | CommandError::Integrate(IntegrateError::UnknownAgent { .. }) => ExitClass::Usage,
             CommandError::Plan(PlanError::EnvNeeded(_))
-            | CommandError::Restart(RestartError::AlreadyRunning { .. })
+            | CommandError::Restart(
+                RestartError::AlreadyRunning { .. } | RestartError::NotManaged(_),
+            )
             | CommandError::Purge(
-                PurgeError::WorkNotExported { .. } | PurgeError::Replaced { .. },
-            ) => ExitClass::Refused,
+                PurgeError::WorkNotExported { .. }
+                | PurgeError::Replaced { .. }
+                | PurgeError::NotManaged { .. },
+            )
+            | CommandError::Attach(AttachError::NotManaged(_))
+            | CommandError::Integrate(IntegrateError::NotManaged(_))
+            | CommandError::Lifecycle(LifecycleError::NotManaged(_))
+            | CommandError::Export(ExportError::NotManaged(_)) => ExitClass::Refused,
             CommandError::Config(error) if error.cancelled() => ExitClass::Cancelled,
             CommandError::Account(error) if error.is_cancelled() => ExitClass::Cancelled,
             CommandError::WorkspaceInUse(WorkspaceGuardError::Lock(LockError::Cancelled)) => {
@@ -181,12 +189,27 @@ impl CommandError {
             | CommandError::Usage(UsageError::Cancelled)
             | CommandError::Role(RoleError::Cancelled)
             | CommandError::Lifecycle(
-                LifecycleError::Cancelled | LifecycleError::PowerCancelled { .. },
+                LifecycleError::Cancelled
+                | LifecycleError::PowerCancelled { .. }
+                | LifecycleError::Gateway(GatewayError::Cancelled { .. }),
             )
+            | CommandError::Purge(
+                PurgeError::Cancelled { .. } | PurgeError::Gateway(GatewayError::Cancelled { .. }),
+            )
+            | CommandError::WorkspaceInUse(WorkspaceGuardError::Listing {
+                source: LifecycleError::Cancelled,
+                ..
+            })
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Console(ConsoleError::Cancelled)
-            | CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            | CommandError::Attach(
+                AttachError::Gateway(GatewayError::Cancelled { .. })
+                | AttachError::Secondary {
+                    failure: SecondaryAttachError::CancelledAfterStop,
+                    ..
+                },
+            )
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Gateway(GatewayError::Cancelled { .. })
             | CommandError::Integrate(IntegrateError::Gateway(GatewayError::Cancelled {

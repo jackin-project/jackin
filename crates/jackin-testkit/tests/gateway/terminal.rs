@@ -14,6 +14,7 @@ use super::support::{
     TestResult, attach, collect_until, drain, eventually, fake, guard, observe, output_text, path,
     ready, sh, size, write,
 };
+use tokio_util::sync::CancellationToken;
 
 const MAIN: &str = "echo banner; sleep 3600";
 
@@ -209,7 +210,9 @@ async fn shell_terminal_runs_in_the_sandbox_directory_with_env_and_reports_the_e
             },
             size: size(100, 30)?,
         };
-        let mut shell = fake.open_terminal(&request).await?;
+        let mut shell = fake
+            .open_terminal(&request, &CancellationToken::new())
+            .await?;
         shell
             .input(b"echo \"$JACKIN_PANE\"; test -f marker && exit 4; exit 5\n".to_vec())
             .await?;
@@ -410,7 +413,9 @@ async fn shell_in(
         },
         size: size(100, 30)?,
     };
-    let mut shell = fake.open_terminal(&request).await?;
+    let mut shell = fake
+        .open_terminal(&request, &CancellationToken::new())
+        .await?;
     shell.input(script.as_bytes().to_vec()).await?;
     drain("the shell to exit", &mut shell).await
 }

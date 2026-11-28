@@ -6,7 +6,7 @@ use std::sync::Arc;
 use jackin::ExitClass;
 use jackin_core::{GatewayName, LsOutput, OpenShellWorkspace, Phase, SandboxName};
 use jackin_openshell::Gateway;
-use jackin_testkit::{FakeGateway, Rig, TestResult, guard};
+use jackin_testkit::{FakeGateway, Rig, SandboxHandle, TestResult, guard};
 
 use super::support::{Failure, FixedConnector, Harness, failed};
 
@@ -41,6 +41,24 @@ async fn two() -> Result<(Rig, Harness, SandboxName, SandboxName), Failure> {
         .with(second_gateway);
     let name = first.name();
     Ok((rig, harness, name, other))
+}
+
+pub(crate) fn with_away_gateway(
+    rig: &Rig,
+    handle: &SandboxHandle,
+) -> Result<(Harness, Arc<FakeGateway>), Failure> {
+    let away = Arc::new(FakeGateway::new(
+        GatewayName::parse("away")?,
+        OpenShellWorkspace::parse("default")?,
+    ));
+    away.insert_unmanaged(&handle.name(), handle.labels(), Phase::Ready)?;
+    let mut harness = Harness::new(&rig.world);
+    harness.connector = harness.connector.with(Arc::<FakeGateway>::clone(&away));
+    harness.write_config(&format!(
+        "{}\n[gateways.away]\n{ENTRY}",
+        rig.config.render()
+    ))?;
+    Ok((harness, away))
 }
 
 async fn listed(harness: &Harness, args: &[&str]) -> Result<Vec<SandboxName>, Failure> {
