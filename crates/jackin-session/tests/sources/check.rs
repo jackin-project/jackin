@@ -78,7 +78,7 @@ async fn a_folder_source_reads_the_chatgpt_login_only_when_a_login_is_needed() -
         let good = host("/home/good")?;
         bench.login(&good, &chatgpt_login().to_string()).await?;
         let broken = host("/home/broken")?;
-        bench.login(&broken, "{ not json").await?;
+        bench.login(&broken, "{").await?;
         let apikey = host("/home/apikey")?;
         bench
             .login(&apikey, &json!({"auth_mode": "apikey"}).to_string())
