@@ -640,12 +640,20 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20               let Self { content, .. } = self;\n\
          \x20           }};\n\
          \x20       }\n\
-         \x20       read_fields!();\n\
+         \x20       {\n\
+         \x20           #![allow(unused_variables)]\n\
+         \x20           read_fields!(/* ordinary comment */);\n\
+         \x20       }\n\
          \x20       macro_rules! disabled_read {\n\
          \x20           () => {{ let Self { content, .. } = self; }};\n\
          \x20       }\n\
          \x20       #[cfg(any())]\n\
          \x20       disabled_read!();\n\
+         \x20       macro_rules! documented_read {\n\
+         \x20           () => {{ let Self { content, .. } = self; }};\n\
+         \x20           (#[$doc:meta]) => { () };\n\
+         \x20       }\n\
+         \x20       documented_read!(/** ordinary documentation */);\n\
          \x20       {\n\
          \x20           #[macro_use]\n\
          \x20           mod shadow { macro_rules! matches { ($($tokens:tt)*) => { false }; } }\n\
@@ -695,12 +703,12 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
         &[
             ("C1", 6, "destructures"),
             ("C1", 10, "destructures"),
-            ("C1", 29, "destructures"),
-            ("C1", 36, "destructures"),
-            ("C1", 40, "destructures"),
-            ("C1", 41, "destructures"),
-            ("C1", 56, "destructures"),
-            ("C1", 66, "destructures"),
+            ("C1", 37, "destructures"),
+            ("C1", 44, "destructures"),
+            ("C1", 48, "destructures"),
+            ("C1", 49, "destructures"),
+            ("C1", 64, "destructures"),
+            ("C1", 74, "destructures"),
         ],
     )
 }
