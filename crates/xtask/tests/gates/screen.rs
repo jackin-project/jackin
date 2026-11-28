@@ -637,6 +637,9 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20               let _ = ::core::stringify!(Self { content, .. });\n\
          \x20               let Self { content, .. } = self;\n\
          \x20           }};\n\
+         \x20           (ignored) => {{\n\
+         \x20               let Self { content, .. } = self;\n\
+         \x20           }};\n\
          \x20           (fields) => {{\n\
          \x20               let Self { content, .. } = self;\n\
          \x20           }};\n\
@@ -644,6 +647,7 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20       {\n\
          \x20           #![allow(unused_variables)]\n\
          \x20           read_fields!(/* ordinary comment */);\n\
+         \x20           read_fields!(fields);\n\
          \x20       }\n\
          \x20       macro_rules! disabled_read {\n\
          \x20           () => {{ let Self { content, .. } = self; }};\n\
@@ -704,12 +708,13 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
         &[
             ("C1", 6, "destructures"),
             ("C1", 11, "destructures"),
-            ("C1", 38, "destructures"),
-            ("C1", 45, "destructures"),
+            ("C1", 17, "destructures"),
+            ("C1", 42, "destructures"),
             ("C1", 49, "destructures"),
-            ("C1", 50, "destructures"),
-            ("C1", 65, "destructures"),
-            ("C1", 75, "destructures"),
+            ("C1", 53, "destructures"),
+            ("C1", 54, "destructures"),
+            ("C1", 69, "destructures"),
+            ("C1", 79, "destructures"),
         ],
     )
 }
