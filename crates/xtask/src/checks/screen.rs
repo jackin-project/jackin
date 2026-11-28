@@ -203,6 +203,14 @@ fn error_types(tokens: &[Token]) -> BTreeSet<&str> {
 }
 
 fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
+    cfg_test_bounds(tokens, index, |open| closing(tokens, open) + 1)
+}
+
+fn cfg_test_bounds(
+    tokens: &[Token],
+    index: usize,
+    group_end: impl Fn(usize) -> usize,
+) -> Option<Range<usize>> {
     let attribute = [
         |t: &Token| t.is_punct('#'),
         |t: &Token| t.is_punct('['),
@@ -221,7 +229,7 @@ fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
     if tokens.get(position).is_some_and(|t| t.is_ident("pub")) {
         position += 1;
         if tokens.get(position).is_some_and(|t| t.is_punct('(')) {
-            position = closing(tokens, position) + 1;
+            position = group_end(position);
         }
     }
     if !tokens.get(position)?.is_ident("mod") || tokens.get(position + 1)?.ident().is_none() {
@@ -231,7 +239,7 @@ fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
     tokens
         .get(open)?
         .is_punct('{')
-        .then(|| open..closing(tokens, open) + 1)
+        .then(|| open..group_end(open))
 }
 
 fn macro_arguments(tokens: &[Token], index: usize) -> Option<Range<usize>> {
@@ -475,10 +483,12 @@ fn type_alias_violations<'a>(
         .filter(|(index, _)| {
             TypeAlias::parse(tokens, *index).is_some_and(|alias| {
                 alias.value.clone().any(|target| {
-                    types.may_be_ratatui_buffer(tokens, target)
+                    types
+                        .may_be_ratatui_buffer(tokens, target, &mut AliasWork::Unlimited)
+                        .unwrap_or(false)
                         && !associated_argument_name(tokens, target)
                         && !tokens[target].ident().is_some_and(|name| {
-                            path_start(tokens, target) == (target, false)
+                            !is_path_separator(tokens, target.wrapping_sub(2))
                                 && alias.type_parameter_slot(tokens, name).is_some()
                         })
                 })
@@ -520,21 +530,22 @@ fn generic_slots(tokens: &[Token], open: usize) -> Option<(Vec<Range<usize>>, us
     None
 }
 
-fn generic_ends(tokens: &[Token]) -> Vec<Option<usize>> {
+fn pattern_group_ends(tokens: &[Token]) -> Vec<Option<usize>> {
     let mut ends = vec![None; tokens.len()];
     let mut opens = Vec::new();
     let mut groups = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
         match token.kind {
-            Tok::Punct('(' | '[' | '{') => groups.push(opens.len()),
+            Tok::Punct('(' | '[' | '{') => groups.push((index, opens.len())),
             Tok::Punct(')' | ']' | '}') => {
-                if let Some(start) = groups.pop() {
+                if let Some((open, start)) = groups.pop() {
+                    ends[open] = Some(index + 1);
                     opens.truncate(start);
                 }
             }
             Tok::Punct('<') => opens.push(index),
             Tok::Punct('>')
-                if opens.len() > groups.last().copied().unwrap_or(0)
+                if opens.len() > groups.last().map_or(0, |&(_, start)| start)
                     && !tokens[index - 1].is_punct('-') =>
             {
                 if let Some(open) = opens.pop() {
@@ -666,14 +677,23 @@ impl<'a> AliasApplication<'a> {
     }
 }
 
-struct AliasWork(usize);
+enum AliasWork {
+    Limited(usize),
+    Unlimited,
+}
 
 struct AliasWorkLimit;
 
 impl AliasWork {
     fn charge(&mut self, units: usize) -> Result<(), AliasWorkLimit> {
-        self.0 = self.0.checked_sub(units).ok_or(AliasWorkLimit)?;
+        if let Self::Limited(remaining) = self {
+            *remaining = remaining.checked_sub(units).ok_or(AliasWorkLimit)?;
+        }
         Ok(())
+    }
+
+    fn charge_name(&mut self, name: &str) -> Result<(), AliasWorkLimit> {
+        self.charge(name.len().saturating_add(1))
     }
 }
 
@@ -937,25 +957,43 @@ impl<'a> TypeScopes<'a> {
         child
     }
 
-    fn lexical_binding(&self, mut scope: usize, name: &str) -> Option<(usize, &TypeBinding<'a>)> {
+    fn lexical_binding(
+        &self,
+        mut scope: usize,
+        name: &str,
+        work: &mut AliasWork,
+    ) -> Result<Option<(usize, &TypeBinding<'a>)>, AliasWorkLimit> {
         loop {
+            work.charge_name(name)?;
             let current = &self.scopes[scope];
             if let Some(binding) = current.bindings.get(name) {
-                return Some((scope, binding));
+                return Ok(Some((scope, binding)));
             }
             if current.glob_import {
-                return None;
+                return Ok(None);
             }
-            scope = current.parent?;
+            let Some(parent) = current.parent else {
+                return Ok(None);
+            };
+            scope = parent;
         }
     }
 
-    fn super_module(&self, scope: usize, path: &mut VecDeque<&str>) -> Option<usize> {
+    fn super_module(
+        &self,
+        scope: usize,
+        path: &mut VecDeque<&str>,
+        work: &mut AliasWork,
+    ) -> Result<Option<usize>, AliasWorkLimit> {
         let mut module = self.scopes[scope].module;
         loop {
-            module = self.scopes[module].module_parent?;
+            work.charge(1)?;
+            let Some(parent) = self.scopes[module].module_parent else {
+                return Ok(None);
+            };
+            module = parent;
             if path.front() != Some(&"super") {
-                return Some(module);
+                return Ok(Some(module));
             }
             path.pop_front();
         }
@@ -966,13 +1004,20 @@ impl<'a> TypeScopes<'a> {
         scope: usize,
         segments: impl IntoIterator<Item = &'a str>,
         absolute: bool,
-    ) -> Option<&TypeBinding<'a>> {
-        let mut path: VecDeque<_> = segments.into_iter().collect();
+        work: &mut AliasWork,
+    ) -> Result<Option<&TypeBinding<'a>>, AliasWorkLimit> {
+        let mut path = VecDeque::new();
+        for segment in segments {
+            work.charge(1)?;
+            path.push_back(segment);
+        }
         let mut state = Some((scope, absolute, path.len()));
         let mut current = scope;
         let mut visited = BTreeSet::new();
         loop {
-            let (owner, binding) = if let Some((start, absolute, edge_len)) = state.take() {
+            work.charge(1)?;
+            let edge = state.take();
+            if let Some((_, absolute, edge_len)) = edge {
                 if edge_len == 3
                     && path
                         .iter()
@@ -980,57 +1025,83 @@ impl<'a> TypeScopes<'a> {
                         .copied()
                         .eq(["ratatui", "buffer", "Buffer"])
                 {
-                    return (path.len() == edge_len).then_some(&TypeBinding::RatatuiBuffer);
+                    return Ok((path.len() == edge_len).then_some(&TypeBinding::RatatuiBuffer));
                 }
                 if absolute {
-                    return None;
+                    return Ok(None);
                 }
-                match path.pop_front()? {
-                    "crate" if self.crate_root => {
-                        current = 0;
-                        continue;
-                    }
-                    "crate" => return None,
-                    "self" => {
-                        current = self.scopes[start].module;
-                        continue;
-                    }
-                    "super" => {
-                        current = self.super_module(start, &mut path)?;
-                        continue;
-                    }
-                    name => {
-                        let (owner, binding) = self.lexical_binding(start, name)?;
-                        ((owner, name), binding)
-                    }
+            }
+            let Some(name) = path.pop_front() else {
+                return Ok(None);
+            };
+            let start = edge.map(|(scope, _, _)| scope);
+            let (owner, binding) = match (start, name) {
+                (Some(_), "crate") if self.crate_root => {
+                    current = 0;
+                    continue;
                 }
-            } else {
-                let name = path.pop_front()?;
-                ((current, name), self.scopes[current].bindings.get(name)?)
+                (Some(_), "crate") => return Ok(None),
+                (Some(start), "self") => {
+                    current = self.scopes[start].module;
+                    continue;
+                }
+                (Some(start), "super") => {
+                    let Some(module) = self.super_module(start, &mut path, work)? else {
+                        return Ok(None);
+                    };
+                    current = module;
+                    continue;
+                }
+                (Some(start), name) => {
+                    let Some((owner, binding)) = self.lexical_binding(start, name, work)? else {
+                        return Ok(None);
+                    };
+                    ((owner, name), binding)
+                }
+                (None, name) => {
+                    work.charge_name(name)?;
+                    let Some(binding) = self.scopes[current].bindings.get(name) else {
+                        return Ok(None);
+                    };
+                    ((current, name), binding)
+                }
             };
             match binding {
                 TypeBinding::Import(import) => {
+                    work.charge_name(owner.1)?;
+                    work.charge(import.segments.len())?;
                     if !visited.insert(owner) {
-                        return None;
+                        return Ok(None);
                     }
                     for segment in import.segments.iter().rev() {
                         path.push_front(segment);
                     }
                     state = Some((owner.0, import.absolute, import.segments.len()));
                 }
-                _ if path.is_empty() => return Some(binding),
+                _ if path.is_empty() => return Ok(Some(binding)),
                 TypeBinding::InlineModule(child) => current = *child,
-                _ => return None,
+                _ => return Ok(None),
             }
         }
     }
 
-    fn binding_at(&self, tokens: &'a [Token], end: usize) -> Option<&TypeBinding<'a>> {
-        tokens[end].ident()?;
-        let scope = match self.enclosing[end]? {
+    fn binding_at(
+        &self,
+        tokens: &'a [Token],
+        end: usize,
+        work: &mut AliasWork,
+    ) -> Result<Option<&TypeBinding<'a>>, AliasWorkLimit> {
+        work.charge(1)?;
+        if tokens[end].ident().is_none() {
+            return Ok(None);
+        }
+        let Some(position) = self.enclosing[end] else {
+            return Ok(None);
+        };
+        let scope = match position {
             ScopePosition::Rust(scope) | ScopePosition::Opaque(scope) => scope,
         };
-        let (start, absolute) = path_start(tokens, end);
+        let (start, absolute) = path_start(tokens, end, work)?;
         self.resolve(
             scope,
             tokens[start..=end]
@@ -1038,6 +1109,7 @@ impl<'a> TypeScopes<'a> {
                 .step_by(3)
                 .map_while(Token::ident),
             absolute,
+            work,
         )
     }
 
@@ -1087,7 +1159,7 @@ impl<'a> TypeScopes<'a> {
                 current.available = slot;
                 continue;
             }
-            let Some(TypeBinding::Alias(alias)) = self.binding_at(tokens, end) else {
+            let Some(TypeBinding::Alias(alias)) = self.binding_at(tokens, end, work)? else {
                 return Ok(None);
             };
             let arguments = end + 1 + 2 * usize::from(is_path_separator(tokens, end + 1));
@@ -1109,8 +1181,13 @@ impl<'a> TypeScopes<'a> {
         }
     }
 
-    fn may_be_ratatui_buffer(&self, tokens: &'a [Token], index: usize) -> bool {
-        match self.binding_at(tokens, index) {
+    fn may_be_ratatui_buffer(
+        &self,
+        tokens: &'a [Token],
+        index: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasWorkLimit> {
+        Ok(match self.binding_at(tokens, index, work)? {
             Some(TypeBinding::RatatuiBuffer) => true,
             Some(TypeBinding::Nominal)
                 if matches!(self.enclosing[index], Some(ScopePosition::Rust(_))) =>
@@ -1121,7 +1198,7 @@ impl<'a> TypeScopes<'a> {
                 tokens[index].is_ident("Buffer")
                     && !is_path_separator(tokens, index.wrapping_sub(2))
             }
-        }
+        })
     }
 
     fn renamed_imports(&self, path: &Path) -> Vec<Violation> {
@@ -1134,8 +1211,8 @@ impl<'a> TypeScopes<'a> {
                     .iter()
                     .filter(move |&&(name, _)| {
                         matches!(
-                            self.resolve(scope, [name], false),
-                            Some(TypeBinding::RatatuiBuffer)
+                            self.resolve(scope, [name], false, &mut AliasWork::Unlimited),
+                            Ok(Some(TypeBinding::RatatuiBuffer))
                         )
                     })
                     .map(move |&(_, line)| {
@@ -1146,63 +1223,94 @@ impl<'a> TypeScopes<'a> {
     }
 }
 
-fn path_start(tokens: &[Token], end: usize) -> (usize, bool) {
+fn path_start(
+    tokens: &[Token],
+    end: usize,
+    work: &mut AliasWork,
+) -> Result<(usize, bool), AliasWorkLimit> {
     let mut start = end;
     while is_path_separator(tokens, start.wrapping_sub(2)) {
+        work.charge(1)?;
         let preceding = start.checked_sub(3).and_then(|at| tokens[at].ident());
         if preceding.is_none_or(|name| KEYWORDS_BEFORE_PATH.contains(&name)) {
-            return (start, true);
+            return Ok((start, true));
         }
         start -= 3;
     }
-    (start, false)
+    Ok((start, false))
 }
 
-fn field_pattern(tokens: &[Token], index: usize, open: usize, tests: &[Range<usize>]) -> bool {
-    tokens.get(open).is_some_and(|t| t.is_punct('{'))
-        && opens_fields(tokens, open + 1)
-        && !declares_variant(tokens, index)
-        && !is_type_position(tokens, index, open)
-        && !tests.iter().any(|range| range.contains(&index))
+struct FieldPatternIndex {
+    ends: Vec<Option<usize>>,
+    excluded: Vec<bool>,
+    fields: Vec<bool>,
+    type_prefixes: Vec<bool>,
+}
+
+impl FieldPatternIndex {
+    fn new(tokens: &[Token]) -> Self {
+        let ends = pattern_group_ends(tokens);
+        let excluded = field_pattern_exclusions(tokens, &ends);
+        let fields = field_prefixes(tokens, &ends);
+        let type_prefixes = pattern_type_prefixes(tokens);
+        Self {
+            ends,
+            excluded,
+            fields,
+            type_prefixes,
+        }
+    }
+
+    fn is_field_pattern(&self, tokens: &[Token], index: usize, open: usize) -> bool {
+        tokens.get(open).is_some_and(|t| t.is_punct('{'))
+            && !self.excluded[index]
+            && self.fields[open + 1]
+            && (!self.type_prefixes[index]
+                || self.ends[open]
+                    .and_then(|end| tokens.get(end))
+                    .is_some_and(|t| t.is_ident("in")))
+    }
 }
 
 fn buffer_pattern_matches<'a>(
     tokens: &'a [Token],
     index: usize,
     types: &TypeScopes<'a>,
-    generic_ends: &[Option<usize>],
-    tests: &[Range<usize>],
+    patterns: &FieldPatternIndex,
     work_limit: usize,
 ) -> Result<bool, AliasWorkLimit> {
+    let mut work = AliasWork::Limited(work_limit);
     if tokens.get(index + 1).is_some_and(|t| t.is_punct('{')) {
-        return Ok(types.may_be_ratatui_buffer(tokens, index)
-            && field_pattern(tokens, index, index + 1, tests));
-    }
-    if !is_path_separator(tokens, index + 1) {
-        return Ok(false);
+        if !patterns.is_field_pattern(tokens, index, index + 1) {
+            return Ok(false);
+        }
+        return types.may_be_ratatui_buffer(tokens, index, &mut work);
     }
     let start = index + 3;
-    let Some(open) = generic_ends.get(start).copied().flatten() else {
-        return Ok(false);
-    };
-    let Some(TypeBinding::Alias(alias)) = types.binding_at(tokens, index) else {
-        return Ok(false);
-    };
-    if !field_pattern(tokens, index, open, tests) {
+    if !is_path_separator(tokens, index + 1) || !tokens.get(start).is_some_and(|t| t.is_punct('<'))
+    {
         return Ok(false);
     }
-    let mut work = AliasWork(work_limit);
+    let Some(open) = patterns.ends[start] else {
+        return Ok(false);
+    };
+    if !patterns.is_field_pattern(tokens, index, open) {
+        return Ok(false);
+    }
+    let Some(TypeBinding::Alias(alias)) = types.binding_at(tokens, index, &mut work)? else {
+        return Ok(false);
+    };
     work.charge(open - start)?;
     let Some((slots, _)) = generic_slots(&tokens[..open], start) else {
         return Ok(false);
     };
-    let argument = types.apply_alias(tokens, alias, slots, &mut work)?;
-    Ok(argument.is_some_and(|range| {
-        matches!(
-            types.binding_at(tokens, range.end - 1),
-            Some(TypeBinding::RatatuiBuffer)
-        )
-    }))
+    let Some(argument) = types.apply_alias(tokens, alias, slots, &mut work)? else {
+        return Ok(false);
+    };
+    Ok(matches!(
+        types.binding_at(tokens, argument.end - 1, &mut work)?,
+        Some(TypeBinding::RatatuiBuffer)
+    ))
 }
 
 fn pattern_violations<'a>(
@@ -1211,11 +1319,10 @@ fn pattern_violations<'a>(
     aliases: &TypeScopes<'a>,
     work_limit: usize,
 ) -> Vec<Violation> {
-    let tests = test_modules(tokens);
-    let generic_ends = generic_ends(tokens);
+    let patterns = FieldPatternIndex::new(tokens);
     (1..tokens.len())
         .filter_map(|index| {
-            let message = match buffer_pattern_matches(tokens, index, aliases, &generic_ends, &tests, work_limit) {
+            let message = match buffer_pattern_matches(tokens, index, aliases, &patterns, work_limit) {
                 Ok(true) => "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
                 Ok(false) => return None,
                 Err(AliasWorkLimit) => "C1: Screen alias resolution exceeded its work limit for this pattern",
@@ -1225,83 +1332,97 @@ fn pattern_violations<'a>(
         .collect()
 }
 
-fn declares_variant(tokens: &[Token], index: usize) -> bool {
-    let mut depth = 0usize;
-    for back in (0..index).rev() {
-        if tokens[back].is_punct('}') {
-            depth += 1;
-        } else if tokens[back].is_punct('{') {
-            if depth == 0 {
-                return tokens[back.saturating_sub(6)..back]
+fn field_pattern_exclusions(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
+    let mut test_ends = vec![0; tokens.len()];
+    for index in 0..tokens.len() {
+        if let Some(test) =
+            cfg_test_bounds(tokens, index, |open| ends[open].unwrap_or(tokens.len()))
+        {
+            test_ends[test.start] = test_ends[test.start].max(test.end);
+        }
+    }
+    let mut excluded = Vec::with_capacity(tokens.len());
+    let mut test_end = 0;
+    let mut braces = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        test_end = test_end.max(test_ends[index]);
+        excluded.push(index < test_end || braces.last().copied().unwrap_or(false));
+        if token.is_punct('{') {
+            braces.push(
+                tokens[index.saturating_sub(6)..index]
                     .iter()
                     .rev()
                     .take_while(|t| !t.is_punct('}') && !t.is_punct(';') && !t.is_punct('|'))
-                    .any(|t| t.is_ident("enum"));
-            }
-            depth -= 1;
+                    .any(|t| t.is_ident("enum")),
+            );
+        } else if token.is_punct('}') {
+            braces.truncate(braces.len().saturating_sub(1));
         }
     }
-    false
+    excluded
 }
 
-fn opens_fields(tokens: &[Token], start: usize) -> bool {
-    let mut first = start;
-    loop {
-        if tokens.get(first).is_some_and(|t| t.is_punct('#'))
-            && tokens.get(first + 1).is_some_and(|t| t.is_punct('['))
-        {
-            first = closing(tokens, first + 1) + 1;
-        } else if tokens
-            .get(first)
-            .is_some_and(|t| t.is_ident("ref") || t.is_ident("mut"))
-        {
-            first += 1;
+fn field_prefixes(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
+    let mut fields = vec![false; tokens.len() + 1];
+    for index in (0..tokens.len()).rev() {
+        let token = &tokens[index];
+        let next = tokens.get(index + 1);
+        fields[index] = if token.is_punct('#') && next.is_some_and(|t| t.is_punct('[')) {
+            ends[index + 1].is_some_and(|end| fields[end])
+        } else if token.is_ident("ref") || token.is_ident("mut") {
+            fields[index + 1]
         } else {
-            break;
-        }
+            (token.ident().is_some()
+                && next.is_some_and(|t| t.is_punct(',') || t.is_punct(':') || t.is_punct('}')))
+                || (token.is_punct('.') && next.is_some_and(|t| t.is_punct('.')))
+        };
     }
-    let named = tokens.get(first).is_some_and(|t| t.ident().is_some())
-        && tokens
-            .get(first + 1)
-            .is_some_and(|t| t.is_punct(',') || t.is_punct(':') || t.is_punct('}'));
-    named
-        || (tokens.get(first).is_some_and(|t| t.is_punct('.'))
-            && tokens.get(first + 1).is_some_and(|t| t.is_punct('.')))
+    fields
 }
 
-fn is_type_position(tokens: &[Token], index: usize, open: usize) -> bool {
-    let mut start = index;
-    while start >= 3 && is_path_separator(tokens, start - 2) && tokens[start - 3].ident().is_some()
-    {
-        start -= 3;
+fn pattern_type_prefixes(tokens: &[Token]) -> Vec<bool> {
+    let mut path_starts = Vec::with_capacity(tokens.len());
+    let mut prefixes = Vec::with_capacity(tokens.len());
+    let mut types = Vec::with_capacity(tokens.len());
+    for index in 0..tokens.len() {
+        let start = if index >= 3
+            && is_path_separator(tokens, index - 2)
+            && tokens[index - 3].ident().is_some()
+        {
+            path_starts[index - 3]
+        } else {
+            index
+        };
+        path_starts.push(start);
+        let prefix = if index > 0 && is_pattern_type_qualifier(&tokens[index - 1]) {
+            prefixes[index - 1]
+        } else {
+            index
+        };
+        prefixes.push(prefix);
+        let start = if start >= 2 && is_path_separator(tokens, start - 2) {
+            start - 2
+        } else {
+            start
+        };
+        let start = prefixes[start];
+        types.push(start.checked_sub(1).is_some_and(|before| {
+            let token = &tokens[before];
+            (token.is_punct('>') && before > 0 && tokens[before - 1].is_punct('-'))
+                || NON_PATTERN_KEYWORDS
+                    .iter()
+                    .any(|keyword| token.is_ident(keyword))
+        }));
     }
-    if start >= 2 && is_path_separator(tokens, start - 2) {
-        start -= 2;
-    }
-    while start >= 1
-        && (tokens[start - 1].is_punct('&')
-            || tokens[start - 1].is_punct('*')
-            || tokens[start - 1].is_ident("mut")
-            || tokens[start - 1].is_ident("const")
-            || tokens[start - 1].kind == Tok::Other)
-    {
-        start -= 1;
-    }
-    let Some(before) = start.checked_sub(1).map(|at| &tokens[at]) else {
-        return false;
-    };
-    if opens_for_loop_pattern(tokens, open) {
-        return false;
-    }
-    (before.is_punct('>') && start >= 2 && tokens[start - 2].is_punct('-'))
-        || NON_PATTERN_KEYWORDS
-            .iter()
-            .any(|keyword| before.is_ident(keyword))
+    types
 }
 
-fn opens_for_loop_pattern(tokens: &[Token], open: usize) -> bool {
-    let close = closing(tokens, open);
-    tokens.get(close + 1).is_some_and(|t| t.is_ident("in"))
+fn is_pattern_type_qualifier(token: &Token) -> bool {
+    token.is_punct('&')
+        || token.is_punct('*')
+        || token.is_ident("mut")
+        || token.is_ident("const")
+        || token.kind == Tok::Other
 }
 
 fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
