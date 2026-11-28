@@ -96,6 +96,20 @@ fn uncertain_macro_drawing_lint_level_is_reported() -> TestResult {
 }
 
 #[test]
+fn local_wildcard_reexports_preserve_buffer_provenance() -> TestResult {
+    expect(
+        "mod source { pub use ratatui::buffer::Buffer; }\n\
+         mod bridge { pub use super::source::*; }\n\
+         use bridge::Buffer as Cells;\n\
+         fn drawing(value: bridge::Buffer) { let bridge::Buffer { content, .. } = value; }\n\
+         mod nominal { pub struct Buffer { pub value: u8 } }\n\
+         mod local { use super::nominal::*; fn view(value: Buffer) { let Buffer { value } = value; } }\n\
+         mod explicit { use super::source::*; struct Buffer { value: u8 } fn view(value: Buffer) { let Buffer { value } = value; } }\n",
+        &[("C1", 3, "Buffer"), ("C1", 4, "Buffer")],
+    )
+}
+
+#[test]
 fn literals_in_display_pass() -> TestResult {
     expect(
         "use std::fmt;\n\
