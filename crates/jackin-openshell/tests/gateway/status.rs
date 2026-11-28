@@ -128,7 +128,7 @@ async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
         .await
         .unwrap_err();
     assert!(not_found_named(&error, GONE), "write_file {error:?}");
-    let error = guard(gateway.open_terminal(&shell_terminal(GONE)))
+    let error = guard(gateway.open_terminal(&shell_terminal(GONE), &CancellationToken::new()))
         .await
         .unwrap_err();
     assert!(not_found_named(&error, GONE), "open_terminal {error:?}");
@@ -220,13 +220,13 @@ async fn supervisor_relay_failure_names_the_sandbox_and_stays_retryable() {
                     .unwrap_err(),
             );
             errors.push(
-                guard(gateway.open_terminal(&shell_terminal(SANDBOX)))
+                guard(gateway.open_terminal(&shell_terminal(SANDBOX), &CancellationToken::new()))
                     .await
                     .unwrap_err(),
             );
         } else {
             errors.push(
-                guard(gateway.open_terminal(&main_terminal(SANDBOX)))
+                guard(gateway.open_terminal(&main_terminal(SANDBOX), &CancellationToken::new()))
                     .await
                     .unwrap_err(),
             );
@@ -488,6 +488,7 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             | GatewayError::TerminalRefused { .. }
             | GatewayError::UnsafePath { .. }
             | GatewayError::WriteNotDurable { .. }
+            | GatewayError::TerminalCleanupUnconfirmed
             | GatewayError::Protocol { .. } => false,
             GatewayError::WriteUnconfirmed { cause, .. } => cause.is_retryable(),
         };

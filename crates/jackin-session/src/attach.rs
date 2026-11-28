@@ -473,19 +473,6 @@ fn not_found(sandbox: &SandboxName) -> GatewayError {
 }
 
 impl Session {
-    async fn open_until(
-        &self,
-        cancel: &CancellationToken,
-        request: &TerminalRequest,
-    ) -> Result<TerminalSession, GatewayError> {
-        read_until_cancelled(
-            cancel,
-            GatewayOp::Terminal,
-            self.deps.gateway.open_terminal(request),
-        )
-        .await
-    }
-
     pub async fn attach(
         &self,
         request: AttachRequest,
@@ -525,16 +512,24 @@ impl Session {
         let session = self
             .deps
             .gateway
-            .open_terminal(&TerminalRequest {
-                sandbox: sandbox.clone(),
-                kind: TerminalKind::MainProcess {
-                    input: request.input,
-                    repaint: RepaintPolicy::NudgeAfter(REPAINT_NUDGE),
+            .open_terminal(
+                &TerminalRequest {
+                    sandbox: sandbox.clone(),
+                    kind: TerminalKind::MainProcess {
+                        input: request.input,
+                        repaint: RepaintPolicy::NudgeAfter(REPAINT_NUDGE),
+                    },
+                    size: request.size,
                 },
-                size: request.size,
-            })
+                cancel,
+            )
             .await?;
-        let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
+        let supervisor = read_until_cancelled(
+            cancel,
+            GatewayOp::ReadFiles,
+            run_state(self.deps.gateway.as_ref(), sandbox),
+        )
+        .await?;
         Ok(AttachedTerminal {
             session,
             gateway: Arc::clone(&self.deps.gateway),
@@ -619,7 +614,10 @@ impl Session {
         check_cancel()?;
         progress.mark_secondary_dispatch();
         let session = self
-            .instance_deadline(GatewayOp::Terminal, gateway.open_terminal(&request))
+            .instance_deadline(
+                GatewayOp::Terminal,
+                gateway.open_terminal(&request, &CancellationToken::new()),
+            )
             .await
             .map_err(|cause| {
                 if cause.outcome_unknown() {
@@ -682,8 +680,9 @@ impl Session {
             .into());
         }
         Ok(self
-            .open_until(
-                cancel,
+            .deps
+            .gateway
+            .open_terminal(
                 &TerminalRequest {
                     sandbox: sandbox.clone(),
                     kind: TerminalKind::Shell {
@@ -692,6 +691,7 @@ impl Session {
                     },
                     size: request.size,
                 },
+                cancel,
             )
             .await?)
     }

@@ -7,6 +7,7 @@ use tonic::{Code, Status};
 
 use super::harness::{Env, WORKSPACE, connect, env, guard};
 use super::support::{SANDBOX, add_sandbox, main_terminal, sandbox_name};
+use tokio_util::sync::CancellationToken;
 
 fn ready(env: &Env, name: &str) {
     add_sandbox(
@@ -25,7 +26,7 @@ async fn main_attach_on_an_absent_sandbox_is_not_found_at_session_and_relay_step
     let gateway = connect(&env, WORKSPACE).await;
     let name = sandbox_name(SANDBOX);
 
-    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX)))
+    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX), &CancellationToken::new()))
         .await
         .unwrap_err();
     assert!(
@@ -38,7 +39,7 @@ async fn main_attach_on_an_absent_sandbox_is_not_found_at_session_and_relay_step
     env.server.state().after_ssh_session = Some(Box::new(move |state| {
         state.sandboxes.remove(&doomed);
     }));
-    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX)))
+    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX), &CancellationToken::new()))
         .await
         .unwrap_err();
     assert!(
@@ -57,7 +58,7 @@ async fn relay_open_errors_are_reported_with_their_cause_not_as_a_dropped_ssh_st
 
     env.server.state().forward_error =
         Some(Status::new(Code::Unavailable, "relay channel dropped"));
-    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX)))
+    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX), &CancellationToken::new()))
         .await
         .unwrap_err();
     match &error {
@@ -76,7 +77,7 @@ async fn relay_open_errors_are_reported_with_their_cause_not_as_a_dropped_ssh_st
         Code::FailedPrecondition,
         "relay target open failed: connection refused",
     ));
-    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX)))
+    let error = guard(gateway.open_terminal(&main_terminal(SANDBOX), &CancellationToken::new()))
         .await
         .unwrap_err();
     assert!(

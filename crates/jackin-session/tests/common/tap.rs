@@ -442,7 +442,8 @@ impl Gateway for Tap {
     async fn open_terminal(
         &self,
         request: &TerminalRequest,
+        cancel: &CancellationToken,
     ) -> Result<TerminalSession, GatewayError> {
-        self.inner.open_terminal(request).await
+        self.inner.open_terminal(request, cancel).await
     }
 }

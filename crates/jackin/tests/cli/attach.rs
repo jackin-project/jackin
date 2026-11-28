@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use jackin::ExitClass;
 use jackin_core::{AttemptId, HookKind, Phase, SupervisorState, sandbox_layout};
@@ -469,6 +470,61 @@ async fn a_stalled_supervisor_read_never_freezes_the_terminal_or_delays_a_detach
         });
         driven?;
         ran?.ok()?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancelling_attach_while_a_terminal_reply_waits_for_supervisor_returns() -> TestResult {
+    guard(async {
+        let (rig, harness, handle) = running().await?;
+        let _working = rig.world.clock.working();
+        let name = handle.name();
+        let before = handle.supervisor();
+        let gate = Arc::new(Notify::new());
+        let (terminal, raw) = script(vec![
+            Step::Gate(Arc::clone(&gate)),
+            Step::Bytes(b"\x1b[12;40R".to_vec()),
+        ])?;
+        let cancel = CancellationToken::new();
+        let command = harness
+            .command(&["attach", name.as_str()])
+            .terminal(terminal)
+            .cancel(cancel.clone());
+        let gateway = rig.gateway();
+        let held = Trigger::Op(GatewayOp::ReadFiles);
+        let drive = async {
+            until(|| raw.raw()).await?;
+            gateway.inject(Fault::HoldAt {
+                trigger: held.clone(),
+            });
+            gate.notify_one();
+            if !gateway.until_held(&held).await {
+                return Err(Failure::from(
+                    "the terminal reply supervisor read was never held",
+                ));
+            }
+            cancel.cancel();
+            Ok(())
+        };
+        let wait = Duration::from_secs(8);
+        let (ran, driven) = tokio::join!(
+            tokio::time::timeout(wait, command.run()),
+            tokio::time::timeout(wait, drive)
+        );
+        let released = gateway.release(&held);
+        driven.map_err(|_| "the terminal reply supervisor read was never held")??;
+        assert!(released);
+        let ran = ran.map_err(
+            |_| "attach waited for the terminal reply supervisor read after cancellation",
+        )??;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(!raw.raw());
+        until(|| handle.attachments() == 0).await?;
+        assert_eq!(handle.phase(), Phase::Ready);
+        assert_eq!(handle.supervisor(), before);
+        assert!(handle.main_input().is_empty());
         Ok(())
     })
     .await

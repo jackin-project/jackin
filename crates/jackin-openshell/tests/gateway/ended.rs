@@ -14,6 +14,7 @@ use super::ssh_server::{
     Action, REFUSED_NOTICE, RIGHT_FINGERPRINT, RIGHT_SEED, Script, SshModel, host_key,
 };
 use super::support::{add_sandbox, main_terminal, sandbox_name, set_conditions};
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn stop_and_start_on_an_ended_main_process() {
@@ -128,9 +129,10 @@ async fn a_main_attach_on_an_ended_sandbox_is_refused_and_on_a_stopped_one_not_r
     }
     let gateway = connect(&env, WORKSPACE).await;
     for name in ["jackin-bad", "jackin-done"] {
-        let mut session = guard(gateway.open_terminal(&main_terminal(name)))
-            .await
-            .unwrap();
+        let mut session =
+            guard(gateway.open_terminal(&main_terminal(name), &CancellationToken::new()))
+                .await
+                .unwrap();
         let mut events = Vec::new();
         while let Some(event) = guard(session.next_event()).await {
             events.push(event);
@@ -144,7 +146,9 @@ async fn a_main_attach_on_an_ended_sandbox_is_refused_and_on_a_stopped_one_not_r
             "{name}"
         );
     }
-    let stopped = guard(gateway.open_terminal(&main_terminal("jackin-stopped"))).await;
+    let stopped =
+        guard(gateway.open_terminal(&main_terminal("jackin-stopped"), &CancellationToken::new()))
+            .await;
     assert!(
         matches!(
             stopped,

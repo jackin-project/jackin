@@ -7,12 +7,16 @@ use std::time::{Duration, Instant};
 
 use jackin_openshell::contract::NUDGE_CASES;
 use jackin_openshell::{
-    EndReason, Gateway, GatewayError, GrpcGateway, InputLease, InputMode, RepaintPolicy, TermSize,
-    TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
+    EndReason, Gateway, GatewayError, GatewayOp, GrpcGateway, InputLease, InputMode, RepaintPolicy,
+    TermSize, TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
 };
 use openshell_sdk::raw::proto::SandboxPhase;
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
+use tonic::Code;
 
 use super::harness::{Env, WORKSPACE, connect, env, guard};
+use super::server::Fault;
 use super::ssh_server::{
     Action, INPUT_ENABLED_NOTICE, READ_ONLY_ENV, READ_ONLY_NOTICE, REFUSED_NOTICE,
     RIGHT_FINGERPRINT, RIGHT_SEED, Reaction, SUBSYSTEM, Script, SshModel, WRONG_FINGERPRINT,
@@ -24,7 +28,7 @@ const QUIET: Duration = Duration::from_millis(200);
 const EVENTUALLY: Duration = Duration::from_secs(5);
 
 struct Rig {
-    _env: Env,
+    env: Env,
     gateway: GrpcGateway,
     model: Arc<SshModel>,
 }
@@ -43,7 +47,7 @@ async fn rig(seed: &[u8; 32], advertised: &str, script: Script) -> Rig {
     env.server.state().ssh = Some(Arc::clone(&model));
     let gateway = connect(&env, WORKSPACE).await;
     Rig {
-        _env: env,
+        env,
         gateway,
         model,
     }
@@ -75,7 +79,11 @@ impl Rig {
         repaint: RepaintPolicy,
         size: TermSize,
     ) -> Result<TerminalSession, GatewayError> {
-        guard(self.gateway.open_terminal(&request(input, repaint, size))).await
+        guard(
+            self.gateway
+                .open_terminal(&request(input, repaint, size), &CancellationToken::new()),
+        )
+        .await
     }
 
     async fn open(&self, input: InputMode) -> TerminalSession {
@@ -577,7 +585,8 @@ async fn dropping_the_open_future_during_the_handshake_revokes_the_token() {
     })
     .await;
     let wanted = request(InputMode::Owner, RepaintPolicy::Never, size(100, 30));
-    let mut open = Box::pin(stalled.gateway.open_terminal(&wanted));
+    let cancel = CancellationToken::new();
+    let mut open = Box::pin(stalled.gateway.open_terminal(&wanted, &cancel));
     let step = format!("subsystem {SUBSYSTEM}");
     tokio::select! {
         opened = &mut open => panic!("the open finished: {:?}", opened.map(|_| ())),
@@ -596,6 +605,97 @@ async fn dropping_the_open_future_during_the_handshake_revokes_the_token() {
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert_eq!(stalled.model.created().len(), 1);
     assert_eq!(stalled.model.revoked(), stalled.model.created());
+}
+
+#[tokio::test]
+async fn cancelling_main_open_waits_for_a_dispatched_create_to_be_revoked() {
+    let stalled = good(Script::default()).await;
+    let (release, reply) = oneshot::channel();
+    stalled.env.server.state().ssh_create_reply = Some(reply);
+    let wanted = request(InputMode::Owner, RepaintPolicy::Never, size(100, 30));
+    let cancel = CancellationToken::new();
+    let mut open = Box::pin(stalled.gateway.open_terminal(&wanted, &cancel));
+    tokio::select! {
+        opened = &mut open => panic!("open completed before Create replied: {opened:?}"),
+        () = eventually("the credential was never issued", || !stalled.model.created().is_empty()) => {}
+    }
+    cancel.cancel();
+    assert!(
+        futures::poll!(open.as_mut()).is_pending(),
+        "cancellation returned before the issued credential could be revoked"
+    );
+    assert!(stalled.model.revoked().is_empty());
+    release.send(()).unwrap();
+    assert!(matches!(
+        guard(open).await,
+        Err(GatewayError::Cancelled {
+            op: GatewayOp::Terminal,
+            group: None
+        })
+    ));
+    assert_eq!(stalled.model.revoked(), stalled.model.created());
+    assert!(stalled.model.log().steps.is_empty());
+}
+
+#[tokio::test]
+async fn cancelling_the_main_handshake_waits_for_revocation_confirmation() {
+    let stalled = good(Script {
+        stall_subsystem: true,
+        ..Script::default()
+    })
+    .await;
+    let (release, reply) = oneshot::channel();
+    stalled.env.server.state().ssh_revoke_reply = Some(reply);
+    let wanted = request(InputMode::Owner, RepaintPolicy::Never, size(100, 30));
+    let cancel = CancellationToken::new();
+    let mut open = Box::pin(stalled.gateway.open_terminal(&wanted, &cancel));
+    let step = format!("subsystem {SUBSYSTEM}");
+    tokio::select! {
+        opened = &mut open => panic!("the open finished: {opened:?}"),
+        () = eventually("the main handshake never stalled", || stalled.model.log().steps.contains(&step)) => {}
+    }
+    cancel.cancel();
+    tokio::select! {
+        opened = &mut open => panic!("open returned before revocation was confirmed: {opened:?}"),
+        () = eventually("the credential was never revoked", || !stalled.model.revoked().is_empty()) => {}
+    }
+    assert!(futures::poll!(open.as_mut()).is_pending());
+    assert_eq!(stalled.model.revoked(), stalled.model.created());
+    release.send(()).unwrap();
+    assert!(matches!(
+        guard(open).await,
+        Err(GatewayError::Cancelled {
+            op: GatewayOp::Terminal,
+            group: None
+        })
+    ));
+}
+
+#[tokio::test]
+async fn cancelling_the_main_handshake_reports_unconfirmed_revocation() {
+    let stalled = good(Script {
+        stall_subsystem: true,
+        ..Script::default()
+    })
+    .await;
+    stalled.env.server.state().faults.insert(
+        "revoke_ssh_session",
+        Fault::Status(Code::Unavailable, "revoke was unavailable".to_owned()),
+    );
+    let wanted = request(InputMode::Owner, RepaintPolicy::Never, size(100, 30));
+    let cancel = CancellationToken::new();
+    let mut open = Box::pin(stalled.gateway.open_terminal(&wanted, &cancel));
+    let step = format!("subsystem {SUBSYSTEM}");
+    tokio::select! {
+        opened = &mut open => panic!("the open finished: {opened:?}"),
+        () = eventually("the main handshake never stalled", || stalled.model.log().steps.contains(&step)) => {}
+    }
+    cancel.cancel();
+    assert!(matches!(
+        guard(open).await,
+        Err(GatewayError::TerminalCleanupUnconfirmed)
+    ));
+    assert!(stalled.model.revoked().is_empty());
 }
 
 #[tokio::test]
