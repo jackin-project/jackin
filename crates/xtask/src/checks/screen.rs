@@ -1285,10 +1285,203 @@ fn mark_matches_pattern(
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct ImplReceiver {
     ident: usize,
     arguments: Option<usize>,
+}
+
+struct LocalMacroTemplate {
+    receiver: ImplReceiver,
+    arms: Option<Range<usize>>,
+}
+
+#[derive(Default)]
+struct LocalMacroTemplates<'a> {
+    active: BTreeMap<&'a str, LocalMacroTemplate>,
+    undo: Vec<(&'a str, Option<LocalMacroTemplate>)>,
+    blocks: Vec<(usize, usize)>,
+    last_import: usize,
+}
+
+impl<'a> LocalMacroTemplates<'a> {
+    fn enter_block(&mut self) {
+        self.blocks.push((self.undo.len(), self.last_import));
+    }
+
+    fn leave_block(&mut self) {
+        let Some((start, last_import)) = self.blocks.pop() else {
+            return;
+        };
+        self.last_import = last_import;
+        for (name, previous) in self.undo.drain(start..).rev() {
+            if let Some(previous) = previous {
+                self.active.insert(name, previous);
+            } else {
+                self.active.remove(name);
+            }
+        }
+    }
+
+    fn observe_import(&mut self, token: usize) {
+        self.last_import = token;
+    }
+
+    fn observe(
+        &mut self,
+        file: &'a ScreenFile<'_>,
+        bang: usize,
+        arms: Range<usize>,
+        receiver: Option<ImplReceiver>,
+    ) -> Option<Range<usize>> {
+        let tokens = &file.tokens;
+        let invoked = bang.checked_sub(1)?;
+        if !tokens[bang].is_punct('!') {
+            return None;
+        }
+        if tokens[invoked].is_keyword("macro_rules") {
+            if !macro_item_disabled(tokens, invoked) {
+                self.define(file, invoked, arms, receiver);
+            }
+            return None;
+        }
+        if is_path_separator(tokens, invoked.wrapping_sub(2)) {
+            return None;
+        }
+        let template = self.active.get_mut(tokens[invoked].ident()?)?;
+        if Some(template.receiver) == receiver
+            && template
+                .arms
+                .as_ref()
+                .is_some_and(|arms| arms.start > self.last_import)
+        {
+            template.arms.take()
+        } else {
+            None
+        }
+    }
+
+    fn define(
+        &mut self,
+        file: &'a ScreenFile<'_>,
+        declaration: usize,
+        arms: Range<usize>,
+        receiver: Option<ImplReceiver>,
+    ) {
+        let tokens = &file.tokens;
+        let Some(name) = tokens.get(declaration + 2).and_then(Token::ident) else {
+            return;
+        };
+        let previous = self.active.remove(name);
+        let current = receiver
+            .filter(|_| {
+                !has_macro_attribute(tokens, declaration, |attribute| {
+                    !inert_lint_attribute(attribute)
+                })
+            })
+            .map(|receiver| LocalMacroTemplate {
+                receiver,
+                arms: Some(arms),
+            });
+        if current.is_some() || previous.is_some() {
+            self.undo.push((name, previous));
+        }
+        if let Some(current) = current {
+            self.active.insert(name, current);
+        }
+    }
+}
+
+fn macro_arm_group_end(file: &ScreenFile<'_>, open: usize, limit: usize) -> Option<usize> {
+    if !matches!(file.tokens.get(open)?.kind, Tok::Punct('(' | '[' | '{')) {
+        return None;
+    }
+    file.group_ends[open].filter(|&end| end <= limit)
+}
+
+fn mark_local_macro_templates(
+    file: &ScreenFile<'_>,
+    arms: Range<usize>,
+    scope: usize,
+    enclosing: &mut [Option<ScopePosition>],
+) {
+    let tokens = &file.tokens;
+    let limit = arms.end - 1;
+    let mut index = arms.start + 1;
+    while let Some(arrow) = macro_arm_group_end(file, index, limit) {
+        if !tokens[arrow].is_punct('=')
+            || !tokens
+                .get(arrow + 1)
+                .is_some_and(|token| token.is_punct('>'))
+        {
+            return;
+        }
+        let open = arrow + 2;
+        let Some(end) = macro_arm_group_end(file, open, limit) else {
+            return;
+        };
+        mark_local_macro_arm(file, open + 1..end - 1, scope, enclosing);
+        index = end;
+        if index < limit && tokens[index].is_punct(';') {
+            index += 1;
+        }
+    }
+}
+
+fn mark_local_macro_arm(
+    file: &ScreenFile<'_>,
+    transcriber: Range<usize>,
+    scope: usize,
+    enclosing: &mut [Option<ScopePosition>],
+) {
+    let tokens = &file.tokens;
+    let mut index = transcriber.start;
+    while index < transcriber.end {
+        if let Some(open) = opaque_group_open(tokens, index) {
+            index = file.group_ends[open].unwrap_or(transcriber.end);
+            continue;
+        }
+        if let Some(end) = matches_angle_end(file, index, transcriber.end) {
+            index = end;
+            continue;
+        }
+        if let Some(end) = template_item_end(file, index, transcriber.end) {
+            index = end;
+            continue;
+        }
+        if tokens[index].is_keyword("Self")
+            && is_template_field_pattern(file, index, transcriber.end)
+        {
+            enclosing[index] = Some(ScopePosition::Rust(scope));
+        }
+        index += 1;
+    }
+}
+
+fn template_item_end(file: &ScreenFile<'_>, index: usize, limit: usize) -> Option<usize> {
+    if !["fn", "impl", "mod", "trait"]
+        .iter()
+        .any(|keyword| file.tokens[index].is_keyword(keyword))
+    {
+        return None;
+    }
+    let body = file.header_bodies[index + 1]?;
+    file.group_ends[body].filter(|&end| end <= limit)
+}
+
+fn is_template_field_pattern(file: &ScreenFile<'_>, index: usize, limit: usize) -> bool {
+    let tokens = &file.tokens;
+    if !tokens.get(index + 1).is_some_and(|open| open.is_punct('{')) {
+        return false;
+    }
+    if tokens[index - 1].is_keyword("let") {
+        return true;
+    }
+    let Some(end) = file.group_ends[index + 1].filter(|&end| end < limit) else {
+        return false;
+    };
+    tokens[end].is_keyword("in")
+        || tokens[end].is_punct('=') && tokens.get(end + 1).is_some_and(|next| next.is_punct('>'))
 }
 
 #[derive(Clone, Copy)]
@@ -1623,6 +1816,7 @@ impl<'a> TypeScopes<'a> {
         let inner_start = self.scopes.len();
         let mut enclosing = vec![None; tokens.len()];
         let mut stack = vec![source];
+        let mut local_macros = LocalMacroTemplates::default();
         let mut index = 0;
         while let Some(token) = tokens.get(index) {
             let scope = *stack.last().unwrap_or(&source);
@@ -1634,6 +1828,12 @@ impl<'a> TypeScopes<'a> {
                     && tokens[index - 1].is_ident("macro_rules")
                     && tokens[index + 1].is_ident("matches")
                     && !macro_item_disabled(tokens, index - 1);
+                if file.group_ends[open].is_some()
+                    && let Some(arms) =
+                        local_macros.observe(file, index, open..end, scope_state.self_receiver)
+                {
+                    mark_local_macro_templates(file, arms, scope, &mut enclosing);
+                }
                 if scope_state.self_receiver.is_some()
                     && let Some(kind) = matches_macro(tokens, index)
                     && (!matches!(kind, MatchesMacro::Prelude) || !scope_state.matches_textual)
@@ -1652,12 +1852,17 @@ impl<'a> TypeScopes<'a> {
             enclosing[index] = Some(ScopePosition::Rust(scope));
             if token.is_punct('{') {
                 stack.push(self.enter_scope(source, index, scope, paths, receiver_scopes[index]));
+                local_macros.enter_block();
             } else if token.is_punct('}') && stack.len() > 1 {
                 stack.pop();
+                local_macros.leave_block();
                 let child = &self.scopes[scope];
-                if child.matches_to_parent && child.matches_textual {
-                    let parent = *stack.last().unwrap_or(&source);
-                    self.scopes[parent].matches_textual = true;
+                if child.matches_to_parent {
+                    local_macros.observe_import(index);
+                    if child.matches_textual {
+                        let parent = *stack.last().unwrap_or(&source);
+                        self.scopes[parent].matches_textual = true;
+                    }
                 }
             } else if token.is_ident("use") {
                 index = self.scopes[scope].import(tokens, index);
@@ -1667,9 +1872,11 @@ impl<'a> TypeScopes<'a> {
                     && tokens.get(index + 2).is_some_and(|end| end.is_punct(';'))
                     && imports_macro_rules(tokens, index)
                     && !macro_item_disabled(tokens, index)
-                    && self.file_may_import_matches(source, scope, index, paths)
                 {
-                    self.scopes[scope].matches_textual = true;
+                    local_macros.observe_import(index);
+                    if self.file_may_import_matches(source, scope, index, paths) {
+                        self.scopes[scope].matches_textual = true;
+                    }
                 }
                 let file_module = self.file_module(source, scope, index, paths);
                 self.scopes[scope].bind_item(tokens, index, file_module);
