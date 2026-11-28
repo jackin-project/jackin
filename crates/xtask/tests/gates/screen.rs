@@ -152,14 +152,16 @@ fn conditional_canonical_root_reports_uncertainty() -> TestResult {
 fn standard_matches_guard_preserves_field_provenance() -> TestResult {
     expect(
         "use ratatui::buffer::Buffer;\n\
-         fn checked(value: Buffer) {\n\
+         trait Inspect { fn checked(&self); fn shadowed(&self); fn opaque(&self); }\n\
+         impl Inspect for Buffer { fn checked(&self) {\n\
          let _ = matches!((), _ if {\n\
-         let Buffer { content, .. } = value; true\n\
+         let Self { content, .. } = self; true\n\
          });\n\
          }\n\
-         fn shadowed(value: Buffer) { macro_rules! matches { ($($t:tt)*) => { true } } let _ = matches!((), _ if { let Buffer { content, .. } = value; true }); }\n\
-         fn opaque(value: Buffer) { let _ = matches!((), _ if { opaque!(let Buffer { content, .. } = value); true }); }\n",
-        &[("C1", 4, "destructures")],
+         fn shadowed(&self) { macro_rules! matches { ($($t:tt)*) => { true } } let _ = matches!((), _ if { let Self { content, .. } = self; true }); }\n\
+         fn opaque(&self) { let _ = matches!((), _ if { ::core::stringify!(let Self { content, .. } = self); true }); }\n\
+         }\n",
+        &[("C1", 5, "destructures")],
     )
 }
 
