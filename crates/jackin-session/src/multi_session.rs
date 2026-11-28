@@ -508,6 +508,7 @@ impl Session {
         view: &SandboxView,
         agent: Agent,
         cancel: &CancellationToken,
+        on_dispatch: impl FnOnce() + Send,
     ) -> Result<InstanceStop, InstanceStopError> {
         let sandbox = &view.name;
         let record = instance_record(agent);
@@ -534,6 +535,7 @@ impl Session {
             return Ok(InstanceStop::Unchanged);
         }
 
+        on_dispatch();
         let settle = CancellationToken::new();
         self.instance_deadline(
             GatewayOp::Program,
@@ -574,11 +576,10 @@ impl Session {
     ) -> Result<(), GatewayError> {
         let sandbox = &view.name;
         let pid = pid.to_string();
-        match self.signal_instance(sandbox, &pid, settle).await {
-            Ok(outcome) if matches!(outcome.exit_code, 0 | 1) => {}
-            Ok(outcome) => return Err(instance_exit("kill", outcome.exit_code)),
-            Err(error) if error.outcome_unknown() => {}
-            Err(error) => return Err(error),
+        if let Ok(outcome) = self.signal_instance(sandbox, &pid, settle).await
+            && !matches!(outcome.exit_code, 0 | 1)
+        {
+            return Err(instance_exit("kill", outcome.exit_code));
         }
         loop {
             let probe = self.probe_instance(sandbox, &pid, settle).await?;
@@ -741,7 +742,7 @@ impl Session {
                 agent: agent.as_str().to_owned(),
             });
         }
-        self.kill_instance(&view, agent, cancel)
+        self.kill_instance(&view, agent, cancel, || {})
             .await
             .map(drop)
             .map_err(|error| match error {

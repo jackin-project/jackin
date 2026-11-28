@@ -7,6 +7,7 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use jackin_core::{
@@ -40,6 +41,21 @@ pub struct AttachRequest {
     pub size: TermSize,
     pub input: InputMode,
     pub agent: Option<Agent>,
+}
+
+#[derive(Debug, Default)]
+pub struct AttachProgress {
+    secondary_dispatched: AtomicBool,
+}
+
+impl AttachProgress {
+    pub fn requires_settlement(&self) -> bool {
+        self.secondary_dispatched.load(Ordering::Acquire)
+    }
+
+    fn mark_secondary_dispatch(&self) {
+        self.secondary_dispatched.store(true, Ordering::Release);
+    }
 }
 
 #[derive(Debug)]
@@ -475,6 +491,16 @@ impl Session {
         request: AttachRequest,
         cancel: &CancellationToken,
     ) -> Result<AttachedTerminal, AttachError> {
+        self.attach_tracked(request, cancel, &AttachProgress::default())
+            .await
+    }
+
+    pub async fn attach_tracked(
+        &self,
+        request: AttachRequest,
+        cancel: &CancellationToken,
+        progress: &AttachProgress,
+    ) -> Result<AttachedTerminal, AttachError> {
         let sandbox = &request.sandbox;
         let view = self.locate(sandbox, cancel).await?.require(
             || AttachError::NotFound(sandbox.clone()),
@@ -492,7 +518,7 @@ impl Session {
             let is_lead = names.first().is_some_and(|lead| lead == agent.as_str());
             if !is_lead {
                 return self
-                    .attach_secondary(&view, agent, request.size, cancel)
+                    .attach_secondary(&view, agent, request.size, cancel, progress)
                     .await;
             }
         }
@@ -524,6 +550,7 @@ impl Session {
         agent: Agent,
         size: TermSize,
         cancel: &CancellationToken,
+        progress: &AttachProgress,
     ) -> Result<AttachedTerminal, AttachError> {
         let sandbox = &view.name;
         let gateway = self.deps.gateway.as_ref();
@@ -553,18 +580,18 @@ impl Session {
             gateway: self.gateway_name().clone(),
             failure,
         };
-        let stopped =
-            self.kill_instance(view, agent, cancel)
-                .await
-                .map_err(|error| match error {
-                    InstanceStopError::Before(cause) => AttachError::Gateway(cause),
-                    InstanceStopError::Unconfirmed(cause) => {
-                        failed(SecondaryAttachError::StopUnconfirmed(Box::new(cause)))
-                    }
-                    InstanceStopError::Cleanup(cause) => {
-                        failed(SecondaryAttachError::RecordCleanup(Box::new(cause)))
-                    }
-                })?;
+        let stopped = self
+            .kill_instance(view, agent, cancel, || progress.mark_secondary_dispatch())
+            .await
+            .map_err(|error| match error {
+                InstanceStopError::Before(cause) => AttachError::Gateway(cause),
+                InstanceStopError::Unconfirmed(cause) => {
+                    failed(SecondaryAttachError::StopUnconfirmed(Box::new(cause)))
+                }
+                InstanceStopError::Cleanup(cause) => {
+                    failed(SecondaryAttachError::RecordCleanup(Box::new(cause)))
+                }
+            })?;
         let check_cancel = || {
             if cancel.is_cancelled() {
                 return Err(match stopped {
@@ -590,6 +617,7 @@ impl Session {
             return Err(open_failed(cause));
         }
         check_cancel()?;
+        progress.mark_secondary_dispatch();
         let session = self
             .instance_deadline(GatewayOp::Terminal, gateway.open_terminal(&request))
             .await

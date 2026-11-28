@@ -4,6 +4,7 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::num::NonZeroU16;
+use std::pin::pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -20,8 +21,8 @@ use jackin_openshell::{
     TerminalSession,
 };
 use jackin_session::{
-    AttachError, AttachRequest, AttachedTerminal, LineDelivery, RestartError, SecondaryAttachError,
-    Session, ShellRequest, SupervisorReads, error_chain, launch_events,
+    AttachError, AttachProgress, AttachRequest, AttachedTerminal, LineDelivery, RestartError,
+    SecondaryAttachError, Session, ShellRequest, SupervisorReads, error_chain, launch_events,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, watch};
@@ -482,7 +483,11 @@ impl Run {
         hub.ended(id);
     }
 
-    async fn start(&self) -> Result<Terminal, LinkFault> {
+    async fn start(
+        &self,
+        cancel: &CancellationToken,
+        progress: &AttachProgress,
+    ) -> Result<Terminal, LinkFault> {
         let size = term_size(self.initial);
         let Some(agent) = self.agent else {
             return self
@@ -492,7 +497,7 @@ impl Run {
                         sandbox: self.sandbox.clone(),
                         size,
                     },
-                    &self.gone,
+                    cancel,
                 )
                 .await
                 .map(Terminal::Shell)
@@ -502,41 +507,57 @@ impl Run {
             let (events, feed) = launch_events(LineDelivery::BestEffort);
             drop(feed);
             self.session
-                .restart_agent(&self.sandbox, events, self.gone.clone())
+                .restart_agent(&self.sandbox, events, cancel.clone())
                 .await
                 .map_err(|error| restart_fault(&error))?;
         }
         self.session
-            .attach(
+            .attach_tracked(
                 AttachRequest {
                     sandbox: self.sandbox.clone(),
                     size,
                     input: InputMode::Owner,
                     agent: Some(agent),
                 },
-                &self.gone,
+                cancel,
+                progress,
             )
             .await
             .map(Terminal::Main)
             .map_err(|error| attach_fault(&error))
     }
 
-    async fn drive(&mut self) {
-        let opened = tokio::select! {
+    async fn open_until_closed(&self) -> Option<Terminal> {
+        let cancel = CancellationToken::new();
+        let progress = AttachProgress::default();
+        let mut opening = pin!(self.start(&cancel, &progress));
+        let detached = tokio::select! {
             biased;
-            () = self.gone.cancelled() => return,
-            () = self.detach.cancelled() => {
-                self.inbox.push(LinkEvent::Ended(EndKind::Detached));
-                return;
+            () = self.gone.cancelled() => false,
+            () = self.detach.cancelled() => true,
+            opened = &mut opening => {
+                return match opened {
+                    Ok(terminal) => Some(terminal),
+                    Err(reason) => {
+                        self.inbox.push(LinkEvent::Ended(EndKind::Failed(reason)));
+                        None
+                    }
+                };
             }
-            opened = self.start() => opened,
         };
-        let mut terminal = match opened {
-            Ok(terminal) => terminal,
-            Err(reason) => {
-                self.inbox.push(LinkEvent::Ended(EndKind::Failed(reason)));
-                return;
-            }
+        cancel.cancel();
+        if progress.requires_settlement() {
+            drop(opening.await);
+        }
+        if detached {
+            self.inbox.push(LinkEvent::Ended(EndKind::Detached));
+        }
+        None
+    }
+
+    async fn drive(&mut self) {
+        let Some(mut terminal) = self.open_until_closed().await else {
+            return;
         };
         let mut detaching = false;
         let mut reads = match &terminal {
