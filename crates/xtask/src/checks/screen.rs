@@ -1994,7 +1994,9 @@ impl<'a> TypeScopes<'a> {
             || scope != module.module
             || !tokens[declaration].is_ident("mod")
             || !tokens.get(declaration + 2)?.is_punct(';')
-            || has_outer_attribute(tokens, declaration)
+            || has_macro_attribute(tokens, declaration, |attribute| {
+                !inert_lint_attribute(attribute)
+            })
         {
             return None;
         }
@@ -2043,7 +2045,9 @@ impl<'a> TypeScopes<'a> {
             .filter(|&index| tokens[index].is_ident("mod"))
             .and_then(|index| tokens[index + 1].ident().map(|name| (index, name)));
         let directory = module.and_then(|(declaration, name)| {
-            let attributed = has_outer_attribute(tokens, declaration);
+            let attributed = has_macro_attribute(tokens, declaration, |attribute| {
+                !inert_lint_attribute(attribute)
+            });
             let binding = if attributed {
                 TypeBinding::Unresolved
             } else {
@@ -2290,6 +2294,9 @@ impl<'a> TypeScopes<'a> {
             if Range::is_empty(span) {
                 return Ok(false);
             }
+            if span.len() == 1 && tokens[span.start].is_ident("Self") {
+                return self.self_is_ratatui_buffer(value.source, span.start, work);
+            }
             let first = span.start + 2 * usize::from(is_path_separator(tokens, span.start));
             let mut end = first;
             let Some(name) = tokens.get(end).and_then(Token::ident) else {
@@ -2386,10 +2393,9 @@ impl<'a> TypeScopes<'a> {
         work: &mut AliasWork,
     ) -> Result<bool, AliasWorkLimit> {
         let tokens = &self.files[source].tokens;
-        let rust_scope = matches!(
-            self.sources[source].enclosing[index],
-            Some(ScopePosition::Rust(_))
-        );
+        let rust_scope = self
+            .proven_field_pattern_scope(source, index, work)?
+            .is_some();
         Ok(match self.binding_at(source, index, work)? {
             Some(TypeBinding::RatatuiBuffer) => true,
             Some(TypeBinding::Nominal) if rust_scope => false,
