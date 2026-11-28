@@ -84,8 +84,11 @@ fn uncertain_macro_drawing_lint_level_is_reported() -> TestResult {
          macro_rules! fixed { ($reason:literal) => { #[deny(clippy::disallowed_fields, reason = $reason)] fn marker() {} }; }\n\
          macro_rules! strict { ($reason:literal) => { #[forbid(clippy::disallowed_methods, reason = $reason)] fn marker() {} }; }\n\
          macro_rules! matcher { (#[$level:ident(clippy::disallowed_fields)]) => { () }; }\n\
-         macro_rules! inert { ($level:ident) => { ::core::stringify!(#[$level(clippy::disallowed_fields)]) }; }\n",
-        &[("C1", 2, "cannot be proven")],
+         macro_rules! inert { ($level:ident) => { ::core::stringify!(#[$level(clippy::disallowed_fields)]) }; }\n\
+         macro_rules! inner { ($level:ident) => { mod marker { #![$level(clippy::disallowed_fields)] } }; }\n\
+         ::core::stringify!(macro_rules! hidden { ($level:ident) => { #[$level(clippy::disallowed_fields)] fn marker() {} }; });\n\
+         macro_rules! return_inert { ($level:ident) => { fn marker() { return ::core::stringify!(#[$level(clippy::disallowed_fields)]); } }; }\n",
+        &[("C1", 2, "cannot be proven"), ("C1", 10, "cannot be proven")],
     )
 }
 
