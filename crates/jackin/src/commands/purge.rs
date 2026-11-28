@@ -6,6 +6,7 @@ use jackin_session::{PurgeMode, PurgeOutcome};
 use crate::app::App;
 use crate::cli::PurgeArgs;
 use crate::error::CommandError;
+use crate::report::gateway_command;
 
 pub(crate) async fn run(app: &mut App, args: PurgeArgs) -> Result<(), CommandError> {
     let config = app.store.load().await?;
@@ -15,8 +16,9 @@ pub(crate) async fn run(app: &mut App, args: PurgeArgs) -> Result<(), CommandErr
     } else {
         PurgeMode::Guarded
     };
+    let follow_up = gateway_command("ls", session.gateway_name());
     app.unsettled(format!(
-        "sandbox {}: its delete may have been requested; jackin ls shows whether it still exists",
+        "sandbox {}: its delete may have been requested; {follow_up} shows whether it still exists",
         args.sandbox
     ));
     match session

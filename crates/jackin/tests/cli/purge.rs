@@ -1,10 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::time::Duration;
+
 use jackin::ExitClass;
 use jackin_core::{Labels, Phase, SandboxName};
-use jackin_testkit::{Rig, TestResult, guard};
+use jackin_openshell::{GatewayError, GatewayOp};
+use jackin_testkit::{Fault, Rig, TestResult, guard};
 
+use super::gateway_choice::with_away_gateway;
 use super::support::{Failure, Harness, failed};
 
 async fn two() -> Result<(Rig, Harness, SandboxName, SandboxName), Failure> {
@@ -60,6 +64,43 @@ async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_refused() -> Te
         assert!(!refused.stderr.contains("already gone"));
         assert!(rig.world.gateway.sandbox(&ghost).is_some());
         assert!(rig.world.gateway.sandbox(&clean).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_unconfirmed_purge_names_the_gateway_that_received_the_request() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let initial = rig.handle(1).await?;
+        let name = initial.name();
+        let (harness, away) = with_away_gateway(&rig, &initial)?;
+        away.inject(Fault::FailNext {
+            op: GatewayOp::Delete,
+            error: GatewayError::Timeout {
+                op: GatewayOp::Delete,
+                after: Duration::from_secs(1),
+                group: None,
+            },
+        });
+
+        let ran = harness
+            .run(&["purge", name.as_str(), "--force", "--gateway", "away"])
+            .await?;
+        failed(
+            &ran,
+            ExitClass::Failure,
+            &[
+                name.as_str(),
+                "could not confirm",
+                "jackin ls --gateway away",
+            ],
+        )?;
+        let kept = away.sandbox(&name).ok_or("the selected sandbox is gone")?;
+        assert_eq!(kept.phase(), Phase::Ready);
+        assert_eq!(initial.phase(), Phase::Ready);
         Ok(())
     })
     .await

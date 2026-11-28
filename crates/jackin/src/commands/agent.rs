@@ -6,6 +6,7 @@ use jackin_session::{AgentNamesError, AttachRequest, RestartError};
 use crate::app::App;
 use crate::cli::{AgentCommand, AgentRestartArgs, SandboxArg, parse_agent};
 use crate::error::CommandError;
+use crate::report::{gateway_command, restart_unsettled};
 use crate::term;
 
 pub(crate) async fn run(app: &mut App, command: AgentCommand) -> Result<(), CommandError> {
@@ -36,7 +37,7 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
             .size();
         let (events, mut feed) =
             jackin_session::launch_events(jackin_session::LineDelivery::Reliable);
-        app.unsettled(restart_unsettled(&args.sandbox));
+        app.unsettled(restart_unsettled(&args.sandbox, session.gateway_name()));
         let cancel = app.cancel.clone();
         let show = async {
             while let Some(event) = feed.recv().await {
@@ -49,7 +50,7 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
         let request = AttachRequest::owner(restarted?, size);
         return term::attach(app, &session, request).await;
     }
-    app.unsettled(restart_unsettled(&args.sandbox));
+    app.unsettled(restart_unsettled(&args.sandbox, session.gateway_name()));
     session
         .restart_instance(&args.sandbox, agent, &app.cancel.clone())
         .await?;
@@ -57,18 +58,13 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
     Ok(())
 }
 
-fn restart_unsettled(sandbox: &jackin_core::SandboxName) -> String {
-    format!(
-        "sandbox {sandbox}: the agent restart may be partly done; jackin ls shows the sandbox's state"
-    )
-}
-
 pub(crate) async fn integrate(app: &mut App, args: SandboxArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
+    let follow_up = gateway_command("integrate", session.gateway_name());
+    let sandbox = &args.sandbox;
     app.unsettled(format!(
-        "sandbox {}: the integrate may have merged some agent branches; run jackin integrate again to finish it",
-        args.sandbox
+        "sandbox {sandbox}: the integrate may have merged some agent branches; run {follow_up} {sandbox} to finish it"
     ));
     let merged = session
         .integrate(&args.sandbox, &app.cancel.clone())

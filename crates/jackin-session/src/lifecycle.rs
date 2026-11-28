@@ -4,9 +4,9 @@
 use std::time::Duration;
 
 use jackin_core::{
-    ClosureViolationView, Config, InspectView, LabelError, LabelSelector, Labels, Phase,
-    PolicyStatus, ProviderName, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading,
-    WorkspaceName, plain_duration,
+    ClosureViolationView, Config, GatewayName, InspectView, LabelError, LabelSelector, Labels,
+    Phase, PolicyStatus, ProviderName, SandboxLabels, SandboxName, SandboxSummary,
+    SupervisorReading, WorkspaceName, plain_duration,
 };
 use jackin_openshell::{
     ClosureViolation, GatewayError, GatewayOp, PolicyError, PowerAction, ProfileEndpoint,
@@ -66,10 +66,11 @@ pub enum PurgeError {
     #[error("{sandbox} exists but is not a jackin sandbox; nothing was deleted")]
     NotManaged { sandbox: SandboxName },
     #[error(
-        "the gateway could not confirm whether the delete of {sandbox} took effect ({cause}); jackin ls shows the current state"
+        "gateway {gateway} could not confirm whether the delete of {sandbox} took effect ({cause})"
     )]
     DeleteUnconfirmed {
         sandbox: SandboxName,
+        gateway: GatewayName,
         cause: Box<GatewayError>,
     },
     #[error("cancelled before {sandbox} was deleted; nothing was deleted")]
@@ -145,13 +146,6 @@ fn summary(view: &SandboxView) -> Result<SandboxSummary, LifecycleError> {
         phase: view.phase,
         created_at: created_at(view),
     })
-}
-
-fn unconfirmed(sandbox: &SandboxName, cause: GatewayError) -> PurgeError {
-    PurgeError::DeleteUnconfirmed {
-        sandbox: sandbox.clone(),
-        cause: Box::new(cause),
-    }
 }
 
 fn lifecycle_gateway(error: GatewayError) -> LifecycleError {
@@ -257,6 +251,11 @@ impl Session {
             sandbox: sandbox.clone(),
             was,
         };
+        let unconfirmed = |cause| PurgeError::DeleteUnconfirmed {
+            sandbox: sandbox.clone(),
+            gateway: self.gateway_name().clone(),
+            cause: Box::new(cause),
+        };
         let fresh = CancellationToken::new();
         let lookup = self.locate(sandbox, &fresh);
         let budget = self.deps.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
@@ -267,11 +266,11 @@ impl Session {
                 Ok(Located::Found(now)) if now.phase == Phase::Deleting => Ok(outcome),
                 Ok(Located::Found(now)) => match (deleted.created_at, now.created_at) {
                     (Some(before), Some(current)) if current != before => Ok(outcome),
-                    _ => Err(unconfirmed(sandbox, error)),
+                    _ => Err(unconfirmed(error)),
                 },
-                Err(_) => Err(unconfirmed(sandbox, error)),
+                Err(_) => Err(unconfirmed(error)),
             },
-            () = budget => Err(unconfirmed(sandbox, error)),
+            () = budget => Err(unconfirmed(error)),
         }
     }
 
@@ -316,6 +315,7 @@ impl Session {
         sandbox: &SandboxName,
         cancel: &CancellationToken,
     ) -> Result<InspectView, LifecycleError> {
+        let before = self.found_until(sandbox, cancel).await?;
         let detail = match read_until_cancelled(
             cancel,
             GatewayOp::Detail,
@@ -323,13 +323,31 @@ impl Session {
         )
         .await
         {
-            Ok(detail) if detail.view.labels.is_managed() => detail,
-            Ok(_) => return Err(LifecycleError::NotManaged(sandbox.clone())),
+            Ok(detail) => detail,
             Err(GatewayError::NotFound { .. }) => {
                 return Err(LifecycleError::NotFound(sandbox.clone()));
             }
             Err(error) => return Err(lifecycle_gateway(error)),
         };
+        if !detail.view.labels.is_managed() {
+            return Err(LifecycleError::NotManaged(sandbox.clone()));
+        }
+        let require_same = |view: &SandboxView| {
+            if view.name == *sandbox
+                && before.created_at.is_some()
+                && view.created_at == before.created_at
+            {
+                return Ok(());
+            }
+            Err(LifecycleError::Gateway(GatewayError::FailedPrecondition {
+                message: format!(
+                    "sandbox {sandbox} changed or could not be identified during inspection"
+                ),
+            }))
+        };
+        require_same(&detail.view)?;
+        let after = self.found_until(sandbox, cancel).await?;
+        require_same(&after)?;
         let labels = labelled(sandbox, &detail.view.labels)?;
         let mut violations = Vec::new();
         let mut profile_assets = Vec::new();

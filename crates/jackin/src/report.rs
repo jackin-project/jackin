@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::WorkspaceName;
+use jackin_core::{GatewayName, SandboxName, WorkspaceName};
 use jackin_session::{
     AttachError, ExportError, LaunchFailure, LaunchNextStep, LifecycleError, PlanError, PurgeError,
     RestartError, env_file_problem, error_chain, hook_failure, main_process_ended, sandbox_missing,
@@ -89,9 +89,11 @@ fn purge_error(error: &PurgeError) -> String {
             "sandbox {sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted; run jackin purge {sandbox} again"
         ),
         PurgeError::NotManaged { sandbox } => sandbox_unmanaged(sandbox),
-        other @ (PurgeError::DeleteUnconfirmed { .. } | PurgeError::Cancelled { .. }) => {
-            other.to_string()
+        PurgeError::DeleteUnconfirmed { gateway, .. } => {
+            let list = gateway_command("ls", gateway);
+            format!("{error}; {list} shows the current state")
         }
+        PurgeError::Cancelled { .. } => error.to_string(),
         PurgeError::Gateway(error) => error_chain(error),
     }
 }
@@ -106,6 +108,17 @@ fn export_error(error: &ExportError) -> String {
         ExportError::WorkspaceUnknown(workspace) => workspace_unknown(workspace),
         other => error_chain(other),
     }
+}
+
+pub(crate) fn gateway_command(command: &str, gateway: &GatewayName) -> String {
+    format!("jackin {command} --gateway {gateway}")
+}
+
+pub(crate) fn restart_unsettled(sandbox: &SandboxName, gateway: &GatewayName) -> String {
+    let list = gateway_command("ls", gateway);
+    format!(
+        "sandbox {sandbox}: the agent restart may be partly done; {list} shows the sandbox's state"
+    )
 }
 
 pub(crate) fn abandoned(unsettled: Option<String>) -> String {

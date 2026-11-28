@@ -4,10 +4,10 @@
 use jackin::ExitClass;
 use jackin_core::{InspectView, Labels, Phase, ProviderName, SandboxName};
 use jackin_openshell::{
-    EndpointProtocol, HostPattern, NetworkRule, PolicyDocument, PowerAction, RuleEndpoint, RuleKey,
-    TlsMode,
+    EndpointProtocol, GatewayError, GatewayOp, HostPattern, NetworkRule, PolicyDocument,
+    PowerAction, RuleEndpoint, RuleKey, TlsMode,
 };
-use jackin_testkit::{Rig, TestResult, guard};
+use jackin_testkit::{Fault, Rig, TestResult, guard};
 use serde_json::json;
 
 use super::support::{Failure, Harness, failed, keys, names};
@@ -108,9 +108,11 @@ async fn inspect_json_pins_every_key_set_and_reports_the_live_closure_violation(
 }
 
 #[tokio::test]
-async fn inspect_of_a_missing_or_unmanaged_sandbox_fails_with_empty_stdout() -> TestResult {
+async fn inspect_checks_ownership_before_reading_policy_details() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let managed = rig.sandbox_name(1)?;
         let ghost = SandboxName::parse("jackin-ghost-0000")?;
         rig.world
             .gateway
@@ -122,6 +124,12 @@ async fn inspect_of_a_missing_or_unmanaged_sandbox_fails_with_empty_stdout() -> 
             .await?;
         failed(&absent, ExitClass::Failure, &["jackin-absent-0009"])?;
         assert!(absent.stderr.contains("was not found"), "{}", absent.stderr);
+        rig.gateway().inject(Fault::FailNext {
+            op: GatewayOp::Detail,
+            error: GatewayError::Protocol {
+                message: "policy unavailable".to_owned(),
+            },
+        });
         let foreign = harness.run(&["inspect", ghost.as_str(), "--json"]).await?;
         failed(&foreign, ExitClass::Refused, &[ghost.as_str()])?;
         assert!(
@@ -129,6 +137,12 @@ async fn inspect_of_a_missing_or_unmanaged_sandbox_fails_with_empty_stdout() -> 
             "{}",
             foreign.stderr
         );
+        let managed_args = ["inspect", managed.as_str(), "--json"];
+        let detail_failed = harness.run(&managed_args).await?;
+        failed(&detail_failed, ExitClass::Failure, &["policy unavailable"])?;
+        let recovered = harness.run(&managed_args).await?;
+        let inspected: InspectView = recovered.json()?;
+        assert_eq!(inspected.summary.name, managed);
         Ok(())
     })
     .await

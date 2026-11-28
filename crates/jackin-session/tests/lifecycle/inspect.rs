@@ -1,14 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::time::Duration;
+
 use jackin_core::{
     AttemptId, Labels, Phase, ProviderName, SandboxName, SupervisorReading, SupervisorState,
 };
 use jackin_openshell::{
-    EndpointProtocol, HostPattern, NetworkRule, PowerAction, RuleEndpoint, RuleKey, TlsMode,
+    EndpointProtocol, Gateway, GatewayError, GatewayOp, HostPattern, NetworkRule, PowerAction,
+    RuleEndpoint, RuleKey, TlsMode,
 };
 use jackin_session::LifecycleError;
-use jackin_testkit::{Rig, TestResult, guard};
+use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
 fn codex_host_rule(provider: &str) -> Result<NetworkRule, Box<dyn std::error::Error>> {
@@ -186,6 +189,54 @@ async fn inspect_flags_a_foreign_jackin_rule_on_the_provider_host_of_the_sandbox
             .map(|view| (view.rule.as_str(), view.host.as_str()))
             .collect();
         assert_eq!(rules, vec![("_provider_jackin_other", "api.z.ai")]);
+        Ok(())
+    })
+    .await
+}
+
+async fn replace_at_detail(rig: &Rig, sandbox: &SandboxName, held: &Trigger) -> TestResult {
+    let gateway = rig.gateway();
+    let replacement = async {
+        if !tokio::time::timeout(Duration::from_secs(10), gateway.until_held(held)).await? {
+            return Err("inspect never reached the held detail read".into());
+        }
+        gateway.delete_sandbox(sandbox).await?;
+        rig.world.clock.advance(Duration::from_secs(60));
+        rig.launch(1).await?;
+        Ok(())
+    }
+    .await;
+    gateway.release(held);
+    replacement
+}
+
+#[tokio::test]
+async fn inspect_rejects_a_managed_replacement_across_the_detail_read() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let sandbox = rig.sandbox_name(1)?;
+        let held = Trigger::Op(GatewayOp::Detail);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: held.clone(),
+        });
+        let cancel = CancellationToken::new();
+        let inspecting = rig.world.session.inspect(&sandbox, &cancel);
+        let replacing = replace_at_detail(&rig, &sandbox, &held);
+        let (inspected, replaced) = tokio::join!(inspecting, replacing);
+        replaced?;
+
+        assert!(
+            matches!(
+                inspected,
+                Err(LifecycleError::Gateway(
+                    GatewayError::FailedPrecondition { .. }
+                ))
+            ),
+            "{inspected:?}"
+        );
+        let current = rig.world.session.inspect(&sandbox, &cancel).await?;
+        assert_eq!(current.summary.name, sandbox);
         Ok(())
     })
     .await
