@@ -74,6 +74,22 @@ fn expect_workspace(
 }
 
 #[test]
+fn uncertain_macro_drawing_lint_level_is_reported() -> TestResult {
+    expect(
+        "macro_rules! uncertain {\n\
+         ($level:ident) => { #[$level(clippy::disallowed_fields)] fn marker() {} };\n\
+         }\n\
+         macro_rules! ordinary { ($value:expr) => { $value }; }\n\
+         macro_rules! unrelated { ($level:ident) => { #[$level(unused)] fn marker() {} }; }\n\
+         macro_rules! fixed { ($reason:literal) => { #[deny(clippy::disallowed_fields, reason = $reason)] fn marker() {} }; }\n\
+         macro_rules! strict { ($reason:literal) => { #[forbid(clippy::disallowed_methods, reason = $reason)] fn marker() {} }; }\n\
+         macro_rules! matcher { (#[$level:ident(clippy::disallowed_fields)]) => { () }; }\n\
+         macro_rules! inert { ($level:ident) => { ::core::stringify!(#[$level(clippy::disallowed_fields)]) }; }\n",
+        &[("C1", 2, "cannot be proven")],
+    )
+}
+
+#[test]
 fn literals_in_display_pass() -> TestResult {
     expect(
         "use std::fmt;\n\
