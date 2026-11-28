@@ -1295,3 +1295,20 @@ fn raw_keyword_module_path_preserves_buffer_provenance() -> TestResult {
         &[("C1", 4, "destructures")],
     )
 }
+
+#[test]
+fn grouped_standard_macro_alias_is_visible_before_its_import() -> TestResult {
+    expect(
+        "struct check;\n\
+         trait Inspect { fn inspect(&self) -> bool; }\n\
+         impl Inspect for ratatui::buffer::Buffer {\n\
+         \x20   fn inspect(&self) -> bool {\n\
+         \x20       let _ = check!(self, Self { content, .. });\n\
+         \x20       macro_rules! check { ($($tokens:tt)*) => { false }; }\n\
+         \x20       check!(self, Self { content, .. })\n\
+         \x20   }\n\
+         }\n\
+         use core::{matches as check};\n",
+        &[("C1", 5, "destructures")],
+    )
+}
