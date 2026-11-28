@@ -1507,6 +1507,16 @@ fn file_may_supply_matches(tokens: &[Token], ends: &[Option<usize>]) -> bool {
     false
 }
 
+fn expression_path_boundary(token: Option<&Token>) -> bool {
+    token.is_none_or(|token| {
+        token.ident().is_none()
+            || KEYWORDS_BEFORE_PATH
+                .iter()
+                .chain(&["if", "while", "match", "break", "yield"])
+                .any(|keyword| token.is_keyword(keyword))
+    })
+}
+
 fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     let name = bang.checked_sub(1)?;
     if !tokens[bang].is_punct('!') {
@@ -1525,13 +1535,7 @@ fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     if !is_path_separator(tokens, root_start.wrapping_sub(2)) {
         return Some(MatchesMacro::Relative(root));
     }
-    if tokens.get(root_start.wrapping_sub(3)).is_some_and(|token| {
-        token.ident().is_some()
-            && !KEYWORDS_BEFORE_PATH
-                .iter()
-                .chain(&["if", "while", "match", "break", "yield"])
-                .any(|keyword| token.is_keyword(keyword))
-    }) {
+    if !expression_path_boundary(tokens.get(root_start.wrapping_sub(3))) {
         return None;
     }
     Some(MatchesMacro::Absolute(root))
@@ -1936,12 +1940,7 @@ fn macro_lint_level_violations(source: usize, types: &TypeScopes<'_>) -> Vec<(us
                 && is_path_separator(tokens, index - 3)
                 && (tokens[index - 4].is_ident("core") || tokens[index - 4].is_ident("std"))
                 && is_path_separator(tokens, index - 6)
-                && tokens.get(index.wrapping_sub(7)).is_none_or(|token| {
-                    token.ident().is_none()
-                        || KEYWORDS_BEFORE_PATH
-                            .iter()
-                            .any(|keyword| token.is_keyword(keyword))
-                })
+                && expression_path_boundary(tokens.get(index.wrapping_sub(7)))
                 && let Some(position) = types.sources[source].enclosing[index]
             {
                 let scope = match position {
