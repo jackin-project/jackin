@@ -578,6 +578,22 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
 #[test]
 fn self_patterns_follow_trait_impl_receivers() -> TestResult {
     expect(
+        "extern crate self as core;\n\
+         #[macro_export]\n\
+         macro_rules! matches { ($($tokens:tt)*) => { false }; }\n\
+         mod child {\n\
+         \x20   trait View { fn inspect(&self); }\n\
+         \x20   impl View for ratatui::buffer::Buffer {\n\
+         \x20       fn inspect(&self) {\n\
+         \x20           let _ = core::matches!(self, Self { content, .. });\n\
+         \x20           let _ = ::core::matches!(self, Self { content, .. });\n\
+         \x20           let _ = ::std::matches!(self, Self { content, .. });\n\
+         \x20       }\n\
+         \x20   }\n\
+         }\n",
+        &[("C1", 10, "destructures")],
+    )?;
+    expect(
         "mod model { pub struct Buffer { pub value: u8 } }\n\
          trait View { fn inspect(&self); }\n\
          impl View for (ratatui::buffer::Buffer) {\n\
