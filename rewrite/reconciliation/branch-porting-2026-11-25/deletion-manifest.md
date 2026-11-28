@@ -6,7 +6,7 @@
 
 **Snapshot:** `git fetch --all --prune` ran at 2026-11-25 05:31 UTC, then `git ls-remote --heads origin`. origin has 158 heads including `main` (v1 had 163). `origin/main` is `f151478146` (#1324 merged). Each current SHA below is the value from ls-remote, and the lease in section 2 uses it.
 
-**Inputs:** `deletion-final.md` (v1 rows and verdicts), the six `retire-verify-*.md` files, `../orchestrator/ledger-final.md`, `gh pr list --state all` (300 PRs), closing comments of closed PRs, the plan's donor table in `/Users/donbeave/Projects/jackin-project/jackin/jackin-branch-porting-plan.md` section 1, and `git worktree list` with per-worktree status.
+**Inputs:** `deletion-final.md` (v1 rows and verdicts), the six `retire-verify-*.md` files, `../orchestrator/ledger-final.md`, `gh pr list --state all` (300 PRs), closing comments of closed PRs, the plan's donor table in `<workspace>/jackin/jackin-branch-porting-plan.md` section 1, and `git worktree list` with per-worktree status.
 
 ## Totals
 
@@ -395,33 +395,33 @@ Operator note: `wt/p03`, `wt/p07`, `wt/mv1` track their own branch and are clean
 69 worktrees in total. Counts are from `git -C <wt> status --porcelain` (dirty entries) and `git rev-list --count @{u}..HEAD` (ahead of the configured upstream). 45 have no upstream and are not flagged unless dirty.
 
 **Dirty (8):**
-- `/Users/donbeave/Projects/jackin-project/jackin` (main): 2 entries
-- `/private/tmp/jackin-browser-review.pFc38B/copy` (detached): 83
-- `/private/tmp/jackin-provider-cli-check` (detached): 10
-- `/private/tmp/jackin-registry-review.AESk6T` (detached): 81
-- `/private/tmp/jackin-usage-ux-preview` (detached): 12
-- `/Users/donbeave/Projects/jackin-project/wt/p01` (fix/p01-store-capture, open PR #1317): 1
-- `/Users/donbeave/Projects/jackin-project/wt/p03-residuals` (fix/p03-residuals, no upstream): 1
-- `/Users/donbeave/Projects/jackin-project/wt/p15-final-image-paths` (fix/p15-final-image-paths, open PR #1316): 1
+- `<workspace>/jackin` (main): 2 entries
+- `<scratchpad>/jackin-browser-review/copy` (detached): 83
+- `<scratchpad>/jackin-provider-cli-check` (detached): 10
+- `<scratchpad>/jackin-registry-review` (detached): 81
+- `<scratchpad>/jackin-usage-ux-preview` (detached): 12
+- `<workspace>/wt/p01` (fix/p01-store-capture, open PR #1317): 1
+- `<workspace>/wt/p03-residuals` (fix/p03-residuals, no upstream): 1
+- `<workspace>/wt/p15-final-image-paths` (fix/p15-final-image-paths, open PR #1316): 1
 
 **Ahead of configured upstream (17; 214 commits in total):**
-- `/Users/donbeave/Projects/jackin-project/jackin-native-usage` (feature/native-usage-accounts, own upstream): 12
-- `/Users/donbeave/Projects/jackin-project/jackin-usage-ux` (feat/usage-accounts-ux, upstream main): 33
-- `/Users/donbeave/Projects/jackin-project/jackin-ux-followup` (fix/usage-ux-followup, upstream main): 114
-- `/Users/donbeave/Projects/jackin-project/jackin-ux-b1` (ux/b1): 3
-- `/Users/donbeave/Projects/jackin-project/jackin-ux-b2` (ux/b2): 2
-- `/Users/donbeave/Projects/jackin-project/wt/doc-gemini-usage` (upstream main): 2
-- `/Users/donbeave/Projects/jackin-project/wt/p04` (branch gone on origin, upstream main): 7
-- `/Users/donbeave/Projects/jackin-project/wt/p08` (upstream main; HEAD equals origin tip): 4
-- `/Users/donbeave/Projects/jackin-project/wt/p09` (branch gone on origin, upstream main): 3
-- `/Users/donbeave/Projects/jackin-project/wt/p10-build-note` (branch gone on origin, upstream main): 2
-- `/Users/donbeave/Projects/jackin-project/wt/p12` (upstream main; HEAD equals origin tip): 8
-- `/Users/donbeave/Projects/jackin-project/wt/p14-page-cycle` (branch gone on origin, upstream main): 4
-- `/Users/donbeave/Projects/jackin-project/wt/p17` (upstream main; HEAD equals origin tip): 5
-- `/Users/donbeave/Projects/jackin-project/wt/p18-picker-kinds` (branch gone on origin, upstream main): 4
-- `/Users/donbeave/Projects/jackin-project/wt/p19` (branch gone on origin, upstream main): 6
-- `/Users/donbeave/Projects/jackin-project/wt/p20-j15-failclosed` (branch gone on origin, upstream main): 2
-- `/Users/donbeave/Projects/jackin-project/wt/p21` (branch gone on origin, upstream main): 3
+- `<workspace>/jackin-native-usage` (feature/native-usage-accounts, own upstream): 12
+- `<workspace>/jackin-usage-ux` (feat/usage-accounts-ux, upstream main): 33
+- `<workspace>/jackin-ux-followup` (fix/usage-ux-followup, upstream main): 114
+- `<workspace>/jackin-ux-b1` (ux/b1): 3
+- `<workspace>/jackin-ux-b2` (ux/b2): 2
+- `<workspace>/wt/doc-gemini-usage` (upstream main): 2
+- `<workspace>/wt/p04` (branch gone on origin, upstream main): 7
+- `<workspace>/wt/p08` (upstream main; HEAD equals origin tip): 4
+- `<workspace>/wt/p09` (branch gone on origin, upstream main): 3
+- `<workspace>/wt/p10-build-note` (branch gone on origin, upstream main): 2
+- `<workspace>/wt/p12` (upstream main; HEAD equals origin tip): 8
+- `<workspace>/wt/p14-page-cycle` (branch gone on origin, upstream main): 4
+- `<workspace>/wt/p17` (upstream main; HEAD equals origin tip): 5
+- `<workspace>/wt/p18-picker-kinds` (branch gone on origin, upstream main): 4
+- `<workspace>/wt/p19` (branch gone on origin, upstream main): 6
+- `<workspace>/wt/p20-j15-failclosed` (branch gone on origin, upstream main): 2
+- `<workspace>/wt/p21` (branch gone on origin, upstream main): 3
 
 Worktrees that check out a DELETE-NOW ref: none. Worktrees on a NEWLY-DELETABLE ref: `wt/p03`, `wt/p07`, `wt/p08`, `wt/p12`, `wt/p17`, `wt/mv1`. All are clean.
 

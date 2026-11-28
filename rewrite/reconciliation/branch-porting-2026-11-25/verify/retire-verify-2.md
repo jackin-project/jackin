@@ -110,4 +110,4 @@ Caveat on EQUIV matches: several patch-equivalent targets sit on the #1264 integ
 
 ## Scratch artifacts
 
-Working files: `/private/tmp/claude-501/-Users-donbeave-Projects-jackin-project-jackin/78577dc7-da4d-4487-bd2b-9f6d9754a204/scratchpad/manifest/v2/` (`sha-check.tsv`, `unique-commits.tsv`, `applycheck.tsv`, `commit-presence.tsv`, `symbols-missing.tsv`, `build_report.py`).
+Working files: `<scratchpad>/manifest/v2/` (`sha-check.tsv`, `unique-commits.tsv`, `applycheck.tsv`, `commit-presence.tsv`, `symbols-missing.tsv`, `build_report.py`).
