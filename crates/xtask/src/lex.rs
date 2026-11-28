@@ -79,6 +79,7 @@ pub(crate) enum Tok {
     Str(String),
     Number(String),
     Punct(char),
+    Lifetime,
     Other,
 }
 
@@ -253,6 +254,7 @@ impl Lexer {
     }
 
     fn quote(&mut self, line: u32) {
+        let mut kind = Tok::Other;
         match (self.cur.peek(1), self.cur.peek(2)) {
             (Some('\\'), _) => {
                 self.cur.skip(3);
@@ -264,13 +266,16 @@ impl Lexer {
             }
             (Some(c), Some('\'')) if c != '\'' => self.cur.skip(3),
             _ => {
+                if self.cur.peek(1).is_some_and(is_ident_start) {
+                    kind = Tok::Lifetime;
+                }
                 self.cur.bump();
                 while self.cur.peek(0).is_some_and(is_ident_continue) {
                     self.cur.bump();
                 }
             }
         }
-        self.push(Tok::Other, line);
+        self.push(kind, line);
     }
 
     fn word(&mut self, line: u32) {

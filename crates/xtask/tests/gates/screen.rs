@@ -575,6 +575,7 @@ fn alias_patterns_align_elided_lifetimes() -> TestResult {
          type Identity<'a, T> = T;\n\
          type WithConst<'a, const C: char, T> = T;\n\
          type Default<'a, const N: usize, T = Buffer> = T;\n\
+         type Mark<'℘, T> = T;\n\
          fn check(a: Buffer, b: local::Buffer) {\n\
          \x20   let Identity::<Buffer> { ref content, .. } = a;\n\
          \x20   let Identity::<'_, Buffer> { ref content, .. } = a;\n\
@@ -582,13 +583,16 @@ fn alias_patterns_align_elided_lifetimes() -> TestResult {
          \x20   let WithConst::<'x', Buffer> { ref content, .. } = a;\n\
          \x20   let Default::<'_, 7> { ref content, .. } = a;\n\
          \x20   let Default::<7> { ref content, .. } = a;\n\
-         }\n",
+         \x20   let Mark::<Buffer> { ref content, .. } = a;\n\
+         }\n\
+         fn raw<'r#match>(value: &'r#match Buffer) -> &'r#match Buffer { value }\n",
         &[
-            ("C1", 7, "destructures"),
             ("C1", 8, "destructures"),
-            ("C1", 10, "destructures"),
+            ("C1", 9, "destructures"),
             ("C1", 11, "destructures"),
             ("C1", 12, "destructures"),
+            ("C1", 13, "destructures"),
+            ("C1", 14, "destructures"),
         ],
     )
 }
@@ -597,14 +601,15 @@ fn alias_patterns_align_elided_lifetimes() -> TestResult {
 fn generic_enum_variants_are_not_buffer_patterns() -> TestResult {
     expect(
         "use ratatui::buffer::Buffer;\n\
+         macro_rules! ty { () => { u8 }; }\n\
          enum View<T, U> { Buffer { first: T, second: U } }\n\
-         enum Checked<T, U> where T: Copy, U: Copy {\n\
+         enum Checked<T, U> where ty!{}: Copy, U: Copy {\n\
          \x20   Buffer { first: T, second: U }\n\
          }\n\
          fn check(buf: Buffer) {\n\
          \x20   let Buffer { content, .. } = buf;\n\
          }\n",
-        &[("C1", 7, "destructures")],
+        &[("C1", 8, "destructures")],
     )
 }
 

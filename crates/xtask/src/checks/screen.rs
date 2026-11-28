@@ -648,10 +648,9 @@ impl TypeAlias {
 
     fn type_parameter_default(&self, tokens: &[Token], slot: usize) -> Option<Range<usize>> {
         let parameters = self.parameters.get(..=slot)?;
-        if parameters
-            .iter()
-            .any(|range| range.is_empty() || tokens[range.start].ident().is_none())
-        {
+        if parameters.iter().any(|range| {
+            range.is_empty() || !matches!(tokens[range.start].kind, Tok::Ident(_) | Tok::Lifetime)
+        }) {
             return None;
         }
         let parameter = parameters.last()?;
@@ -664,17 +663,43 @@ impl TypeAlias {
 struct AliasApplication<'a> {
     alias: &'a TypeAlias,
     arguments: Vec<Range<usize>>,
+    elided_lifetimes: usize,
     available: usize,
 }
 
 impl<'a> AliasApplication<'a> {
-    fn new(alias: &'a TypeAlias, arguments: Vec<Range<usize>>) -> Self {
-        Self {
+    fn new(
+        tokens: &[Token],
+        alias: &'a TypeAlias,
+        arguments: Vec<Range<usize>>,
+        work: &mut AliasWork,
+    ) -> Result<Option<Self>, AliasWorkLimit> {
+        let declared = count_leading_lifetimes(tokens, &alias.parameters, work)?;
+        let supplied = count_leading_lifetimes(tokens, &arguments, work)?;
+        if supplied != 0 && supplied != declared {
+            return Ok(None);
+        }
+        Ok(Some(Self {
             alias,
             arguments,
+            elided_lifetimes: declared - supplied,
             available: alias.parameters.len(),
+        }))
+    }
+}
+
+fn count_leading_lifetimes(
+    tokens: &[Token],
+    slots: &[Range<usize>],
+    work: &mut AliasWork,
+) -> Result<usize, AliasWorkLimit> {
+    for (index, slot) in slots.iter().enumerate() {
+        work.charge(1)?;
+        if slot.is_empty() || tokens[slot.start].kind != Tok::Lifetime {
+            return Ok(index);
         }
     }
+    Ok(slots.len())
 }
 
 enum AliasWork {
@@ -1121,7 +1146,10 @@ impl<'a> TypeScopes<'a> {
         work: &mut AliasWork,
     ) -> Result<Option<Range<usize>>, AliasWorkLimit> {
         let mut value = alias.value.clone();
-        let mut applications = vec![AliasApplication::new(alias, arguments)];
+        let Some(application) = AliasApplication::new(tokens, alias, arguments, work)? else {
+            return Ok(None);
+        };
+        let mut applications = vec![application];
         loop {
             work.charge(value.len().max(1))?;
             let first = value.start + 2 * usize::from(is_path_separator(tokens, value.start));
@@ -1146,7 +1174,10 @@ impl<'a> TypeScopes<'a> {
                 if slot >= current.available {
                     return Ok(None);
                 }
-                if let Some(argument) = current.arguments.get(slot) {
+                let Some(argument_slot) = slot.checked_sub(current.elided_lifetimes) else {
+                    return Ok(None);
+                };
+                if let Some(argument) = current.arguments.get(argument_slot) {
                     value = argument.clone();
                     applications.truncate(applications.len() - 1);
                     continue;
@@ -1176,8 +1207,11 @@ impl<'a> TypeScopes<'a> {
             {
                 return Ok(None);
             }
+            let Some(application) = AliasApplication::new(tokens, alias, slots, work)? else {
+                return Ok(None);
+            };
             value = alias.value.clone();
-            applications.push(AliasApplication::new(alias, slots));
+            applications.push(application);
         }
     }
 
@@ -1344,22 +1378,58 @@ fn field_pattern_exclusions(tokens: &[Token], ends: &[Option<usize>]) -> Vec<boo
     let mut excluded = Vec::with_capacity(tokens.len());
     let mut test_end = 0;
     let mut braces = Vec::new();
+    let enum_bodies = enum_body_starts(tokens, ends);
     for (index, token) in tokens.iter().enumerate() {
         test_end = test_end.max(test_ends[index]);
         excluded.push(index < test_end || braces.last().copied().unwrap_or(false));
         if token.is_punct('{') {
-            braces.push(
-                tokens[index.saturating_sub(6)..index]
-                    .iter()
-                    .rev()
-                    .take_while(|t| !t.is_punct('}') && !t.is_punct(';') && !t.is_punct('|'))
-                    .any(|t| t.is_ident("enum")),
-            );
+            braces.push(enum_bodies[index]);
         } else if token.is_punct('}') {
             braces.truncate(braces.len().saturating_sub(1));
         }
     }
     excluded
+}
+
+fn enum_body_starts(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
+    let mut where_bodies = vec![None; tokens.len() + 1];
+    let mut bodies = vec![false; tokens.len()];
+    for index in (0..tokens.len()).rev() {
+        let token = &tokens[index];
+        where_bodies[index] = match token.kind {
+            Tok::Punct('{') => Some(index),
+            Tok::Punct(';' | '}' | ')' | ']') => None,
+            Tok::Punct('<' | '(' | '[') => ends[index].and_then(|end| where_bodies[end]),
+            _ => where_bodies[index + 1],
+        };
+        if token.is_ident("enum")
+            && let Some(body) = enum_body_after_name(tokens, ends, &where_bodies, index)
+        {
+            bodies[body] = true;
+        }
+    }
+    bodies
+}
+
+fn enum_body_after_name(
+    tokens: &[Token],
+    ends: &[Option<usize>],
+    where_bodies: &[Option<usize>],
+    declaration: usize,
+) -> Option<usize> {
+    tokens.get(declaration + 1)?.ident()?;
+    let after_name = declaration + 2;
+    let boundary = if tokens.get(after_name)?.is_punct('<') {
+        ends[after_name]?
+    } else {
+        after_name
+    };
+    let token = tokens.get(boundary)?;
+    if token.is_ident("where") {
+        where_bodies[boundary + 1]
+    } else {
+        token.is_punct('{').then_some(boundary)
+    }
 }
 
 fn field_prefixes(tokens: &[Token], ends: &[Option<usize>]) -> Vec<bool> {
@@ -1422,7 +1492,7 @@ fn is_pattern_type_qualifier(token: &Token) -> bool {
         || token.is_punct('*')
         || token.is_ident("mut")
         || token.is_ident("const")
-        || token.kind == Tok::Other
+        || matches!(token.kind, Tok::Other | Tok::Lifetime)
 }
 
 fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
