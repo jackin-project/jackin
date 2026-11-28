@@ -1,19 +1,25 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use jackin_core::{Clock, Secret};
 use jackin_testkit::{FakeClock, MemoryVault, closed_endpoints};
-use jackin_usage::accounts::{AccountRegistry, ConnectionError, CredentialVault, UsageProvider};
+use jackin_usage::accounts::{
+    AccountRegistry, ConnectionError, CredentialVault, CredentialVersion, UsageProvider,
+};
 use jackin_usage::onboarding::{
     LoginError, LoginPrompt, OwnedLogin, receive_antigravity_statusline,
 };
 use serde_json::json;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use super::Result;
+use super::{
+    Result,
+    stalled_store::{slot_holding, wait_for_stalled_read},
+};
 
 fn offline(
     path: &std::path::Path,
@@ -53,6 +59,14 @@ async fn begin(
             .connect_antigravity_statusline(replace, send, &token)
             .await
     });
+    accept_enrollment_prompt(email, &mut prompts).await?;
+    Ok(task)
+}
+
+async fn accept_enrollment_prompt(
+    email: &str,
+    prompts: &mut tokio::sync::mpsc::Receiver<LoginPrompt>,
+) -> Result<()> {
     let Some(LoginPrompt::Field { reply, .. }) = prompts.recv().await else {
         return Err("missing email prompt".into());
     };
@@ -63,7 +77,7 @@ async fn begin(
         return Err("missing status-line command".into());
     };
     assert!(command.contains("usage antigravity-statusline"));
-    Ok(task)
+    Ok(())
 }
 
 #[tokio::test]
@@ -418,6 +432,143 @@ fn direct_row(
         &super::bytes("grant"),
     )?;
     Ok((registry, id))
+}
+
+struct HeldVaultRead(Arc<super::Vault>);
+
+impl Drop for HeldVaultRead {
+    fn drop(&mut self) {
+        self.0.release_stalled_reads();
+    }
+}
+
+struct HeldEnrollment {
+    service: OwnedLogin,
+    cancel: CancellationToken,
+    id: Uuid,
+    old_version: CredentialVersion,
+    release: HeldVaultRead,
+    result: oneshot::Receiver<std::result::Result<Uuid, LoginError>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+async fn hold_enrollment_read(path: &std::path::Path) -> Result<HeldEnrollment> {
+    let fake = Arc::new(super::Vault::default());
+    let vault: Arc<dyn CredentialVault> = Arc::<super::Vault>::clone(&fake);
+    let (registry, id) = direct_row(path, &vault, "Work")?;
+    let old_slot = slot_holding(&fake, b"grant")?;
+    vault.delete(old_slot)?;
+    let old_version = registry.version(id)?;
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = sharing(path, clock, &vault).with_store_wait(Duration::from_secs(15));
+    let cancel = CancellationToken::new();
+    let (send, mut prompts) = tokio::sync::mpsc::channel(2);
+    let (completed, result) = oneshot::channel();
+    let worker = service.clone();
+    let token = cancel.clone();
+    let task = tokio::task::spawn_blocking(move || {
+        match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => {
+                let outcome =
+                    runtime.block_on(worker.connect_antigravity_statusline(None, send, &token));
+                let _completed = completed.send(outcome);
+            }
+            Err(error) => {
+                let _completed = completed.send(Err(ConnectionError::from(error).into()));
+            }
+        }
+    });
+    accept_enrollment_prompt("me@example.com", &mut prompts).await?;
+    fake.stall_reads_of(old_slot);
+    let release = HeldVaultRead(Arc::clone(&fake));
+    assert!(update(&service, "me@example.com", None, now)?);
+    wait_for_stalled_read(&fake)?;
+    Ok(HeldEnrollment {
+        service,
+        cancel,
+        id,
+        old_version,
+        release,
+        result,
+        task,
+    })
+}
+
+#[tokio::test]
+async fn status_line_cannot_convert_a_direct_slot_rotated_during_its_read() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let HeldEnrollment {
+        service,
+        id,
+        old_version,
+        release,
+        result,
+        task,
+        ..
+    } = hold_enrollment_read(&path).await?;
+    let writer = service.clone();
+    let mut rotation = tokio::task::spawn_blocking(move || {
+        writer.open_registry()?.rotate(
+            &jackin_core::CriticalWrite::begin(),
+            id,
+            old_version,
+            &super::bytes("renewed"),
+        )
+    });
+    let while_held = tokio::time::timeout(Duration::from_secs(3), &mut rotation).await;
+    drop(release);
+    let outcome = result.await?;
+    task.await?;
+    let Ok(rotated) = while_held else {
+        let _result = rotation.await;
+        return Err("direct rotation waited for the status-line vault read".into());
+    };
+    let new_version = rotated??;
+    assert_ne!(new_version, old_version);
+    assert!(matches!(
+        outcome,
+        Err(LoginError::Store(ConnectionError::Changed))
+    ));
+    let registry = service.open_registry()?;
+    assert!(!registry.is_statusline(id)?);
+    let (version, contents) = registry.credential(id)?;
+    assert_eq!(version, new_version);
+    assert_eq!(contents.expose(), b"renewed");
+    assert!(!update(&service, "me@example.com", None, service.now().0)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelling_status_line_during_its_vault_read_cannot_publish() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let HeldEnrollment {
+        service,
+        cancel,
+        id,
+        old_version,
+        release,
+        mut result,
+        task,
+    } = hold_enrollment_read(&path).await?;
+    cancel.cancel();
+    let while_held = tokio::time::timeout(Duration::from_secs(3), &mut result).await;
+    drop(release);
+    task.await?;
+    let Ok(outcome) = while_held else {
+        return Err("status-line cancellation waited for the vault read".into());
+    };
+    assert!(matches!(outcome?, Err(LoginError::Cancelled)));
+    let registry = service.open_registry()?;
+    assert_eq!(registry.version(id)?, old_version);
+    assert!(!registry.is_statusline(id)?);
+    assert!(!update(&service, "me@example.com", None, service.now().0)?);
+    Ok(())
 }
 
 #[tokio::test]
