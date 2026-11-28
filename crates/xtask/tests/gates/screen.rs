@@ -603,6 +603,11 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20       macro_rules! matches { ($($tokens:tt)*) => { false }; }\n\
          \x20       let _ = matches!(self, Self { content, .. });\n\
          \x20       let _ = loop { break ::core::matches!(self, Self { content, .. }); };\n\
+         \x20       let _ = std::matches!(self, Self { content, .. });\n\
+         \x20       {\n\
+         \x20           mod std { macro_rules! matches { ($($tokens:tt)*) => { false }; } pub(super) use matches; }\n\
+         \x20           let _ = std::matches!(self, Self { content, .. });\n\
+         \x20       }\n\
          \x20   }\n\
          }\n\
          impl View for crate::model::Buffer {\n\
@@ -630,8 +635,9 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
             ("C1", 14, "destructures"),
             ("C1", 21, "destructures"),
             ("C1", 25, "destructures"),
-            ("C1", 36, "destructures"),
-            ("C1", 46, "destructures"),
+            ("C1", 26, "destructures"),
+            ("C1", 41, "destructures"),
+            ("C1", 51, "destructures"),
         ],
     )
 }
@@ -752,10 +758,14 @@ fn omitted_alias_type_arguments_use_the_declaration_defaults() -> TestResult {
          \x20   use ratatui::buffer::Buffer;\n\
          \x20   pub type Default<const N: usize, T = Buffer> = T;\n\
          \x20   pub type Forward<const N: usize> = Default<N>;\n\
+         \x20   pub type Implicit<T = Buffer> = T;\n\
+         \x20   pub type Fixed = Implicit;\n\
          }\n\
          mod model {\n\
          \x20   pub struct Buffer { pub value: u8 }\n\
          \x20   pub type Local<const N: usize, T = Buffer> = T;\n\
+         \x20   pub type Implicit<T = Buffer> = T;\n\
+         \x20   pub type Fixed = Implicit;\n\
          }\n\
          use model::Buffer;\n\
          fn check(a: ratatui::buffer::Buffer, b: Buffer) {\n\
@@ -763,8 +773,14 @@ fn omitted_alias_type_arguments_use_the_declaration_defaults() -> TestResult {
          \x20   let defaults::Default::<7, Buffer> { value } = b;\n\
          \x20   let model::Local::<7> { value } = b;\n\
          \x20   let defaults::Forward::<7> { content, .. } = a;\n\
+         \x20   let defaults::Fixed { content, .. } = a;\n\
+         \x20   let model::Fixed { value } = b;\n\
          }\n",
-        &[("C1", 12, "destructures"), ("C1", 15, "destructures")],
+        &[
+            ("C1", 16, "destructures"),
+            ("C1", 19, "destructures"),
+            ("C1", 20, "destructures"),
+        ],
     )
 }
 
