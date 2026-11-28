@@ -205,6 +205,11 @@ pub enum UsageAccountCommand {
             help = "Kimi or MiniMax authentication method (key or device); device requires a registered OAuth client ID"
         )]
         auth: Option<jackin_usage::onboarding::UsageAuth>,
+        #[arg(
+            long,
+            help = "Antigravity only: connect through the Antigravity CLI status line instead of Google sign-in"
+        )]
+        status_line: bool,
     },
     #[command(about = "Sign in again and keep the account settings")]
     Reconnect {

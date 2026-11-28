@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{AccountRegistry, LoginError, LoginPrompt, OwnedLogin, text_field};
-use crate::accounts::CredentialVault;
+use crate::accounts::{CredentialVault, EnrollmentTarget};
 use jackin_usage_provider_core::ProviderError;
 use jackin_usage_provider_gemini::{antigravity_account_email, antigravity_statusline};
 use std::{path::Path, sync::Arc, time::Duration};
@@ -77,6 +77,25 @@ fn launch_command(database: &Path) -> Result<String, LoginError> {
 }
 
 impl OwnedLogin {
+    async fn probe_conversion(
+        &self,
+        target: EnrollmentTarget,
+        cancel: &CancellationToken,
+    ) -> Result<(), LoginError> {
+        if let EnrollmentTarget::Convert(slot) = target {
+            let vault = Arc::clone(&self.vault);
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Err(LoginError::Cancelled),
+                result = self.run_credential_read(move || slot.require_missing(vault.as_ref())) => result?,
+            }
+        }
+        if cancel.is_cancelled() {
+            return Err(LoginError::Cancelled);
+        }
+        Ok(())
+    }
+
     pub async fn connect_antigravity_statusline(
         &self,
         replace: Option<Uuid>,
@@ -84,40 +103,49 @@ impl OwnedLogin {
         cancel: &CancellationToken,
     ) -> Result<Uuid, LoginError> {
         let value = tokio::select! {
+            biased;
             () = cancel.cancelled() => return Err(LoginError::Cancelled),
             value = text_field(&prompts, "Google account email used in Antigravity", false) => value?,
         };
         let email = antigravity_account_email(&value)?;
-        let now = self.now().0;
-        let expires = now.saturating_add(600);
         let mut registry =
             AccountRegistry::open_statusline(self.database(), Arc::clone(&self.vault))?;
+        let target = registry.enrollment_target(&email, replace)?;
+        self.probe_conversion(target, cancel).await?;
+        let now = self.now().0;
+        let expires = now.saturating_add(600);
         let ticket = Uuid::new_v4();
-        registry.start_enrollment(ticket, &email, replace, now, expires)?;
+        registry.start_enrollment(ticket, &email, target, now, expires)?;
         let mut enrollment = Enrollment { registry, ticket };
         let command = launch_command(self.database())?;
-        prompts
-            .send(LoginPrompt::AntigravityStatusLine { command })
-            .await
-            .map_err(|_| LoginError::Cancelled)?;
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(LoginError::Cancelled),
+            sent = prompts.send(LoginPrompt::AntigravityStatusLine { command }) => {
+                sent.map_err(|_| LoginError::Cancelled)?;
+            }
+        }
         loop {
             let now = self.now().0;
             if cancel.is_cancelled() {
                 return Err(LoginError::Cancelled);
             }
             if now >= expires {
-                return Err(ProviderError::Unsupported("Antigravity did not report quota within ten minutes. Connect again and open the displayed command").into());
+                break;
             }
-            if let Some(id) = enrollment
-                .registry
-                .finish_enrollment(ticket, replace, now)?
-            {
-                return Ok(id);
+            if enrollment.registry.enrollment_ready(ticket, now)? {
+                self.probe_conversion(target, cancel).await?;
+                let now = self.now().0;
+                if now >= expires {
+                    break;
+                }
+                return Ok(enrollment.registry.finish_enrollment(ticket, target, now)?);
             }
             tokio::select! {
                 () = cancel.cancelled() => return Err(LoginError::Cancelled),
                 () = tokio::time::sleep(Duration::from_millis(400)) => {}
             }
         }
+        Err(ProviderError::Unsupported("Antigravity did not report quota within ten minutes. Connect again and open the displayed command").into())
     }
 }

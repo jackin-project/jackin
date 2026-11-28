@@ -4,6 +4,7 @@
 mod account_add;
 mod account_manage;
 mod agent;
+mod antigravity_connect;
 mod antigravity_refresh;
 mod attach;
 mod build;

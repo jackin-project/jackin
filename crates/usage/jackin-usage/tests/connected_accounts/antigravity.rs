@@ -1,19 +1,25 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use jackin_core::{Clock, Secret};
 use jackin_testkit::{FakeClock, MemoryVault, closed_endpoints};
-use jackin_usage::accounts::{AccountRegistry, ConnectionError, CredentialVault, UsageProvider};
+use jackin_usage::accounts::{
+    AccountRegistry, ConnectionError, CredentialVault, CredentialVersion, UsageProvider,
+};
 use jackin_usage::onboarding::{
     LoginError, LoginPrompt, OwnedLogin, receive_antigravity_statusline,
 };
 use serde_json::json;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use super::Result;
+use super::{
+    Result,
+    stalled_store::{slot_holding, wait_for_stalled_read},
+};
 
 fn offline(
     path: &std::path::Path,
@@ -53,6 +59,14 @@ async fn begin(
             .connect_antigravity_statusline(replace, send, &token)
             .await
     });
+    accept_enrollment_prompt(email, &mut prompts).await?;
+    Ok(task)
+}
+
+async fn accept_enrollment_prompt(
+    email: &str,
+    prompts: &mut tokio::sync::mpsc::Receiver<LoginPrompt>,
+) -> Result<()> {
     let Some(LoginPrompt::Field { reply, .. }) = prompts.recv().await else {
         return Err("missing email prompt".into());
     };
@@ -63,7 +77,7 @@ async fn begin(
         return Err("missing status-line command".into());
     };
     assert!(command.contains("usage antigravity-statusline"));
-    Ok(task)
+    Ok(())
 }
 
 #[tokio::test]
@@ -391,21 +405,181 @@ async fn direct_sign_in_can_replace_a_status_line_account_of_the_same_google_acc
     Ok(())
 }
 
-#[tokio::test]
-async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> Result<()> {
-    let tmp = tempfile::tempdir()?;
-    let path = tmp.path().join("usage/accounts.sqlite3");
-    let clock = Arc::new(FakeClock::new());
-    let vault = Arc::new(super::Vault::default());
-    let mut registry = super::db(&path, &vault)?;
-    registry.add(
+fn sharing(
+    path: &std::path::Path,
+    clock: Arc<FakeClock>,
+    vault: &Arc<dyn CredentialVault>,
+) -> OwnedLogin {
+    OwnedLogin::new(
+        path.to_path_buf(),
+        closed_endpoints(),
+        clock,
+        Arc::clone(vault),
+    )
+}
+
+fn direct_row(
+    path: &std::path::Path,
+    vault: &Arc<dyn CredentialVault>,
+    label: &str,
+) -> Result<(AccountRegistry, Uuid)> {
+    let mut registry = AccountRegistry::with_vault(path, Arc::clone(vault))?;
+    let id = registry.add(
         &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
-        "Direct",
+        label,
         &oauth("me@example.com"),
         &super::bytes("grant"),
     )?;
-    let (service, _) = offline(&path, clock);
+    Ok((registry, id))
+}
+
+struct HeldVaultRead(Arc<super::Vault>);
+
+impl Drop for HeldVaultRead {
+    fn drop(&mut self) {
+        self.0.release_stalled_reads();
+    }
+}
+
+struct HeldEnrollment {
+    service: OwnedLogin,
+    cancel: CancellationToken,
+    id: Uuid,
+    old_version: CredentialVersion,
+    release: HeldVaultRead,
+    result: oneshot::Receiver<std::result::Result<Uuid, LoginError>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+async fn hold_enrollment_read(path: &std::path::Path) -> Result<HeldEnrollment> {
+    let fake = Arc::new(super::Vault::default());
+    let vault: Arc<dyn CredentialVault> = Arc::<super::Vault>::clone(&fake);
+    let (registry, id) = direct_row(path, &vault, "Work")?;
+    let old_slot = slot_holding(&fake, b"grant")?;
+    vault.delete(old_slot)?;
+    let old_version = registry.version(id)?;
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = sharing(path, clock, &vault).with_store_wait(Duration::from_secs(15));
+    let cancel = CancellationToken::new();
+    let (send, mut prompts) = tokio::sync::mpsc::channel(2);
+    let (completed, result) = oneshot::channel();
+    let worker = service.clone();
+    let token = cancel.clone();
+    let task = tokio::task::spawn_blocking(move || {
+        match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => {
+                let outcome =
+                    runtime.block_on(worker.connect_antigravity_statusline(None, send, &token));
+                let _completed = completed.send(outcome);
+            }
+            Err(error) => {
+                let _completed = completed.send(Err(ConnectionError::from(error).into()));
+            }
+        }
+    });
+    accept_enrollment_prompt("me@example.com", &mut prompts).await?;
+    fake.stall_reads_of(old_slot);
+    let release = HeldVaultRead(Arc::clone(&fake));
+    assert!(update(&service, "me@example.com", None, now)?);
+    wait_for_stalled_read(&fake)?;
+    Ok(HeldEnrollment {
+        service,
+        cancel,
+        id,
+        old_version,
+        release,
+        result,
+        task,
+    })
+}
+
+#[tokio::test]
+async fn status_line_cannot_convert_a_direct_slot_rotated_during_its_read() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let HeldEnrollment {
+        service,
+        id,
+        old_version,
+        release,
+        result,
+        task,
+        ..
+    } = hold_enrollment_read(&path).await?;
+    let writer = service.clone();
+    let mut rotation = tokio::task::spawn_blocking(move || {
+        writer.open_registry()?.rotate(
+            &jackin_core::CriticalWrite::begin(),
+            id,
+            old_version,
+            &super::bytes("renewed"),
+        )
+    });
+    let while_held = tokio::time::timeout(Duration::from_secs(3), &mut rotation).await;
+    drop(release);
+    let outcome = result.await?;
+    task.await?;
+    let Ok(rotated) = while_held else {
+        let _result = rotation.await;
+        return Err("direct rotation waited for the status-line vault read".into());
+    };
+    let new_version = rotated??;
+    assert_ne!(new_version, old_version);
+    assert!(matches!(
+        outcome,
+        Err(LoginError::Store(ConnectionError::Changed))
+    ));
+    let registry = service.open_registry()?;
+    assert!(!registry.is_statusline(id)?);
+    let (version, contents) = registry.credential(id)?;
+    assert_eq!(version, new_version);
+    assert_eq!(contents.expose(), b"renewed");
+    assert!(!update(&service, "me@example.com", None, service.now().0)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelling_status_line_during_its_vault_read_cannot_publish() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let HeldEnrollment {
+        service,
+        cancel,
+        id,
+        old_version,
+        release,
+        mut result,
+        task,
+    } = hold_enrollment_read(&path).await?;
+    cancel.cancel();
+    let while_held = tokio::time::timeout(Duration::from_secs(3), &mut result).await;
+    drop(release);
+    task.await?;
+    let Ok(outcome) = while_held else {
+        return Err("status-line cancellation waited for the vault read".into());
+    };
+    assert!(matches!(outcome?, Err(LoginError::Cancelled)));
+    let registry = service.open_registry()?;
+    assert_eq!(registry.version(id)?, old_version);
+    assert!(!registry.is_statusline(id)?);
+    assert!(!update(&service, "me@example.com", None, service.now().0)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_line_enrollment_for_a_direct_google_account_with_a_credential_is_a_duplicate()
+-> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let vault: Arc<dyn CredentialVault> = Arc::new(MemoryVault::default());
+    let (registry, _) = direct_row(&path, &vault, "Direct")?;
+    let service = sharing(&path, clock, &vault);
     let (send, mut prompts) = tokio::sync::mpsc::channel(2);
     let cancel = CancellationToken::new();
     let task = {
@@ -427,6 +601,51 @@ async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> 
         Err(LoginError::Store(ConnectionError::DuplicateDirect))
     ));
     assert_eq!(registry.list()?.len(), 1);
+    assert!(!registry.is_statusline(registry.list()?.remove(0).id)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_line_enrollment_replaces_a_direct_row_whose_credential_is_missing() -> Result<()> {
+    use jackin_usage::accounts::AccountPreferences;
+
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let vault: Arc<dyn CredentialVault> = Arc::new(MemoryVault::default());
+    let (registry, id) = direct_row(&path, &vault, "Work")?;
+    let mut prefs = AccountPreferences::default();
+    prefs.hidden.insert("3p-5h".into());
+    registry.set_preferences(id, &prefs)?;
+    let emptied: Arc<dyn CredentialVault> = Arc::new(MemoryVault::default());
+    let service = sharing(&path, clock, &emptied);
+    let cancel = CancellationToken::new();
+    let pending = begin(&service, "ME@example.com", None, &cancel).await?;
+    assert!(update(&service, "me@example.com", Some("ultra"), now)?);
+    assert_eq!(pending.await??, id);
+    let rows = registry.list()?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, id);
+    assert_eq!(rows[0].label, "Work");
+    assert_eq!(rows[0].preferences, prefs);
+    assert!(registry.is_statusline(id)?);
+    assert!(matches!(
+        registry.credential(id),
+        Err(ConnectionError::CredentialKind)
+    ));
+    assert!(update(&service, "me@example.com", Some("ultra"), now + 60)?);
+    let stored = registry
+        .snapshots()?
+        .into_iter()
+        .find(|row| row.0.id == id)
+        .ok_or("missing snapshot")?;
+    assert_eq!(stored.1, Some(now + 60));
+    let reading = stored.2.ok_or("missing reading")?;
+    assert_eq!(
+        reading["resources"]["3p-weekly"]["remaining_fraction"],
+        0.05
+    );
     Ok(())
 }
 
@@ -464,5 +683,37 @@ async fn direct_sign_in_cannot_convert_a_status_line_row_to_another_google_accou
         &super::bytes("grant"),
     )?;
     assert!(!registry.is_statusline(id)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_amount_only_status_line_bucket_shows_the_amount_without_a_percent() -> Result<()> {
+    use jackin_usage::dashboard::{Dashboard, DashboardMemory};
+
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let (service, vault) = offline(&path, clock);
+    let email = "amount@example.com";
+    let pending = begin(&service, email, None, &CancellationToken::new()).await?;
+    let input = json!({"product":"antigravity","email":email,"quota":{"gemini-5h":{"remaining_amount":42}}});
+    assert!(receive_antigravity_statusline(
+        &path,
+        &serde_json::to_vec(&input)?,
+        now,
+        MemoryVault::shared(),
+    )?);
+    let id = pending.await??;
+    let registry = AccountRegistry::with_vault(&path, Arc::clone(&vault))?;
+    let board = Dashboard::load(&registry, &mut DashboardMemory::default(), now)?;
+    let row = board
+        .all
+        .iter()
+        .find(|row| row.account == Some(id))
+        .ok_or("missing row")?;
+    assert_eq!(row.metric_label, "Gemini 5h");
+    assert_eq!(row.value, "42 count");
+    assert!(!row.value.contains('%'));
     Ok(())
 }
