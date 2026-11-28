@@ -717,9 +717,7 @@ const HANG: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provi
      WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r WHERE x < 400000) INSERT INTO auth_credentials (id, provider, data) SELECT x, 'zai', 'x' FROM r;
      ALTER TABLE auth_credentials ADD COLUMN credential_type TEXT AS (CASE WHEN length(hex(zeroblob(60000 + id % 2))) > 0 THEN 'never' END);";
 
-async fn schema_report(
-    schema: &str,
-) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+async fn schema_fixture(schema: &str) -> Result<Omp, Box<dyn std::error::Error>> {
     let omp = started(&[]).await?;
     let directory = omp.directory.path().join(".omp").join("agent");
     std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
@@ -727,7 +725,16 @@ async fn schema_report(
     let connection = Connection::open(directory.join("agent.db"))?;
     connection.execute_batch(schema)?;
     drop(connection);
-    let finished = tokio::time::timeout(Duration::from_secs(30), omp.report()).await;
+    Ok(omp)
+}
+
+const SCHEMA_REPORT_TIMEOUT: Duration = Duration::from_secs(30);
+
+async fn schema_report(
+    schema: &str,
+) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+    let omp = schema_fixture(schema).await?;
+    let finished = tokio::time::timeout(SCHEMA_REPORT_TIMEOUT, omp.report()).await;
     finished.map_err(|_| "the report did not finish")?
 }
 
@@ -740,19 +747,24 @@ fn is_unreadable(outcome: &jackin_usage::UsageOutcome) -> bool {
 
 #[tokio::test]
 async fn a_credential_query_that_never_finishes_is_given_up_on_and_frees_its_place() -> TestResult {
-    guard(async {
-        for _ in 0..3 {
-            let outcome = schema_report(HANG).await?;
-            assert!(is_unreadable(&outcome), "{outcome:?}");
-        }
-        let again = started(&[(1, &key_json(KEY))]).await?;
-        let outcome = tokio::time::timeout(Duration::from_secs(10), again.report())
+    let setup_timeout = Duration::from_secs(10);
+    for attempt in 1..=3 {
+        let omp = tokio::time::timeout(setup_timeout, schema_fixture(HANG))
             .await
-            .map_err(|_| "the worker of an abandoned query still holds its place")??;
-        assert_eq!(windows_of(&outcome).len(), 2);
-        Ok(())
-    })
-    .await
+            .map_err(|_| format!("the fixture for attempt {attempt} did not finish"))??;
+        let outcome = tokio::time::timeout(SCHEMA_REPORT_TIMEOUT, omp.report())
+            .await
+            .map_err(|_| format!("the report for attempt {attempt} did not finish"))??;
+        assert!(is_unreadable(&outcome), "attempt {attempt}: {outcome:?}");
+    }
+    let again = tokio::time::timeout(setup_timeout, started(&[(1, &key_json(KEY))]))
+        .await
+        .map_err(|_| "the recovery fixture did not finish")??;
+    let outcome = tokio::time::timeout(Duration::from_secs(10), again.report())
+        .await
+        .map_err(|_| "the worker of an abandoned query still holds its place")??;
+    assert_eq!(windows_of(&outcome).len(), 2);
+    Ok(())
 }
 
 #[tokio::test]
