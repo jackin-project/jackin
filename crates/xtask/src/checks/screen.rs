@@ -556,6 +556,7 @@ fn alias_boundary(tokens: &[Token], mut index: usize) -> Option<usize> {
 }
 
 struct TypeAlias {
+    declaration: usize,
     parameters: Vec<Range<usize>>,
     value: Range<usize>,
 }
@@ -583,6 +584,7 @@ impl TypeAlias {
             end
         };
         (start < end && tokens[terminator].is_punct(';')).then_some(Self {
+            declaration: index,
             parameters,
             value: start..end,
         })
@@ -595,17 +597,10 @@ impl TypeAlias {
                 && tokens[range.start].is_ident(name)
         })
     }
-
-    fn projected_slot(&self, tokens: &[Token]) -> Option<usize> {
-        let [target] = &tokens[self.value.clone()] else {
-            return None;
-        };
-        self.type_parameter_slot(tokens, target.ident()?)
-    }
 }
 
 enum TypeBinding<'a> {
-    Projection(usize),
+    Alias(TypeAlias),
     RatatuiBuffer,
     Nominal,
     InlineModule(usize),
@@ -682,9 +677,9 @@ impl<'a> TypeScope<'a> {
             return;
         };
         let binding = match tokens[index].ident() {
-            Some("type") => TypeAlias::parse(tokens, index)
-                .and_then(|alias| alias.projected_slot(tokens))
-                .map_or(TypeBinding::Unresolved, TypeBinding::Projection),
+            Some("type") => {
+                TypeAlias::parse(tokens, index).map_or(TypeBinding::Unresolved, TypeBinding::Alias)
+            }
             Some("struct" | "enum" | "union")
                 if nominal_attributes_preserve_binding(tokens, index) =>
             {
@@ -968,6 +963,57 @@ impl<'a> TypeScopes<'a> {
         )
     }
 
+    fn projected_slot(
+        &self,
+        tokens: &'a [Token],
+        alias: &TypeAlias,
+        active: &mut Vec<usize>,
+    ) -> Option<usize> {
+        if active.contains(&alias.declaration) {
+            return None;
+        }
+        let previous_count = active.len();
+        active.push(alias.declaration);
+        let value = self.projected_path(tokens, alias.value.clone(), active);
+        active.truncate(previous_count);
+        let [target] = &tokens[value?] else {
+            return None;
+        };
+        alias.type_parameter_slot(tokens, target.ident()?)
+    }
+
+    fn projected_path(
+        &self,
+        tokens: &'a [Token],
+        mut value: Range<usize>,
+        active: &mut Vec<usize>,
+    ) -> Option<Range<usize>> {
+        loop {
+            let first = value.start + 2 * usize::from(is_path_separator(tokens, value.start));
+            let mut end = first;
+            tokens.get(end)?.ident()?;
+            while end + 3 < value.end
+                && is_path_separator(tokens, end + 1)
+                && tokens[end + 3].ident().is_some()
+            {
+                end += 3;
+            }
+            if end + 1 == value.end {
+                return Some(value);
+            }
+            let TypeBinding::Alias(alias) = self.binding_at(tokens, end)? else {
+                return None;
+            };
+            let arguments = end + 1 + 2 * usize::from(is_path_separator(tokens, end + 1));
+            let (slots, boundary) = generic_slots(tokens, arguments)?;
+            if boundary != value.end {
+                return None;
+            }
+            let slot = self.projected_slot(tokens, alias, active)?;
+            value = slots.get(slot)?.clone();
+        }
+    }
+
     fn may_be_ratatui_buffer(&self, tokens: &'a [Token], index: usize) -> bool {
         match self.binding_at(tokens, index) {
             Some(TypeBinding::RatatuiBuffer) => true,
@@ -1034,18 +1080,17 @@ fn buffer_pattern_open<'a>(
     {
         return None;
     }
-    let TypeBinding::Projection(slot) = types.binding_at(tokens, index)? else {
+    let TypeBinding::Alias(alias) = types.binding_at(tokens, index)? else {
         return None;
     };
     let (slots, open) = generic_slots(tokens, index + 3)?;
-    let slot = slots.get(*slot)?;
-    let end = slot.end.checked_sub(1)?;
-    let (start, absolute) = path_start(tokens, end);
-    (start.checked_sub(if absolute { 2 } else { 0 })? == slot.start
-        && matches!(
-            types.binding_at(tokens, end),
-            Some(TypeBinding::RatatuiBuffer)
-        ))
+    let mut active = Vec::new();
+    let slot = types.projected_slot(tokens, alias, &mut active)?;
+    let argument = types.projected_path(tokens, slots.get(slot)?.clone(), &mut active)?;
+    matches!(
+        types.binding_at(tokens, argument.end - 1),
+        Some(TypeBinding::RatatuiBuffer)
+    )
     .then_some(open)
 }
 
