@@ -16,6 +16,7 @@ pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION"];
 const SCREEN_SOURCE: &str = "crates/jackin-tui/src";
 const SCREEN_LIB: &str = "crates/jackin-tui/src/lib.rs";
 const SCREEN_MAIN: &str = "crates/jackin-tui/src/main.rs";
+const SCREEN_BIN: &str = "crates/jackin-tui/src/bin";
 
 const SCREEN_CHECK_FILE: &str = "crates/xtask/src/checks/screen.rs";
 
@@ -128,6 +129,21 @@ struct ScreenFile<'a> {
     group_ends: Vec<Option<usize>>,
     header_bodies: Vec<Option<usize>>,
     may_supply_matches: bool,
+}
+
+fn is_standard_binary_root(path: &Path) -> bool {
+    if path == Path::new(SCREEN_MAIN) {
+        return true;
+    }
+    let Ok(relative) = path.strip_prefix(SCREEN_BIN) else {
+        return false;
+    };
+    let mut parts = relative.iter();
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(file), None, None) => Path::new(file).extension().is_some_and(|ext| ext == "rs"),
+        (Some(_), Some(file), None) => file == "main.rs",
+        _ => false,
+    }
 }
 
 impl<'a> ScreenFile<'a> {
@@ -2192,7 +2208,7 @@ impl<'a> TypeScopes<'a> {
         let crate_root = if self.sources[source].connected {
             self.crate_root
         } else {
-            (self.files[source].path == Path::new(SCREEN_MAIN)).then_some(source)
+            is_standard_binary_root(self.files[source].path).then_some(source)
         };
         Ok(crate_root.is_some_and(|root_scope| {
             self.scopes[root_scope].extern_macro_roots[root as usize].unwrap_or(true)
