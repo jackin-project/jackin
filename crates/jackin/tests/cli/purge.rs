@@ -47,7 +47,7 @@ async fn purge_deletes_an_exported_sandbox_refuses_unexported_work_and_force_del
 }
 
 #[tokio::test]
-async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_never_deleted() -> TestResult {
+async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_refused() -> TestResult {
     guard(async {
         let (rig, harness, clean, _dirty) = two().await?;
         harness.run(&["purge", "jackin-absent-0009"]).await?.ok()?;
@@ -55,10 +55,9 @@ async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_never_deleted()
         rig.world
             .gateway
             .insert_unmanaged(&ghost, Labels::from_pairs([])?, Phase::Ready)?;
-        harness
-            .run(&["purge", ghost.as_str(), "--force"])
-            .await?
-            .ok()?;
+        let refused = harness.run(&["purge", ghost.as_str(), "--force"]).await?;
+        failed(&refused, ExitClass::Refused, &["not a jackin sandbox"])?;
+        assert!(!refused.stderr.contains("already gone"));
         assert!(rig.world.gateway.sandbox(&ghost).is_some());
         assert!(rig.world.gateway.sandbox(&clean).is_some());
         Ok(())

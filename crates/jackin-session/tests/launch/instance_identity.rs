@@ -10,7 +10,8 @@ use jackin_core::{
 };
 use jackin_openshell::{GatewayError, TermSize};
 use jackin_session::{
-    AttachError, AttachRequest, IntegrateError, LaunchError, LaunchRequest, plan_launch,
+    AgentNamesError, AttachError, AttachRequest, IntegrateError, LaunchError, LaunchRequest,
+    plan_launch,
 };
 use jackin_testkit::{Outcome, ProgramScript, Rig, SandboxHandle};
 use tokio_util::sync::CancellationToken;
@@ -755,10 +756,17 @@ async fn public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead
                 handle.shells(),
                 handle.attachments(),
             );
-            let names = rig.world.session.sandbox_agent_names(&target.sandbox).await;
+            let names = rig
+                .world
+                .session
+                .sandbox_agent_names(&target.sandbox, &CancellationToken::new())
+                .await;
             match expected {
                 Some(expected) => assert_eq!(names?, expected),
-                None => assert!(matches!(names, Err(GatewayError::Protocol { .. }))),
+                None => assert!(matches!(
+                    names,
+                    Err(AgentNamesError::Gateway(GatewayError::Protocol { .. }))
+                )),
             }
             assert_eq!(
                 before,

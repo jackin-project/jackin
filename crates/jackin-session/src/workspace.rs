@@ -198,13 +198,14 @@ impl Gateways {
         };
         for session in sessions {
             let gateway = session.gateway_name().clone();
-            let listing = session
-                .list()
-                .await
-                .map_err(|source| WorkspaceGuardError::Listing {
-                    gateway: gateway.clone(),
-                    source,
-                })?;
+            let listing =
+                session
+                    .list(cancel)
+                    .await
+                    .map_err(|source| WorkspaceGuardError::Listing {
+                        gateway: gateway.clone(),
+                        source,
+                    })?;
             let holder = |sandbox: SandboxName| Holder {
                 gateway: gateway.clone(),
                 sandbox,

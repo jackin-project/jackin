@@ -54,6 +54,7 @@ async fn start() -> ExitClass {
         Err(error) => return fail(&error.to_string()),
     };
     let cancel = CancellationToken::new();
+    let abandon = CancellationToken::new();
     let host = HostPorts::system(Arc::new(StdFileSystem::default()), places.home.clone());
     let build_dir = match HostPath::resolve(std::path::Path::new("build"), &places.cache_dir) {
         Ok(dir) => dir,
@@ -76,7 +77,7 @@ async fn start() -> ExitClass {
         usage_vault: jackin_usage::accounts::system_vault(),
         console: Arc::new(TerminalConsole),
     };
-    let mut run = Box::pin(jackin::run(
+    let run = jackin::run(
         AppEnv {
             args: std::env::args_os().collect(),
             stdout: Box::new(std::io::stdout()),
@@ -87,15 +88,13 @@ async fn start() -> ExitClass {
             cache_dir: places.cache_dir,
             env,
             cancel: cancel.clone(),
+            abandon: abandon.clone(),
         },
         deps,
-    ));
+    );
     let class = tokio::select! {
-        class = &mut run => class,
-        () = signals.interrupted(&cancel) => {
-            drop(run);
-            ExitClass::Cancelled
-        }
+        class = run => class,
+        never = signals.interrupted(&cancel, &abandon) => match never {},
     };
     class
 }

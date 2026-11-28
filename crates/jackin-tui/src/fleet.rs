@@ -205,7 +205,7 @@ async fn read_gateway(
     let listed = tokio::select! {
         biased;
         () = cancel.cancelled() => None,
-        listed = within(deadline, session.list()) => listed,
+        listed = within(deadline, session.list(cancel)) => listed,
     };
     let listing = match listed {
         Some(Ok(listing)) => listing,
@@ -273,7 +273,10 @@ async fn observe(
 
 async fn inspect(session: &Session, summary: SandboxSummary, reads: &Reads<'_>) -> Inspected {
     let (supervisor, stalled) = if summary.phase == Phase::Ready {
-        match reads.run(session.inspect(&summary.name)).await {
+        match reads
+            .run(session.inspect(&summary.name, reads.cancel))
+            .await
+        {
             Some(inspected) => (inspected.ok().map(|view| view.supervisor), false),
             None => (None, true),
         }
@@ -297,7 +300,7 @@ async fn read_work(
         return None;
     }
     reads
-        .run(session.work_state(config, &sandbox.summary.name))
+        .run(session.work_state(config, &sandbox.summary.name, reads.cancel))
         .await
 }
 

@@ -187,7 +187,10 @@ fn git_housekeeping(path: &str) -> bool {
 }
 
 pub(crate) async fn state(rig: &Rig, name: &SandboxName) -> jackin_session::WorkState {
-    rig.world.session.work_state(&rig.config, name).await
+    rig.world
+        .session
+        .work_state(&rig.config, name, &CancellationToken::new())
+        .await
 }
 
 pub(crate) fn rewrite_packed(

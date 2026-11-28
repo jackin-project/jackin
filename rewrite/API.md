@@ -1877,17 +1877,18 @@ impl Session {
 
     pub async fn launch(&self, plan: LaunchPlan, events: LaunchEvents, cancel: CancellationToken) -> Result<LaunchOutcome, LaunchFailure>;
 
-    pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError>;
-    pub async fn open_shell(&self, request: ShellRequest) -> Result<TerminalSession, AttachError>;
+    pub async fn attach(&self, request: AttachRequest, cancel: &CancellationToken) -> Result<AttachedTerminal, AttachError>;
+    pub async fn open_shell(&self, request: ShellRequest, cancel: &CancellationToken) -> Result<TerminalSession, AttachError>;
+    pub async fn sandbox_agent_names(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<Vec<String>, AgentNamesError>;
     pub async fn restart_agent(&self, sandbox: &SandboxName, events: LaunchEvents, cancel: CancellationToken) -> Result<AttachTarget, RestartError>;
 
-    pub async fn list(&self) -> Result<SandboxListing, LifecycleError>;
-    pub async fn inspect(&self, sandbox: &SandboxName) -> Result<InspectView, LifecycleError>;
-    pub async fn power(&self, sandbox: &SandboxName, action: PowerAction) -> Result<SandboxSummary, LifecycleError>;
+    pub async fn list(&self, cancel: &CancellationToken) -> Result<SandboxListing, LifecycleError>;
+    pub async fn inspect(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<InspectView, LifecycleError>;
+    pub async fn power(&self, sandbox: &SandboxName, action: PowerAction, cancel: &CancellationToken) -> Result<SandboxSummary, LifecycleError>;
 
-    pub async fn work_state(&self, config: &Config, sandbox: &SandboxName) -> WorkState;
+    pub async fn work_state(&self, config: &Config, sandbox: &SandboxName, cancel: &CancellationToken) -> WorkState;
     pub async fn export(&self, config: &Config, sandbox: &SandboxName, cancel: CancellationToken) -> Result<ExportReport, ExportError>;
-    pub async fn purge(&self, config: &Config, sandbox: &SandboxName, mode: PurgeMode) -> Result<PurgeOutcome, PurgeError>;
+    pub async fn purge(&self, config: &Config, sandbox: &SandboxName, mode: PurgeMode, cancel: &CancellationToken) -> Result<PurgeOutcome, PurgeError>;
 
     pub async fn sync_account(&self, account: &Account, cancel: &CancellationToken) -> Result<AccountSync, AccountError>;
     pub async fn forget_account(&self, account: &Account, cancel: &CancellationToken) -> Result<(), AccountError>;
@@ -2223,16 +2224,19 @@ impl AttachedTerminal {
     pub async fn next_event(&mut self) -> Option<TerminalEvent>;
 }
 
+pub enum AgentNamesError { Gateway(GatewayError), NotManaged(SandboxName) }
 pub enum EnvFileProblem { NoLaunchLabel, Missing, Invalid(EnvFileError) }
 pub struct ShellRequest { pub sandbox: SandboxName, pub size: TermSize }
 pub enum AttachError {
     Gateway(GatewayError),
     NotFound(SandboxName),
+    NotManaged(SandboxName),
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     EnvFile { sandbox: SandboxName, problem: EnvFileProblem },
 }
 pub enum RestartError {
     Gateway(GatewayError),
+    NotManaged(SandboxName),
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     AlreadyRunning { sandbox: SandboxName, attempt: AttemptId },
     AttemptsExhausted { sandbox: SandboxName },
@@ -2247,6 +2251,8 @@ pub enum RestartError {
 ```
 
 `attach` finds the sandbox, requires `Ready` (a `Completed` or `Error` sandbox has no live main PTY, so `MainProcessEnded` names the phase and exit code), opens `TerminalKind::MainProcess { input, repaint: NudgeAfter(600 ms) }`, and reads the supervisor state once so the CLI can print "Codex exited with code N; use `jackin attach --restart`" (D09). `open_shell` takes the launch ID from the sandbox labels, reads and parses the env file of that launch, and opens `TerminalKind::Shell { workdir: PROJECT, env }` with its values, so a shell sees the role `[env]` values and the `DOCKER_*` variables (D24). A sandbox whose launch never reached the Credentials step has no env file and gives `AttachError::EnvFile`. The console opens at most one `MainProcess` terminal per sandbox (D28) by holding it in its pane model, not by a lock in the session. `restart_agent` runs the hook rows `Hooks` (preflight only, with the env file) and `Start` with `next_attempt()`, and refuses with `AlreadyRunning` when the state is `running` (no silent reconnect or restart). It holds a per-sandbox lock for the whole call: `FileSystem::lock` (a try-lock) on `<cache_dir>/restart-<sandbox>.lock`. A held lock is `RestartError::Busy`, and the guard releases on every return path. It reads the supervisor state before the preflight hook, so a running agent is refused without running a hook, and reads it again after the hook; the attempt comes from the second read. A restart that finds the lock held, or finds the state changed after the hook, runs no further hook and writes nothing. Ctrl-D and Ctrl-P handling (D09, D28) is a terminal front-end concern in `jackin` and `jackin-tui`.
+
+`sandbox_agent_names` reads the agent record and checks the sandbox creation timestamp again before trusting the record. A removed sandbox, a replacement, or an unknown creation timestamp gives `GatewayError::FailedPrecondition`. A foreign sandbox at the initial lookup gives `AgentNamesError::NotManaged`, which maps to `IntegrateError::NotManaged` for agent integration. Cancellation can end a shell or secondary agent terminal open. The main-process terminal open waits for the gateway to settle the attachment.
 
 `AttachedTerminal` wraps the `TerminalSession` and is the only handle that `attach` returns, so the CLI pump and every pane send input through `AttachedTerminal::input`. `input` splits each chunk with the pure function `split_replies` into plain bytes and terminal replies: cursor position reports (`ESC [ <row> ; <col> R`), device attribute replies (`ESC [ ? ... c` and `ESC [ > ... c`), and OSC 10 and 11 color replies (`ESC ] 10 ;` and `ESC ] 11 ;`, ended by BEL or `ESC \`). Plain bytes always go through. Only when the chunk holds a reply does `input` read `RUN_STATE` once through the gateway: the replies go through only for `Reported(Running)`, and they are dropped for `Waiting`, `Exited`, `Unreadable`, and `Invalid`. Reading at the moment of the reply sees every change, including a restart after `Exited`. A reply split across two chunks is not recognized (terminals write a reply in one chunk; inferred). Replayed queries make the terminal answer them again on every attach, and those answers would sit in the PTY queue while `jackin-start` waits (D09, P7.4 F3).
 
@@ -2263,7 +2269,7 @@ pub struct ExportReport {
     pub detached: Option<ExportedDetached>,
     pub worktrees: Vec<ExportedWorktree>,
 }
-pub enum UnknownReason { NotRunning(Phase), WorkspaceUnknown(WorkspaceName), NoRepository, InspectionFailed }
+pub enum UnknownReason { NotRunning(Phase), WorkspaceUnknown(WorkspaceName), NoRepository, InspectionFailed, Cancelled }
 pub struct Unexported {
     pub uncommitted: usize,
     pub branches: Vec<BranchName>,
@@ -2280,6 +2286,7 @@ pub enum ExportError {
     Fs(FsError),
     Labels { sandbox: SandboxName, source: LabelError },
     NotFound(SandboxName),
+    NotManaged(SandboxName),
     NotRunning { sandbox: SandboxName, phase: Phase },
     WorkspaceUnknown(WorkspaceName),
     Project(PathError),
@@ -2319,6 +2326,10 @@ pub enum BundleRefusal {
 pub enum EntryKind { Blob, Tree, Commit, Tag, DeltaStream, DeltaBase, DeltaResult }
 pub enum PurgeError {
     WorkNotExported { sandbox: SandboxName, state: Box<WorkState> },
+    Replaced { sandbox: SandboxName },
+    NotManaged { sandbox: SandboxName },
+    DeleteUnconfirmed { sandbox: SandboxName, cause: Box<GatewayError> },
+    Cancelled { sandbox: SandboxName },
     Gateway(GatewayError),
 }
 pub struct SandboxListing { pub sandboxes: Vec<SandboxSummary>, pub unreadable: Vec<UnreadableSandbox> }
@@ -2327,6 +2338,7 @@ pub enum LifecycleError {
     Gateway(GatewayError),
     Labels { sandbox: SandboxName, source: LabelError },
     NotFound(SandboxName),
+    NotManaged(SandboxName),
     PowerTimeout { sandbox: SandboxName, wanted: Phase, after: Duration },
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     Profile(PolicyError),
@@ -2349,7 +2361,7 @@ pub enum LifecycleError {
 Bundle checks. The header is read through `FileSystem::read_at` in 64 KiB chunks and is bounded at 1 MiB and 1,024 heads. It accepts a v2 header, or a v3 header with at most one `@object-format` capability that equals the object format of the host repository (`git rev-parse --show-object-format`). It refuses a prerequisite line and any other capability. The heads of the header must equal the requested set exactly (`BundleHeads { extra, missing }`). The walker then reads the pack through the same chunks: the `PACK` magic, version 2, the object count (`export_objects`), every entry (blob, tree, commit, tag, and both delta forms), each zlib stream inflated into a fixed 64 KiB buffer whose length must equal the declared size, the trailer hash (SHA-1 or SHA-256, the format of the host repository), and no byte after the trailer. An entry above `export_entry_bytes`, a delta whose declared base or result is above it, or a running total of declared content above `export_total_bytes` is refused. Every refusal is `BundleRefused(BundleRefusal)` and happens before host git reads the bundle, so a refused export leaves the host refs and the host object store unchanged. The walker never loads a whole entry, and it checks the cancel token after every read.
 `export` is idempotent: repeating it moves the same refs to the same tips.
 
-`work_state` follows D08. It is `Exported` when the sandbox is `Ready`, no worktree has uncommitted work, and every head has been exported to its host ref or equals the host branch. `git status --porcelain --untracked-files=all` runs in every non-prunable worktree, and a stash counts as uncommitted work; the stash is detected from `refs/stash`, so a stash whose reflog has expired still counts (as one entry at least). `Unexported` lists the count of uncommitted entries, the branches, the detached HEAD, the detached linked worktrees, and the unusable names. Anything jackin cannot inspect (not `Ready`, git failed, workspace gone, an unreadable record or a non-UTF-8 worktree path) is `Unknown(..)` and counts as not exported. A corrupt sandbox index does not stop `export` from landing the branches, but the work state is `Unknown(InspectionFailed)`. `purge(Guarded)` deletes only for `Exported` and otherwise returns `PurgeError::WorkNotExported { state }` with nothing deleted. `purge(Forced)` deletes after computing the state for the report. A missing sandbox returns `AlreadyGone`, so repeating a purge is safe. A power command refuses an unreadable label set before it changes the phase. The supervisor state file is never read here.
+`work_state` follows D08. It is `Exported` when the sandbox is `Ready`, no worktree has uncommitted work, and every head has been exported to its host ref or equals the host branch. `git status --porcelain --untracked-files=all` runs in every non-prunable worktree, and a stash counts as uncommitted work; the stash is detected from `refs/stash`, so a stash whose reflog has expired still counts (as one entry at least). `Unexported` lists the count of uncommitted entries, the branches, the detached HEAD, the detached linked worktrees, and the unusable names. Anything jackin cannot inspect (not `Ready`, git failed, workspace gone, an unreadable record or a non-UTF-8 worktree path) is `Unknown(..)` and counts as not exported. A corrupt sandbox index does not stop `export` from landing the branches, but the work state is `Unknown(InspectionFailed)`. `purge(Guarded)` deletes only for `Exported` and otherwise returns `PurgeError::WorkNotExported { state }` with nothing deleted. `purge(Forced)` deletes after computing the state for the report. A missing sandbox or one already in `Deleting` returns `AlreadyGone`. A foreign sandbox gives `NotManaged`. Before deletion, `purge` compares the creation timestamp from both lookups and refuses with `Replaced` if it cannot confirm they refer to the same sandbox. Cancellation before dispatch gives `PurgeError::Cancelled`. A delete request with an unknown outcome triggers a bounded lookup on a fresh token. `Deleted` means the original sandbox is gone or deleting. If the lookup cannot establish that, the result is `DeleteUnconfirmed`. `work_state` reports a cancelled inspection as `Unknown(Cancelled)`. A power command refuses an unreadable label set before it changes the phase. The supervisor state file is never read here.
 
 `power` refuses before it calls the gateway when the sandbox phase is `Completed` or `Error`: it returns `LifecycleError::MainProcessEnded { sandbox, phase }`, and `phase` carries the exit code. OpenShell 0.1.6 cannot stop or restart such a sandbox (D09), and export needs a `Ready` sandbox, so the operator can only purge it with `--force`. `inspect` builds the D10 closure report from the live policy: for each attached OpenShell provider it passes `RuleKey::provider_rule` in `generated`, so the generated `_provider_<name>` rule is not a violation. A profile of an agent that does not parse is `LifecycleError::Profile`, not a skipped profile.
 
@@ -2398,7 +2410,7 @@ pub enum Unread { TooLarge, NotRegular }        // an untracked file jackin did 
 pub enum ChangeStatus { Added, Modified, Deleted, Renamed { from: TerminalText } }
 pub struct ChangeHunk { pub old_start: usize, pub new_start: usize, pub lines: Vec<ChangeLine> }
 pub enum ChangeLine { Context(TerminalText), Added(TerminalText), Removed(TerminalText) }
-pub enum ChangesError { Gateway(GatewayError), NotFound(SandboxName), NotRunning { sandbox: SandboxName, phase: Phase },
+pub enum ChangesError { Gateway(GatewayError), NotFound(SandboxName), NotManaged(SandboxName), NotRunning { sandbox: SandboxName, phase: Phase },
                         NoRepository { sandbox: SandboxName }, Git { exit_code: i32, output: TerminalText },
                         Output { sandbox: SandboxName, what: &'static str } }
 impl Session { pub async fn changes(&self, sandbox: &SandboxName, cancel: &CancellationToken) -> Result<ChangeSet, ChangesError> }
@@ -2976,6 +2988,7 @@ pub struct AppEnv {
     pub cache_dir: HostPath,
     pub env: EnvSnapshot,
     pub cancel: CancellationToken,
+    pub abandon: CancellationToken,
 }
 
 #[async_trait]
@@ -3198,7 +3211,7 @@ impl CommandError {
     pub fn class(&self) -> ExitClass;
 }
 
-pub enum ExitClass { Ok, Failure, Usage, Refused, Cancelled }
+pub enum ExitClass { Ok, Failure, Usage, Refused, NoUsageSnapshot, Cancelled }
 
 impl ExitClass {
     pub fn code(self) -> u8;
@@ -3207,7 +3220,11 @@ impl ExitClass {
 
 Every field of the argument structs has `#[arg(help = ...)]` text and no doc comment (D17); the block shows the attributes on `LoadArgs` only. A field of type `bool` is a `--long` flag and `Option` is optional; `name`, `sandbox`, `path`, and `account` are positional, except `--name` of `account add` and `gateway add`'s `name`, which follow the DESIGN table. `BindArgs` has a required, exclusive clap group over `--role` and `--workspace`, and `scope` turns the pair into the enum (`CommandError::Argument` when clap let neither or both through, which the group makes unreachable). `RoleSourceArg` parses an existing path as `Path` and anything else as a Git URL. `CredentialArg` parses `env:NAME`, an `op://` reference, or `file:PATH`.
 
-`ExitClass::code` is 0 for `Ok`, 1 for `Failure`, 2 for `Usage`, 3 for `Refused`, and 130 for `Cancelled`. `class` is an exhaustive match. `Refused` is `PurgeError::WorkNotExported`, `PlanError::EnvNeeded` (a missing value without a terminal), and `RestartError::AlreadyRunning`. `Usage` is `CommandError::Argument`, and clap's own usage errors also exit 2. `Cancelled` is `CommandError::Cancelled` (a cancelled launch, end of input at a prompt, a cancel during attach or shell, a cancel during discovery or connection), `ImageError::Cancelled` (`build`), `ExportError::Cancelled` (`export`), and `RestartError::Gateway(GatewayError::Cancelled)` (`attach --restart`). The session turns every failure that happens while the token is cancelled into `LaunchOutcome::Cancelled`, so `load` needs no class for a failed launch. `doctor` exits `Cancelled` when the token is cancelled as its checks end, and prints no report. Every other error is `Failure`. `main` cancels the token on the first Ctrl-C and returns 130 at once on the second. While attach or shell holds the terminal in raw mode, Ctrl-C is a byte for the remote process and not a signal.
+The exit codes are `0` for `Ok`, `1` for `Failure`, `2` for `Usage`, `3` for `Refused`, `4` for `NoUsageSnapshot`, and `130` for `Cancelled`.
+
+Invalid command arguments and clap usage errors exit 2. A request to act on a foreign sandbox exits 3. Guarded purge with unexported work, purge of a replacement, missing launch input without a terminal, and restart of a running agent also exit 3. A purge with an unconfirmed delete exits 1. Cancellation during a session lookup, a purge before it dispatches, or a workspace guard listing exits 130.
+
+`Signals::interrupted(self, cancel, abandon)` cancels `cancel` on the first signal and `abandon` on the second. The second signal drops a command that is still running and returns 130. The report states that the outcome is unconfirmed and identifies the request the command recorded, if available. A load report includes the launch ID, planned sandbox name, and retry flag. While attach or shell holds the terminal in raw mode, Ctrl-C goes to the remote process as a byte.
 
 The stderr form of every failure is `error:` followed by the message and its cause chain, printed once. A launch failure prints the lowercase step name, the launch ID, the cause, and, when a sandbox remains, `sandbox <name> remains; retry with: jackin load --launch-id <id>`. A hook failure prints the lowercase hook name, the exit code, and the output as `TerminalText`.
 

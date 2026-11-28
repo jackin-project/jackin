@@ -156,6 +156,7 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
             cache_dir: harness.cache_dir.clone(),
             env: EnvSnapshot::from_pairs([("CLAUDE_KEY".to_owned(), KEY.to_owned())]),
             cancel: CancellationToken::new(),
+            abandon: CancellationToken::new(),
         };
         haystack.push(format!("{env:?}"));
         clean(&haystack)
