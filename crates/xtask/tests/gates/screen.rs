@@ -568,6 +568,25 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
 }
 
 #[test]
+fn destructuring_through_composed_identity_aliases_preserves_provenance() -> TestResult {
+    expect(
+        "mod source { pub type Keep<const N: usize, T> = T; }\n\
+         mod bridge { pub use super::source::Keep as Forward; }\n\
+         mod model { pub struct Buffer { pub value: u8 } }\n\
+         use ratatui::buffer::Buffer;\n\
+         struct Wrapper<T> { item: T }\n\
+         type Outer<T, const N: usize> = bridge::Forward<N, bridge::Forward<2, T>>;\n\
+         type Wrapped<T> = bridge::Forward<1, Wrapper<T>>;\n\
+         fn check(a: Buffer, b: model::Buffer, wrapped: Wrapper<Buffer>) {\n\
+         \x20   let Outer::<Buffer, 7> { content, .. } = a;\n\
+         \x20   let Outer::<model::Buffer, 7> { value } = b;\n\
+         \x20   let Wrapped::<Buffer> { item } = wrapped;\n\
+         }\n",
+        &[("C1", 9, "destructures")],
+    )
+}
+
+#[test]
 fn associated_type_binding_names_are_not_buffer_references() -> TestResult {
     expect(
         "trait Source { type Buffer; }\n\
