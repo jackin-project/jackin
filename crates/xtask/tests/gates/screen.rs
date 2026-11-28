@@ -111,17 +111,25 @@ fn local_wildcard_reexports_preserve_buffer_provenance() -> TestResult {
          fn combined(value: both::Buffer) { let both::Buffer { content, .. } = value; }\n\
          mod values { pub fn helper() {} pub use self::helper as ratatui; }\n\
          mod value_scope { use super::values::*; fn view() { let _: Option<ratatui::widgets::Block> = None; } }\n",
-        &[("C1", 3, "Buffer"), ("C1", 4, "Buffer"), ("C1", 11, "Buffer"), ("C1", 13, "widgets")],
+        &[
+            ("C1", 3, "Buffer"),
+            ("C1", 4, "Buffer"),
+            ("C1", 11, "Buffer"),
+            ("C1", 13, "widgets"),
+        ],
     )
 }
 
 #[test]
 fn wildcard_super_obeys_file_module_policy() -> TestResult {
     let workspace = tui("mod source { pub use ratatui::buffer::Buffer; }\nmod wildcard;\n")?;
-    workspace.write("crates/jackin-tui/src/wildcard.rs", "use super::source::*;\ntype Cells = Buffer;\nfn view(value: Buffer) { let Buffer { content, .. } = value; }\n")?;
+    workspace.write("crates/jackin-tui/src/wildcard.rs", "pub use super::source::*;\nuse self::Buffer as Cells;\nfn view(value: Buffer) { let Buffer { content, .. } = value; }\n")?;
     let violations = ScreenCheck::with_allowed(&[]).run(&workspace.repo()?);
     assert_eq!(violations.len(), 1, "{violations:#?}");
-    assert_eq!(violations[0].path.as_deref(), Some(Path::new("crates/jackin-tui/src/wildcard.rs")));
+    assert_eq!(
+        violations[0].path.as_deref(),
+        Some(Path::new("crates/jackin-tui/src/wildcard.rs"))
+    );
     assert_eq!(violations[0].line, Some(3));
     assert!(violations[0].message.contains("destructures"));
     Ok(())
