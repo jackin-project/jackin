@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use jackin_xtask::{Check, Repo, ScreenCheck};
+use jackin_xtask::{Check, Repo, RepoFile, ScreenCheck};
 
 use crate::workspace::{TestResult, Workspace, member_manifest, workspace_manifest};
 
@@ -1197,10 +1197,10 @@ fn generic_alias_self_in_standard_matches_keeps_receiver_scope() -> TestResult {
 #[test]
 fn imported_named_enum_variants_preserve_nominal_provenance() -> TestResult {
     expect(
-        "mod model { pub enum View { Buffer { value: u8 } } }\n\
+        "mod model { #[repr(u8)] pub enum View { Other = 1 << 2, Buffer { value: u8 } } }\n\
          use model::View::Buffer;\n\
          fn inspect(local: model::View, actual: ratatui::buffer::Buffer) {\n\
-         \x20   let Buffer { value } = local;\n\
+         \x20   let Buffer { value } = local else { return; };\n\
          \x20   let ratatui::buffer::Buffer { content, .. } = actual;\n\
          }\n",
         &[("C1", 5, "destructures")],
@@ -1232,21 +1232,50 @@ fn cargo_targets_resolve_their_own_crate_roots() -> TestResult {
         "crates/jackin-tui/Cargo.toml",
         &member_manifest("jackin-tui", "[[bin]]\nname = \"custom\"\npath = \"src/custom.rs\"\n[[bin]]\nname = \"unicode\"\npath = \"src/cafe\u{301}.rs\"\n"),
     )?;
-    workspace.write(LIB, "mod bridge { pub struct Buffer { pub content: Vec<u8> } }\nmod shared;\n")?;
+    workspace.write(
+        LIB,
+        "mod bridge { pub struct Buffer { pub content: Vec<u8> } }\nmod shared;\n",
+    )?;
     workspace.write("crates/jackin-tui/src/main.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nmod shared;\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
     workspace.write("crates/jackin-tui/src/bin/flat.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
     workspace.write("crates/jackin-tui/src/bin/folder/main.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
     workspace.write("crates/jackin-tui/src/custom.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
     workspace.write("crates/jackin-tui/src/cafe\u{301}.rs", "mod bridge { pub use ratatui::buffer::Buffer; }\nfn inspect(b: bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
-    workspace.write("crates/jackin-tui/src/shared.rs", "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
-    workspace.write("crates/jackin-tui/src/orphan.rs", "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n")?;
+    workspace.write(
+        "crates/jackin-tui/src/shared.rs",
+        "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n",
+    )?;
+    workspace.write(
+        "crates/jackin-tui/src/orphan.rs",
+        "fn inspect(b: crate::bridge::Buffer) { let crate::bridge::Buffer { content, .. } = b; }\n",
+    )?;
     let repo = workspace.repo()?;
-    let target = std::fs::canonicalize(workspace.root().join("crates/jackin-tui/src/cafe\u{301}.rs"))?;
-    let unicode_paths: Vec<_> = repo.files().iter().map(|file| file.path()).filter(|path| std::fs::canonicalize(repo.root().join(path)).is_ok_and(|candidate| candidate == target)).collect();
+    let target = std::fs::canonicalize(
+        workspace
+            .root()
+            .join("crates/jackin-tui/src/cafe\u{301}.rs"),
+    )?;
+    let unicode_paths: Vec<_> = repo
+        .files()
+        .iter()
+        .map(RepoFile::path)
+        .filter(|path| {
+            std::fs::canonicalize(repo.root().join(path)).is_ok_and(|candidate| candidate == target)
+        })
+        .collect();
     assert_eq!(unicode_paths.len(), 1);
     let unicode_path = unicode_paths[0];
     let violations = ScreenCheck::with_allowed(&[]).run(&repo);
-    let actual: Vec<_> = violations.iter().map(|violation| (violation.path.as_deref(), violation.line, violation.message.as_str())).collect();
+    let actual: Vec<_> = violations
+        .iter()
+        .map(|violation| {
+            (
+                violation.path.as_deref(),
+                violation.line,
+                violation.message.as_str(),
+            )
+        })
+        .collect();
     let expected = [
         (Path::new("crates/jackin-tui/src/bin/flat.rs"), 2),
         (Path::new("crates/jackin-tui/src/bin/folder/main.rs"), 2),

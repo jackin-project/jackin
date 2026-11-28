@@ -3,8 +3,9 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fs;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use unicode_normalization::UnicodeNormalization;
 
@@ -18,8 +19,6 @@ pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION"];
 
 const SCREEN_SOURCE: &str = "crates/jackin-tui/src";
 const SCREEN_LIB: &str = "crates/jackin-tui/src/lib.rs";
-const SCREEN_MAIN: &str = "crates/jackin-tui/src/main.rs";
-const SCREEN_BIN: &str = "crates/jackin-tui/src/bin";
 
 const SCREEN_CHECK_FILE: &str = "crates/xtask/src/checks/screen.rs";
 
@@ -115,17 +114,49 @@ impl Check for ScreenCheck {
                 .or_insert(is_ratatui);
         }
         roots.entry("ratatui".to_owned()).or_insert(true);
-        let types = TypeScopes::collect(&files, roots);
-        for (source, file) in files.iter().enumerate() {
+        let mut paths = ModulePaths {
+            directories: vec![ModuleDirectory::default()],
+        };
+        let directories: Vec<_> = files
+            .iter()
+            .enumerate()
+            .map(|(source, file)| paths.include(file.path, source))
+            .collect();
+        let target_roots = target_root_indices(repo, &files);
+        let mut reached = vec![false; files.len()];
+        let mut context_hits = BTreeMap::new();
+        for root in target_roots {
+            let types =
+                TypeScopes::collect(&files, roots.clone(), &paths, &directories, Some(root), &[]);
+            let selected: Vec<_> = types
+                .sources
+                .iter()
+                .map(|source| source.connected)
+                .collect();
+            for (seen, included) in reached.iter_mut().zip(&selected) {
+                *seen |= *included;
+            }
+            merge_context_hits(
+                &mut context_hits,
+                context_violations(&files, &types, &selected, self.alias_work_limit),
+            );
+        }
+        let orphaned: Vec<_> = reached.iter().map(|seen| !seen).collect();
+        if orphaned.iter().any(|orphan| *orphan) {
+            let types = TypeScopes::collect(&files, roots, &paths, &directories, None, &orphaned);
+            merge_context_hits(
+                &mut context_hits,
+                context_violations(&files, &types, &orphaned, self.alias_work_limit),
+            );
+        }
+        for (_, (count, violation)) in context_hits {
+            violations.extend(std::iter::repeat_n(violation, count));
+        }
+        for file in &files {
             let path = file.path;
             let tokens = &file.tokens;
-            violations.extend(import_violations(source, &types));
-            violations.extend(types.direct_import_violations(source));
-            violations.extend(types.renamed_imports(source));
             violations.extend(index_violations(path, tokens));
             violations.extend(silencing_violations(path, tokens));
-            violations.extend(pattern_violations(source, &types, self.alias_work_limit));
-            violations.extend(type_alias_violations(source, &types));
             violations.extend(literal_violations(path, tokens, self.allowed, &mut used));
         }
         for entry in self
@@ -143,6 +174,81 @@ impl Check for ScreenCheck {
     }
 }
 
+fn target_root_indices(repo: &Repo, files: &[ScreenFile<'_>]) -> BTreeSet<usize> {
+    let mut roots = BTreeSet::new();
+    let mut physical = None;
+    for target in repo
+        .members()
+        .iter()
+        .filter(|member| member.name() == "jackin-tui")
+        .flat_map(Member::targets)
+    {
+        if let Some(source) = files.iter().position(|file| file.path == target) {
+            roots.insert(source);
+            continue;
+        }
+        let Ok(path) = fs::canonicalize(repo.root().join(target)) else {
+            continue;
+        };
+        let index = physical.get_or_insert_with(|| {
+            let mut index = BTreeMap::new();
+            for (source, file) in files.iter().enumerate() {
+                if let Ok(path) = fs::canonicalize(repo.root().join(file.path)) {
+                    index
+                        .entry(path)
+                        .and_modify(|existing: &mut Option<usize>| *existing = None)
+                        .or_insert(Some(source));
+                }
+            }
+            index
+        });
+        if let Some(Some(source)) = index.get(&path) {
+            roots.insert(*source);
+        }
+    }
+    roots
+}
+
+type ContextHits = BTreeMap<(Option<PathBuf>, Option<u32>, String), (usize, Violation)>;
+
+fn merge_context_hits(merged: &mut ContextHits, violations: Vec<Violation>) {
+    let mut counts = BTreeMap::new();
+    for violation in violations {
+        let key = (
+            violation.path.clone(),
+            violation.line,
+            violation.message.clone(),
+        );
+        let count = counts.entry(key.clone()).or_insert(0);
+        *count += 1;
+        merged
+            .entry(key)
+            .and_modify(|existing| existing.0 = existing.0.max(*count))
+            .or_insert((*count, violation));
+    }
+}
+
+fn context_violations(
+    files: &[ScreenFile<'_>],
+    types: &TypeScopes<'_>,
+    selected: &[bool],
+    work_limit: usize,
+) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    for (source, _) in files
+        .iter()
+        .enumerate()
+        .filter(|(source, _)| selected[*source])
+    {
+        violations.extend(import_violations(source, types));
+        violations.extend(types.direct_import_violations(source));
+        violations.extend(types.renamed_imports(source));
+        violations.extend(pattern_violations(source, types, work_limit));
+        violations.extend(type_alias_violations(source, types));
+    }
+    violations
+}
+
 struct ScreenFile<'a> {
     path: &'a Path,
     tokens: Vec<Token>,
@@ -152,25 +258,17 @@ struct ScreenFile<'a> {
     may_supply_matches: bool,
 }
 
-fn is_standard_binary_root(path: &Path) -> bool {
-    if path == Path::new(SCREEN_MAIN) {
-        return true;
-    }
-    let Ok(relative) = path.strip_prefix(SCREEN_BIN) else {
-        return false;
-    };
-    let mut parts = relative.iter();
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(file), None, None) => Path::new(file).extension().is_some_and(|ext| ext == "rs"),
-        (Some(_), Some(file), None) => file == "main.rs",
-        _ => false,
-    }
-}
-
 impl<'a> ScreenFile<'a> {
     fn new(path: &'a Path, text: &str) -> Self {
         let lexed = lex_rust(text);
-        let tokens = lexed.tokens;
+        let mut tokens = lexed.tokens;
+        for token in &mut tokens {
+            if let Tok::Ident(name) | Tok::RawIdent(name) = &mut token.kind
+                && !name.is_ascii()
+            {
+                *name = name.nfc().collect();
+            }
+        }
         let mut doc_before = vec![false; tokens.len() + 1];
         for comment in lexed.comments {
             if is_doc_comment(&comment.text) {
@@ -476,9 +574,10 @@ fn import_violations(source: usize, types: &TypeScopes<'_>) -> Vec<Violation> {
         }
         let continues_path = index >= 3
             && is_path_separator(tokens, index - 2)
-            && tokens[index - 3]
-                .ident()
-                .is_some_and(|ident| !KEYWORDS_BEFORE_PATH.contains(&ident));
+            && tokens[index - 3].ident().is_some()
+            && !KEYWORDS_BEFORE_PATH
+                .iter()
+                .any(|keyword| tokens[index - 3].is_keyword(keyword));
         let starts_path = token
             .ident()
             .is_some_and(|name| types.root_at(source, index, name))
@@ -896,10 +995,47 @@ impl AliasWork {
     }
 }
 
+fn enum_named_variants<'a>(
+    file: &'a ScreenFile<'_>,
+    declaration: usize,
+) -> Option<BTreeSet<&'a str>> {
+    let tokens = &file.tokens;
+    let body = enum_body_after_name(tokens, &file.group_ends, &file.header_bodies, declaration)?;
+    let end = file.group_ends[body]? - 1;
+    let mut names = BTreeSet::new();
+    let mut index = body + 1;
+    while index < end {
+        while index < end && tokens[index].is_punct('#') {
+            let open = opaque_group_open(tokens, index)?;
+            index = file.group_ends[open]?;
+        }
+        let name = tokens.get(index)?.ident()?;
+        if tokens
+            .get(index + 1)
+            .is_some_and(|token| token.is_punct('{'))
+            && nominal_attributes_preserve_binding(tokens, index)
+            && !macro_item_disabled(tokens, index)
+        {
+            names.insert(name);
+        }
+        index += 1;
+        while index < end && !tokens[index].is_punct(',') {
+            if matches!(tokens[index].kind, Tok::Punct('(' | '[' | '{' | '<')) {
+                index = file.group_ends[index]?;
+            } else {
+                index += 1;
+            }
+        }
+        index += usize::from(index < end);
+    }
+    Some(names)
+}
+
 enum TypeBinding<'a> {
     Alias(TypeAlias),
     RatatuiBuffer,
     Nominal,
+    NominalEnum(BTreeSet<&'a str>),
     InlineModule(usize),
     FileModule(FileModule),
     Import(ImportPath<'a>),
@@ -922,6 +1058,14 @@ struct FileModule {
     source: usize,
     directory: usize,
     matches_textual: bool,
+    declaration: usize,
+}
+
+#[derive(Default)]
+struct TextualMacros<'a> {
+    first_names: BTreeMap<&'a str, usize>,
+    unknown_at: Option<usize>,
+    parent: Option<(usize, usize)>,
 }
 
 #[derive(Default)]
@@ -937,7 +1081,9 @@ struct TypeScope<'a> {
     imports: Vec<PathLeaf<'a>>,
     glob_import: bool,
     matches_imported: MatchesImport,
+    named_matches_imports: BTreeMap<&'a str, MatchesImport>,
     matches_textual: bool,
+    textual_macros: TextualMacros<'a>,
     matches_to_parent: bool,
     extern_macro_roots: [Option<bool>; 2],
     extern_roots: BTreeMap<&'a str, Option<&'a str>>,
@@ -978,6 +1124,9 @@ impl<'a> TypeScope<'a> {
                 self.matches_imported =
                     self.matches_imported
                         .include(segments, absolute, macro_attributed);
+            } else {
+                let entry = self.named_matches_imports.entry(name).or_default();
+                *entry = entry.include(segments, absolute, macro_attributed);
             }
             let binding = match segments {
                 _ if !macro_attributed => {
@@ -999,7 +1148,13 @@ impl<'a> TypeScope<'a> {
         position
     }
 
-    fn bind_item(&mut self, tokens: &'a [Token], index: usize, file_module: Option<FileModule>) {
+    fn bind_item(
+        &mut self,
+        file: &'a ScreenFile<'_>,
+        index: usize,
+        file_module: Option<FileModule>,
+    ) {
+        let tokens = &file.tokens;
         if tokens[index].is_keyword("mod") && macro_item_disabled(tokens, index) {
             return;
         }
@@ -1033,9 +1188,11 @@ impl<'a> TypeScope<'a> {
         let binding = match tokens[index].ident() {
             Some("type") => TypeAlias::parse(tokens, index, self.source)
                 .map_or(TypeBinding::Unresolved, TypeBinding::Alias),
-            Some("struct" | "enum" | "union")
-                if nominal_attributes_preserve_binding(tokens, index) =>
-            {
+            Some("enum") if nominal_attributes_preserve_binding(tokens, index) => {
+                enum_named_variants(file, index)
+                    .map_or(TypeBinding::Unresolved, TypeBinding::NominalEnum)
+            }
+            Some("struct" | "union") if nominal_attributes_preserve_binding(tokens, index) => {
                 TypeBinding::Nominal
             }
             Some("struct" | "enum" | "union") => TypeBinding::Unresolved,
@@ -1225,6 +1382,7 @@ enum MatchesMacro {
     Prelude,
     Absolute(StandardMacroRoot),
     Relative(StandardMacroRoot),
+    Named(usize),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1309,8 +1467,13 @@ fn file_may_supply_matches(tokens: &[Token], ends: &[Option<usize>]) -> bool {
 
 fn matches_macro(tokens: &[Token], bang: usize) -> Option<MatchesMacro> {
     let name = bang.checked_sub(1)?;
-    if !tokens[bang].is_punct('!') || !tokens[name].is_ident("matches") {
+    if !tokens[bang].is_punct('!') {
         return None;
+    }
+    if !tokens[name].is_ident("matches") {
+        return (!is_path_separator(tokens, name.wrapping_sub(2))
+            && tokens[name].ident().is_some())
+        .then_some(MatchesMacro::Named(name));
     }
     if !is_path_separator(tokens, name.wrapping_sub(2)) {
         return Some(MatchesMacro::Prelude);
@@ -1420,6 +1583,33 @@ fn mark_matches_pattern(
         }
         let token = &file.tokens[index];
         if token.ident().is_some()
+            && is_path_separator(&file.tokens, index + 1)
+            && file
+                .tokens
+                .get(index + 3)
+                .is_some_and(|open| open.is_punct('<'))
+            && let Some(end) = file.group_ends[index + 3]
+            && end < pattern.end
+            && file.tokens[end].is_punct('{')
+        {
+            enclosing[index] = Some(position);
+            let mut argument = index + 4;
+            while argument < end - 1 {
+                if let Some(open) = opaque_group_open(&file.tokens, argument) {
+                    argument = file.group_ends[open].unwrap_or(end);
+                    continue;
+                }
+                if file.tokens[argument].is_punct('{') {
+                    argument = file.group_ends[argument].unwrap_or(end);
+                    continue;
+                }
+                if has_self_receiver && file.tokens[argument].is_keyword("Self") {
+                    enclosing[argument] = Some(position);
+                }
+                argument += 1;
+            }
+        }
+        if token.ident().is_some()
             && (has_self_receiver || !token.is_keyword("Self"))
             && file
                 .tokens
@@ -1445,11 +1635,7 @@ enum MacroLiteral<'a> {
 }
 
 fn macro_identifier(name: &str) -> Cow<'_, str> {
-    if name.is_ascii() {
-        Cow::Borrowed(name)
-    } else {
-        Cow::Owned(name.nfc().collect())
-    }
+    Cow::Borrowed(name)
 }
 
 fn macro_literal(tokens: &[Token]) -> Option<MacroLiteral<'_>> {
@@ -1924,6 +2110,14 @@ impl<'a> ModulePaths<'a> {
         self.directories[directory].children.get(name).copied()
     }
 
+    fn parent_directory(&self, path: &Path) -> Option<usize> {
+        let mut directory = 0;
+        for part in path.strip_prefix(SCREEN_SOURCE).ok()?.parent()? {
+            directory = self.child(directory, part.to_str()?)?;
+        }
+        Some(directory)
+    }
+
     fn file(&self, directory: usize, name: &str) -> Option<FileModule> {
         let directory = self.child(directory, name)?;
         match self.directories[directory].file {
@@ -1931,6 +2125,7 @@ impl<'a> ModulePaths<'a> {
                 source,
                 directory,
                 matches_textual: false,
+                declaration: 0,
             }),
             ModuleFile::Missing | ModuleFile::Ambiguous => None,
         }
@@ -1954,17 +2149,25 @@ struct TypeScopes<'a> {
 }
 
 impl<'a> TypeScopes<'a> {
-    fn collect(files: &'a [ScreenFile<'a>], roots: BTreeMap<String, bool>) -> Self {
-        let mut paths = ModulePaths {
-            directories: vec![ModuleDirectory::default()],
-        };
+    fn collect(
+        files: &'a [ScreenFile<'a>],
+        roots: BTreeMap<String, bool>,
+        paths: &ModulePaths<'a>,
+        directories: &[Option<usize>],
+        crate_root: Option<usize>,
+        orphans: &[bool],
+    ) -> Self {
         let scopes = files
             .iter()
             .enumerate()
             .map(|(source, file)| TypeScope {
                 source,
                 module: source,
-                directory: paths.include(file.path, source),
+                directory: if Some(source) == crate_root {
+                    paths.parent_directory(file.path)
+                } else {
+                    directories[source]
+                },
                 ..TypeScope::default()
             })
             .collect();
@@ -1973,21 +2176,19 @@ impl<'a> TypeScopes<'a> {
             roots,
             scopes,
             sources: (0..files.len()).map(|_| SourceScopes::default()).collect(),
-            crate_root: files
-                .iter()
-                .position(|file| file.path == Path::new(SCREEN_LIB)),
+            crate_root,
         };
         if let Some(root) = graph.crate_root {
             graph.sources[root].connected = true;
             let mut pending = VecDeque::from([root]);
             while let Some(source) = pending.pop_front() {
-                graph.collect_file(source, &paths);
+                graph.collect_file(source, paths);
                 graph.attach_children(source, &mut pending);
             }
         }
         for source in 0..files.len() {
-            if !graph.sources[source].connected {
-                graph.collect_file(source, &paths);
+            if orphans.get(source).copied().unwrap_or(false) {
+                graph.collect_file(source, paths);
             }
         }
         let mut proven = Vec::new();
@@ -2040,6 +2241,7 @@ impl<'a> TypeScopes<'a> {
                 self.scopes[child.source].module_parent = Some(scope);
                 self.scopes[child.source].directory = Some(child.directory);
                 self.scopes[child.source].matches_textual = child.matches_textual;
+                self.scopes[child.source].textual_macros.parent = Some((scope, child.declaration));
                 self.sources[child.source].connected = true;
                 pending.push_back(child.source);
             }
@@ -2062,6 +2264,17 @@ impl<'a> TypeScopes<'a> {
                 let end = file.group_ends[open].unwrap_or(tokens.len());
                 enclosing[index..end].fill(Some(ScopePosition::Opaque(scope)));
                 let scope_state = &mut self.scopes[scope];
+                if token.is_punct('!')
+                    && tokens[index - 1].is_keyword("macro_rules")
+                    && !macro_item_disabled(tokens, index - 1)
+                    && let Some(name) = tokens.get(index + 1).and_then(Token::ident)
+                {
+                    scope_state
+                        .textual_macros
+                        .first_names
+                        .entry(name)
+                        .or_insert(index);
+                }
                 scope_state.matches_textual |= token.is_punct('!')
                     && tokens[index - 1].is_ident("macro_rules")
                     && tokens[index + 1].is_ident("matches")
@@ -2100,6 +2313,10 @@ impl<'a> TypeScopes<'a> {
                     let imports_matches = child.matches_textual;
                     let parent = *stack.last().unwrap_or(&source);
                     self.scopes[parent].matches_textual |= imports_matches;
+                    self.scopes[parent]
+                        .textual_macros
+                        .unknown_at
+                        .get_or_insert(index);
                 }
             } else if token.is_ident("use") {
                 let end = self.scopes[scope].import(tokens, index);
@@ -2115,9 +2332,22 @@ impl<'a> TypeScopes<'a> {
                     local_macros.observe_import(index);
                     let imports_matches = self.file_may_import_matches(source, scope, index, paths);
                     self.scopes[scope].matches_textual |= imports_matches;
+                    self.scopes[scope]
+                        .textual_macros
+                        .unknown_at
+                        .get_or_insert(index);
+                }
+                if token.is_keyword("extern")
+                    && has_macro_attribute(tokens, index, extern_macro_use_attribute)
+                    && !macro_item_disabled(tokens, index)
+                {
+                    self.scopes[scope]
+                        .textual_macros
+                        .unknown_at
+                        .get_or_insert(index);
                 }
                 let file_module = self.file_module(source, scope, index, paths);
-                self.scopes[scope].bind_item(tokens, index, file_module);
+                self.scopes[scope].bind_item(file, index, file_module);
             }
             index += 1;
         }
@@ -2147,6 +2377,7 @@ impl<'a> TypeScopes<'a> {
         }
         let mut child = paths.file(module.directory?, tokens.get(declaration + 1)?.ident()?)?;
         child.matches_textual = module.matches_textual;
+        child.declaration = declaration;
         Some(child)
     }
 
@@ -2224,6 +2455,10 @@ impl<'a> TypeScopes<'a> {
             directory,
             self_receiver,
             matches_textual: self.scopes[parent].matches_textual,
+            textual_macros: TextualMacros {
+                parent: Some((parent, open)),
+                ..TextualMacros::default()
+            },
             matches_to_parent: module.is_some_and(|(declaration, _)| {
                 imports_macro_rules(tokens, declaration)
                     && !macro_item_disabled(tokens, declaration)
@@ -2451,6 +2686,12 @@ impl<'a> TypeScopes<'a> {
                     state = Some((owner.0, import.absolute, import.segments.len()));
                 }
                 _ if path.is_empty() => return Ok(Some(binding)),
+                TypeBinding::NominalEnum(variants)
+                    if path.len() == 1
+                        && path.front().is_some_and(|name| variants.contains(name)) =>
+                {
+                    return Ok(Some(&TypeBinding::Nominal));
+                }
                 TypeBinding::InlineModule(child) => current = *child,
                 TypeBinding::FileModule(child)
                     if work.permits_file_modules()
@@ -2848,8 +3089,79 @@ impl<'a> TypeScopes<'a> {
             {
                 Some(scope)
             }
+            Some(ScopePosition::MatchesPattern(scope, MatchesMacro::Named(name)))
+                if self.matches_named_visible(scope, name, work)? =>
+            {
+                Some(scope)
+            }
             _ => None,
         })
+    }
+
+    fn matches_named_visible(
+        &self,
+        mut scope: usize,
+        name: usize,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        let invocation_scope = scope;
+        let invocation = name;
+        let source = self.scopes[scope].source;
+        let Some(name) = self.files[source].tokens.get(name).and_then(Token::ident) else {
+            return Ok(false);
+        };
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope];
+            match current
+                .named_matches_imports
+                .get(name)
+                .copied()
+                .unwrap_or_default()
+            {
+                MatchesImport::Standard(root) => {
+                    return Ok(self.matches_absolute_root_visible(scope, root, work)?
+                        && self.textual_name_visible(invocation_scope, invocation, name, work)?);
+                }
+                MatchesImport::RelativeStandard(root) => {
+                    return Ok(self.matches_standard_root_visible(scope, root, work)?
+                        && self.textual_name_visible(invocation_scope, invocation, name, work)?);
+                }
+                MatchesImport::Unknown => return Ok(false),
+                MatchesImport::Absent if current.glob_import => return Ok(false),
+                MatchesImport::Absent => {}
+            }
+            let Some(parent) = current.parent else {
+                return Ok(false);
+            };
+            scope = parent;
+        }
+    }
+
+    fn textual_name_visible(
+        &self,
+        mut scope: usize,
+        mut cutoff: usize,
+        name: &str,
+        work: &mut AliasWork,
+    ) -> Result<bool, AliasResolutionError> {
+        loop {
+            work.charge_name(name)?;
+            let current = &self.scopes[scope].textual_macros;
+            if current
+                .first_names
+                .get(name)
+                .is_some_and(|first| *first < cutoff)
+                || current.unknown_at.is_some_and(|first| first < cutoff)
+            {
+                return Ok(false);
+            }
+            let Some((parent, entered)) = current.parent else {
+                return Ok(true);
+            };
+            scope = parent;
+            cutoff = entered;
+        }
     }
 
     fn matches_prelude_visible(
@@ -2912,11 +3224,10 @@ impl<'a> TypeScopes<'a> {
     ) -> Result<bool, AliasResolutionError> {
         work.charge_name(root.name())?;
         let source = self.scopes[scope].source;
-        let crate_root = if self.sources[source].connected {
-            self.crate_root
-        } else {
-            is_standard_binary_root(self.files[source].path).then_some(source)
-        };
+        let crate_root = self.sources[source]
+            .connected
+            .then_some(self.crate_root)
+            .flatten();
         Ok(crate_root.is_some_and(|root_scope| {
             self.scopes[root_scope].extern_macro_roots[root as usize].unwrap_or(true)
         }))
@@ -3037,8 +3348,13 @@ fn path_start(
     let mut start = end;
     while is_path_separator(tokens, start.wrapping_sub(2)) {
         work.charge(1)?;
-        let preceding = start.checked_sub(3).and_then(|at| tokens[at].ident());
-        if preceding.is_none_or(|name| KEYWORDS_BEFORE_PATH.contains(&name)) {
+        let preceding = start.checked_sub(3).and_then(|at| tokens.get(at));
+        if preceding.is_none_or(|token| {
+            token.ident().is_none()
+                || KEYWORDS_BEFORE_PATH
+                    .iter()
+                    .any(|keyword| token.is_keyword(keyword))
+        }) {
             return Ok((start, true));
         }
         start -= 3;
