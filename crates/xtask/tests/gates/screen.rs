@@ -591,7 +591,7 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          }\n\
          type Identity<T> = T;\n\
          trait AliasView { fn inspect_alias(&self); }\n\
-         impl AliasView for (Identity<ratatui::buffer::Buffer>) {\n\
+         impl AliasView for (Identity<(ratatui::buffer::Buffer)>) {\n\
          \x20   fn inspect_alias(&self) {\n\
          \x20       let _ = ::core::stringify!(Self { content, .. });\n\
          \x20       let Self { content, .. } = self;\n\
@@ -599,8 +599,18 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          }\n\
          impl AliasView for Identity<crate::model::Buffer> {\n\
          \x20   fn inspect_alias(&self) { let Self { value } = self; }\n\
+         }\n\
+         type Default<T = (ratatui::buffer::Buffer)> = (T);\n\
+         type Forward = Default;\n\
+         trait DefaultView { fn inspect_default(&self); }\n\
+         impl DefaultView for Forward {\n\
+         \x20   fn inspect_default(&self) { let Self { content, .. } = self; }\n\
          }\n",
-        &[("C1", 6, "destructures"), ("C1", 17, "destructures")],
+        &[
+            ("C1", 6, "destructures"),
+            ("C1", 17, "destructures"),
+            ("C1", 27, "destructures"),
+        ],
     )
 }
 
