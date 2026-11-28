@@ -20,8 +20,8 @@ use jackin_openshell::{
     TerminalSession,
 };
 use jackin_session::{
-    AttachError, AttachRequest, AttachedTerminal, LineDelivery, RestartError, Session,
-    ShellRequest, SupervisorReads, error_chain, launch_events,
+    AttachError, AttachRequest, AttachedTerminal, LineDelivery, RestartError, SecondaryAttachError,
+    Session, ShellRequest, SupervisorReads, error_chain, launch_events,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, watch};
@@ -415,10 +415,22 @@ fn fault(error: &dyn std::error::Error, gateway: Option<&GatewayError>) -> LinkF
 fn attach_fault(error: &AttachError) -> LinkFault {
     match error {
         AttachError::Gateway(gateway) => fault(error, Some(gateway)),
+        AttachError::Secondary {
+            failure:
+                SecondaryAttachError::StopUnconfirmed(gateway)
+                | SecondaryAttachError::RecordCleanup(gateway)
+                | SecondaryAttachError::OpenUnconfirmed(gateway)
+                | SecondaryAttachError::OpenFailedAfterStop(gateway),
+            ..
+        } => fault(error, Some(gateway)),
         AttachError::NotFound(_)
         | AttachError::NotManaged(_)
         | AttachError::MainProcessEnded { .. }
-        | AttachError::EnvFile { .. } => fault(error, None),
+        | AttachError::EnvFile { .. }
+        | AttachError::Secondary {
+            failure: SecondaryAttachError::CancelledAfterStop,
+            ..
+        } => fault(error, None),
     }
 }
 

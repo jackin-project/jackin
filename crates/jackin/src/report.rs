@@ -51,6 +51,19 @@ fn attach_error(error: &AttachError) -> String {
         AttachError::MainProcessEnded { sandbox, phase } => main_process_ended(sandbox, *phase),
         AttachError::EnvFile { sandbox, problem } => env_file_problem(sandbox, problem),
         AttachError::Gateway(error) => error_chain(error),
+        AttachError::Secondary {
+            sandbox,
+            agent,
+            gateway,
+            ..
+        } => {
+            let attach = gateway_command("attach", gateway);
+            format!(
+                "{}. Check the agent before retrying with {attach} {sandbox} --agent {}.",
+                error_chain(error),
+                agent.as_str()
+            )
+        }
     }
 }
 

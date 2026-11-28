@@ -10,7 +10,7 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountEditError, AccountError, AttachError, BuildError, ConnectError, CredentialError,
     ExportError, IntegrateError, LaunchFailure, LifecycleError, LockError, PlanError, PurgeError,
-    RestartError, RoleError, WorkspaceGuardError,
+    RestartError, RoleError, SecondaryAttachError, WorkspaceGuardError,
 };
 use jackin_tui::ConsoleError;
 use jackin_usage::UsageError;
@@ -203,7 +203,13 @@ impl CommandError {
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Console(ConsoleError::Cancelled)
-            | CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            | CommandError::Attach(
+                AttachError::Gateway(GatewayError::Cancelled { .. })
+                | AttachError::Secondary {
+                    failure: SecondaryAttachError::CancelledAfterStop,
+                    ..
+                },
+            )
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Gateway(GatewayError::Cancelled { .. })
             | CommandError::Integrate(IntegrateError::Gateway(GatewayError::Cancelled {

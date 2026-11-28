@@ -10,12 +10,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    AttemptId, EnvFileError, EnvName, FileLock, FsError, HookKind, HostPath, LaunchId, PathError,
-    Phase, SandboxLabels, SandboxName, StartRequest, SupervisorReading, SupervisorState,
-    TerminalText, sandbox_layout,
+    Agent, AttemptId, EnvFileError, EnvName, FileLock, FsError, GatewayName, HookKind, HostPath,
+    LaunchId, PathError, Phase, SandboxLabels, SandboxName, StartRequest, SupervisorReading,
+    SupervisorState, TerminalText, sandbox_layout,
 };
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayOp, InputMode, Missing, RepaintPolicy, SandboxFile,
+    Gateway, GatewayError, GatewayOp, InputMode, Missing, RepaintPolicy, SandboxFile, SandboxView,
     SessionClosed, TermSize, TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
 };
 use thiserror::Error;
@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::launch::hooks::{self, HookRun};
 use crate::launch::{AttachTarget, LaunchEvent, LaunchEvents, LaunchStep, StepResult};
+use crate::multi_session::{InstanceStop, InstanceStopError, instance_argv};
 use crate::service::{POLL, Session, read_until_cancelled};
 use crate::state::{EnvReadError, env_file, run_state};
 
@@ -38,7 +39,7 @@ pub struct AttachRequest {
     pub sandbox: SandboxName,
     pub size: TermSize,
     pub input: InputMode,
-    pub agent: Option<jackin_core::Agent>,
+    pub agent: Option<Agent>,
 }
 
 #[derive(Debug)]
@@ -141,6 +142,28 @@ pub enum AttachError {
         sandbox: SandboxName,
         problem: EnvFileProblem,
     },
+    #[error("secondary attach for {} in sandbox {sandbox} on gateway {gateway}", .agent.as_str())]
+    Secondary {
+        sandbox: SandboxName,
+        agent: Agent,
+        gateway: GatewayName,
+        #[source]
+        failure: SecondaryAttachError,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum SecondaryAttachError {
+    #[error("cancelled after stopping the previous instance")]
+    CancelledAfterStop,
+    #[error("could not confirm whether the previous instance stopped")]
+    StopUnconfirmed(#[source] Box<GatewayError>),
+    #[error("the previous instance stopped, but its instance record could not be cleared")]
+    RecordCleanup(#[source] Box<GatewayError>),
+    #[error("could not confirm whether the replacement terminal opened")]
+    OpenUnconfirmed(#[source] Box<GatewayError>),
+    #[error("the previous instance stopped, but the replacement terminal could not be opened")]
+    OpenFailedAfterStop(#[source] Box<GatewayError>),
 }
 
 #[derive(Debug, Error)]
@@ -381,6 +404,12 @@ enum EnvFailure {
     File(EnvFileProblem),
 }
 
+impl From<GatewayError> for EnvFailure {
+    fn from(error: GatewayError) -> EnvFailure {
+        EnvFailure::Gateway(error)
+    }
+}
+
 impl From<EnvReadError> for EnvFailure {
     fn from(error: EnvReadError) -> EnvFailure {
         match error {
@@ -462,48 +491,9 @@ impl Session {
             }
             let is_lead = names.first().is_some_and(|lead| lead == agent.as_str());
             if !is_lead {
-                let spec = agent.spec();
-                self.kill_instance(sandbox, agent, cancel).await?;
-                let gateway = self.deps.gateway.as_ref();
-                let mut env = async {
-                    let launch = launch_of(&view.labels)?;
-                    Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
-                }
-                .await
-                .map_err(|failure| AttachError::env(sandbox, failure))?;
-                env.insert(
-                    EnvName::parse("HOME").map_err(|_| AttachError::NotFound(sandbox.clone()))?,
-                    format!("/sandbox/.jackin/homes/{}", agent.as_str()),
-                );
-                let session = self
-                    .open_until(
-                        cancel,
-                        &TerminalRequest {
-                            sandbox: sandbox.clone(),
-                            kind: TerminalKind::Exec {
-                                argv: crate::multi_session::instance_argv(
-                                    agent,
-                                    &spec.launch_argv(),
-                                ),
-                                workdir: jackin_core::SandboxPath::parse(&format!(
-                                    "/sandbox/work/{}/project",
-                                    agent.as_str()
-                                ))
-                                .map_err(|_| AttachError::NotFound(sandbox.clone()))?,
-                                env,
-                            },
-                            size: request.size,
-                        },
-                    )
-                    .await?;
-                let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
-                return Ok(AttachedTerminal {
-                    session,
-                    gateway: Arc::clone(&self.deps.gateway),
-                    sandbox: sandbox.clone(),
-                    supervisor,
-                    held: Vec::new(),
-                });
+                return self
+                    .attach_secondary(&view, agent, request.size, cancel)
+                    .await;
             }
         }
         let session = self
@@ -526,6 +516,111 @@ impl Session {
             supervisor,
             held: Vec::new(),
         })
+    }
+
+    async fn attach_secondary(
+        &self,
+        view: &SandboxView,
+        agent: Agent,
+        size: TermSize,
+        cancel: &CancellationToken,
+    ) -> Result<AttachedTerminal, AttachError> {
+        let sandbox = &view.name;
+        let gateway = self.deps.gateway.as_ref();
+        let mut env = self.attach_env(view, cancel).await?;
+        env.insert(
+            EnvName::parse("HOME").map_err(|_| AttachError::NotFound(sandbox.clone()))?,
+            format!("/sandbox/.jackin/homes/{}", agent.as_str()),
+        );
+        let request = TerminalRequest {
+            sandbox: sandbox.clone(),
+            kind: TerminalKind::Exec {
+                argv: instance_argv(agent, &agent.spec().launch_argv()),
+                workdir: jackin_core::SandboxPath::parse(&format!(
+                    "/sandbox/work/{}/project",
+                    agent.as_str()
+                ))
+                .map_err(|_| AttachError::NotFound(sandbox.clone()))?,
+                env,
+            },
+            size,
+        };
+        let supervisor =
+            read_until_cancelled(cancel, GatewayOp::ReadFiles, run_state(gateway, sandbox)).await?;
+        let failed = |failure| AttachError::Secondary {
+            sandbox: sandbox.clone(),
+            agent,
+            gateway: self.gateway_name().clone(),
+            failure,
+        };
+        let stopped =
+            self.kill_instance(view, agent, cancel)
+                .await
+                .map_err(|error| match error {
+                    InstanceStopError::Before(cause) => AttachError::Gateway(cause),
+                    InstanceStopError::Unconfirmed(cause) => {
+                        failed(SecondaryAttachError::StopUnconfirmed(Box::new(cause)))
+                    }
+                    InstanceStopError::Cleanup(cause) => {
+                        failed(SecondaryAttachError::RecordCleanup(Box::new(cause)))
+                    }
+                })?;
+        let check_cancel = || {
+            if cancel.is_cancelled() {
+                return Err(match stopped {
+                    InstanceStop::Unchanged => GatewayError::Cancelled {
+                        op: GatewayOp::Terminal,
+                        group: None,
+                    }
+                    .into(),
+                    InstanceStop::Stopped => failed(SecondaryAttachError::CancelledAfterStop),
+                });
+            }
+            Ok(())
+        };
+        let open_failed = |cause| match stopped {
+            InstanceStop::Unchanged => AttachError::Gateway(cause),
+            InstanceStop::Stopped => {
+                failed(SecondaryAttachError::OpenFailedAfterStop(Box::new(cause)))
+            }
+        };
+        check_cancel()?;
+        if let Err(cause) = self.same_incarnation(sandbox, view, cancel).await {
+            check_cancel()?;
+            return Err(open_failed(cause));
+        }
+        check_cancel()?;
+        let session = self
+            .instance_deadline(GatewayOp::Terminal, gateway.open_terminal(&request))
+            .await
+            .map_err(|cause| {
+                if cause.outcome_unknown() {
+                    return failed(SecondaryAttachError::OpenUnconfirmed(Box::new(cause)));
+                }
+                open_failed(cause)
+            })?;
+        check_cancel()?;
+        Ok(AttachedTerminal {
+            session,
+            gateway: Arc::clone(&self.deps.gateway),
+            sandbox: sandbox.clone(),
+            supervisor,
+            held: Vec::new(),
+        })
+    }
+
+    async fn attach_env(
+        &self,
+        view: &SandboxView,
+        cancel: &CancellationToken,
+    ) -> Result<BTreeMap<EnvName, String>, AttachError> {
+        let values = async {
+            let launch = launch_of(&view.labels)?;
+            Ok(env_file(self.deps.gateway.as_ref(), &view.name, &launch).await?)
+        };
+        read_until_cancelled(cancel, GatewayOp::ReadFiles, values)
+            .await
+            .map_err(|failure| AttachError::env(&view.name, failure))
     }
 
     pub async fn open_shell(

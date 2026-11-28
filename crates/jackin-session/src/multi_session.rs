@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::time::Duration;
 
 use jackin_core::{
@@ -168,9 +169,28 @@ pub(crate) fn instance_argv(agent: Agent, argv: &[String]) -> Vec<String> {
     wrapped
 }
 
+#[derive(PartialEq, Eq)]
 struct InstanceIdentity {
     pid: u32,
     token: String,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum InstanceStop {
+    Unchanged,
+    Stopped,
+}
+
+pub(crate) enum InstanceStopError {
+    Before(GatewayError),
+    Unconfirmed(GatewayError),
+    Cleanup(GatewayError),
+}
+
+impl From<GatewayError> for InstanceStopError {
+    fn from(error: GatewayError) -> InstanceStopError {
+        InstanceStopError::Before(error)
+    }
 }
 
 fn normalize_token(bytes: &[u8]) -> String {
@@ -396,7 +416,7 @@ impl Session {
         Ok(instances)
     }
 
-    async fn same_incarnation(
+    pub(crate) async fn same_incarnation(
         &self,
         sandbox: &SandboxName,
         view: &SandboxView,
@@ -434,75 +454,162 @@ impl Session {
             .collect())
     }
 
-    pub async fn sandbox_agent_names(
+    async fn agent_sandbox(
         &self,
         sandbox: &SandboxName,
         cancel: &CancellationToken,
-    ) -> Result<Vec<String>, AgentNamesError> {
-        let view = self.locate(sandbox, cancel).await?.require(
+    ) -> Result<SandboxView, AgentNamesError> {
+        self.locate(sandbox, cancel).await?.require(
             || {
                 AgentNamesError::Gateway(GatewayError::NotFound {
                     what: Missing::Sandbox(sandbox.clone()),
                 })
             },
             || AgentNamesError::NotManaged(sandbox.clone()),
-        )?;
+        )
+    }
+
+    pub async fn sandbox_agent_names(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<String>, AgentNamesError> {
+        let view = self.agent_sandbox(sandbox, cancel).await?;
         Ok(self.agent_names_of(sandbox, &view, cancel).await?)
     }
 
-    pub(crate) async fn kill_instance(
+    async fn read_instance_identity(
         &self,
         sandbox: &SandboxName,
-        agent: Agent,
+        record: &SandboxPath,
         cancel: &CancellationToken,
-    ) -> Result<(), GatewayError> {
-        let record = instance_record(agent);
-        let found = self
-            .deps
-            .gateway
-            .read_files(sandbox, std::slice::from_ref(&record))
-            .await?;
-        let Some(bytes) = found.into_iter().next().flatten() else {
-            return Ok(());
+    ) -> Result<Option<InstanceIdentity>, GatewayError> {
+        let files = read_until_cancelled(
+            cancel,
+            GatewayOp::ReadFiles,
+            self.deps
+                .gateway
+                .read_files(sandbox, std::slice::from_ref(record)),
+        )
+        .await?;
+        let Some(bytes) = files.into_iter().next().flatten() else {
+            return Ok(None);
         };
         let held = String::from_utf8_lossy(&bytes);
         let held = held.trim();
         if held.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
-        let identity = parse_instance_identity(held)?;
+        parse_instance_identity(held).map(Some)
+    }
+
+    pub(crate) async fn kill_instance(
+        &self,
+        view: &SandboxView,
+        agent: Agent,
+        cancel: &CancellationToken,
+    ) -> Result<InstanceStop, InstanceStopError> {
+        let sandbox = &view.name;
+        let record = instance_record(agent);
+        let Some(identity) = self
+            .read_instance_identity(sandbox, &record, cancel)
+            .await?
+        else {
+            return Ok(InstanceStop::Unchanged);
+        };
+        self.same_incarnation(sandbox, view, cancel).await?;
         let current = self
             .instance_incarnation(sandbox, identity.pid, cancel)
             .await?;
+        if cancel.is_cancelled() {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::Program,
+                group: None,
+            }
+            .into());
+        }
         if current.as_deref() != Some(identity.token.as_str()) {
-            self.clear_instance_record(sandbox, &record, cancel).await?;
-            return Ok(());
+            self.clear_if_same_instance(view, &record, &identity, cancel)
+                .await?;
+            return Ok(InstanceStop::Unchanged);
         }
-        let pid = identity.pid.to_string();
-        let outcome = self.signal_instance(sandbox, &pid, cancel).await?;
-        match outcome.exit_code {
-            0 | 1 => {}
-            code => return Err(instance_exit("kill", code)),
+
+        let settle = CancellationToken::new();
+        self.instance_deadline(
+            GatewayOp::Program,
+            self.signal_and_observe_exit(view, identity.pid, &settle),
+        )
+        .await
+        .map_err(InstanceStopError::Unconfirmed)?;
+        self.instance_deadline(
+            GatewayOp::Program,
+            self.clear_if_same_instance(view, &record, &identity, &settle),
+        )
+        .await
+        .map_err(InstanceStopError::Cleanup)?;
+        Ok(InstanceStop::Stopped)
+    }
+
+    pub(crate) async fn instance_deadline<T>(
+        &self,
+        op: GatewayOp,
+        operation: impl Future<Output = Result<T, GatewayError>>,
+    ) -> Result<T, GatewayError> {
+        tokio::select! {
+            biased;
+            result = operation => result,
+            () = self.deps.host.clock.sleep(KILL_EXIT) => Err(GatewayError::Timeout {
+                op,
+                after: KILL_EXIT,
+                group: None,
+            }),
         }
-        let started = self.deps.host.clock.now();
+    }
+
+    async fn signal_and_observe_exit(
+        &self,
+        view: &SandboxView,
+        pid: u32,
+        settle: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        let sandbox = &view.name;
+        let pid = pid.to_string();
+        match self.signal_instance(sandbox, &pid, settle).await {
+            Ok(outcome) if matches!(outcome.exit_code, 0 | 1) => {}
+            Ok(outcome) => return Err(instance_exit("kill", outcome.exit_code)),
+            Err(error) if error.outcome_unknown() => {}
+            Err(error) => return Err(error),
+        }
         loop {
-            let probe = self.probe_instance(sandbox, &pid, cancel).await?;
+            let probe = self.probe_instance(sandbox, &pid, settle).await?;
             match probe.exit_code {
-                1 => break,
-                0 => {}
+                1 => return self.same_incarnation(sandbox, view, settle).await,
+                0 => self.deps.host.clock.sleep(KILL_POLL).await,
                 code => return Err(instance_exit("kill", code)),
             }
-            if self.deps.host.clock.now().0 - started.0 >= KILL_EXIT.as_secs() as i64 {
-                return Err(GatewayError::Timeout {
-                    op: GatewayOp::Program,
-                    after: KILL_EXIT,
-                    group: None,
-                });
-            }
-            self.deps.host.clock.sleep(KILL_POLL).await;
         }
-        self.clear_instance_record(sandbox, &record, cancel).await?;
-        Ok(())
+    }
+
+    async fn clear_if_same_instance(
+        &self,
+        view: &SandboxView,
+        record: &SandboxPath,
+        identity: &InstanceIdentity,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        let sandbox = &view.name;
+        self.same_incarnation(sandbox, view, cancel).await?;
+        match self.read_instance_identity(sandbox, record, cancel).await? {
+            None => Ok(()),
+            Some(current) if current == *identity => {
+                self.clear_instance_record(sandbox, record, cancel).await
+            }
+            Some(_) => Err(GatewayError::FailedPrecondition {
+                message: format!(
+                    "the instance record of sandbox {sandbox} changed during the stop"
+                ),
+            }),
+        }
     }
 
     async fn instance_incarnation(
@@ -627,14 +734,27 @@ impl Session {
         agent: Agent,
         cancel: &CancellationToken,
     ) -> Result<(), IntegrateError> {
-        let names = self.sandbox_agent_names(sandbox, cancel).await?;
+        let view = self.agent_sandbox(sandbox, cancel).await?;
+        let names = self.agent_names_of(sandbox, &view, cancel).await?;
         if !names.is_empty() && !names.iter().any(|name| name == agent.as_str()) {
             return Err(IntegrateError::UnknownAgent {
                 agent: agent.as_str().to_owned(),
             });
         }
-        self.kill_instance(sandbox, agent, cancel).await?;
-        Ok(())
+        self.kill_instance(&view, agent, cancel)
+            .await
+            .map(drop)
+            .map_err(|error| match error {
+                InstanceStopError::Before(cause) => IntegrateError::Gateway(cause),
+                InstanceStopError::Unconfirmed(cause) => {
+                    IntegrateError::Gateway(GatewayError::FailedPrecondition {
+                        message: format!("the stop of {} in sandbox {sandbox} could not be confirmed: {cause}", agent.as_str()),
+                    })
+                }
+                InstanceStopError::Cleanup(cause) => IntegrateError::Gateway(GatewayError::FailedPrecondition {
+                    message: format!("{} stopped in sandbox {sandbox}, but its instance record could not be cleared: {cause}", agent.as_str()),
+                }),
+            })
     }
 
     pub async fn integrate(

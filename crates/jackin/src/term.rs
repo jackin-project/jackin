@@ -12,6 +12,7 @@ use jackin_session::{
 
 use crate::app::App;
 use crate::error::CommandError;
+use crate::report::sandbox_recovery;
 use crate::terminal::TerminalInput;
 
 const WATCH: Duration = Duration::from_secs(1);
@@ -168,7 +169,18 @@ pub(crate) async fn attach(
     request: AttachRequest,
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
-    let attached = session.attach(request, &app.cancel).await?;
+    if let Some(agent) = request.agent {
+        let recovery = sandbox_recovery(&sandbox, session.gateway_name());
+        app.unsettled(format!(
+            "The attach for {} in sandbox {sandbox} may have stopped its previous instance. {recovery}", agent.as_str()
+        ));
+    }
+    let named = request.agent.is_some();
+    let attached = session.attach(request, &app.cancel).await;
+    if named {
+        app.settled();
+    }
+    let attached = attached?;
     if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
         attached.supervisor_at_attach()
     {
