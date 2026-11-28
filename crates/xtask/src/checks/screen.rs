@@ -11,7 +11,7 @@ use unicode_normalization::UnicodeNormalization;
 use super::Check;
 use crate::ci::CiStep;
 use crate::lex::{Tok, Token, lex_rust};
-use crate::repo::{DependencyKind, FileKind, Repo};
+use crate::repo::{DependencyKind, FileKind, Member, Repo};
 use crate::violation::{Violation, sorted};
 
 pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION"];
@@ -104,7 +104,7 @@ impl Check for ScreenCheck {
             .members()
             .iter()
             .filter(|member| member.name() == "jackin-tui")
-            .flat_map(|member| member.dependencies())
+            .flat_map(Member::dependencies)
             .filter(|dependency| dependency.kind() != DependencyKind::Build)
         {
             let name = dependency.alias().replace('-', "_");
@@ -2234,11 +2234,19 @@ impl<'a> TypeScopes<'a> {
                     source.is_some_and(|source| self.roots.get(source).copied().unwrap_or(false))
                 );
             }
-            if current.bindings.contains_key(name) || current.glob_import && !ignore_globs {
+            if current.bindings.contains_key(name)
+                || current.glob_import && !ignore_globs && name != "ratatui"
+            {
                 return Ok(false);
             }
             let Some(parent) = current.parent else {
-                return Ok(self.roots.get(name).copied().unwrap_or(false));
+                return self.external_root_visible_ignoring_globs(
+                    scope,
+                    name,
+                    true,
+                    ignore_globs,
+                    work,
+                );
             };
             scope = parent;
         }
@@ -2744,6 +2752,15 @@ impl<'a> TypeScopes<'a> {
 
     fn direct_import_is_ratatui(&self, scope: usize, leaf: &PathLeaf<'_>) -> bool {
         leaf.segments.first().is_some_and(|root| {
+            if leaf.segments.len() == 1
+                && !leaf.absolute
+                && matches!(self.scopes[scope].bindings.get(root), Some(TypeBinding::Import(import)) if import.segments == leaf.segments && import.absolute == leaf.absolute)
+            {
+                if let Some(parent) = self.scopes[scope].parent {
+                    return self.external_root_visible_ignoring_globs(parent, root, false, true, &mut AliasWork::Unlimited).unwrap_or(false);
+                }
+                return self.external_root_visible_ignoring_globs(scope, root, true, true, &mut AliasWork::Unlimited).unwrap_or(false);
+            }
             self.external_root_visible_ignoring_globs(
                 scope,
                 root,
