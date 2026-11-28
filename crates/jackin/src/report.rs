@@ -89,10 +89,9 @@ fn purge_error(error: &PurgeError) -> String {
             "sandbox {sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted; run jackin purge {sandbox} again"
         ),
         PurgeError::NotManaged { sandbox } => sandbox_unmanaged(sandbox),
-        PurgeError::DeleteUnconfirmed { gateway, .. } => {
-            let list = gateway_command("ls", gateway);
-            format!("{error}; {list} shows the current state")
-        }
+        PurgeError::DeleteUnconfirmed {
+            sandbox, gateway, ..
+        } => format!("{error}. {}", sandbox_recovery(sandbox, gateway)),
         PurgeError::Cancelled { .. } => error.to_string(),
         PurgeError::Gateway(error) => error_chain(error),
     }
@@ -114,11 +113,16 @@ pub(crate) fn gateway_command(command: &str, gateway: &GatewayName) -> String {
     format!("jackin {command} --gateway {gateway}")
 }
 
-pub(crate) fn restart_unsettled(sandbox: &SandboxName, gateway: &GatewayName) -> String {
+pub(crate) fn sandbox_recovery(sandbox: &SandboxName, gateway: &GatewayName) -> String {
     let list = gateway_command("ls", gateway);
     format!(
-        "sandbox {sandbox}: the agent restart may be partly done; {list} shows the sandbox's state"
+        "Check sandbox {sandbox} directly on gateway {gateway}. {list} lists managed sandboxes."
     )
+}
+
+pub(crate) fn restart_unsettled(sandbox: &SandboxName, gateway: &GatewayName) -> String {
+    let recovery = sandbox_recovery(sandbox, gateway);
+    format!("sandbox {sandbox}: the agent restart may be partly done. {recovery}")
 }
 
 pub(crate) fn abandoned(unsettled: Option<String>) -> String {
