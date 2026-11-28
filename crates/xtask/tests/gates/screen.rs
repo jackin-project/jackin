@@ -590,16 +590,20 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
          \x20       }\n\
          \x20   }\n\
          }\n")?;
+    let flat = "crates/jackin-tui/src/bin/flat.rs";
+    let nested = "crates/jackin-tui/src/bin/folder/main.rs";
     let main = "crates/jackin-tui/src/main.rs";
-    extern_alias.write(
-        main,
-        "#[macro_use(matches)] extern crate core;\n\
-         trait Inspect { fn inspect(&self); }\n\
-         impl Inspect for ratatui::buffer::Buffer {\n\
-         \x20   fn inspect(&self) { let _ = ::core::matches!(self, Self { content, .. }); }\n\
-         }\n\
-         fn main() {}\n",
-    )?;
+    for binary in [flat, nested, main] {
+        extern_alias.write(
+            binary,
+            "#[macro_use(matches)] extern crate core;\n\
+             trait Inspect { fn inspect(&self); }\n\
+             impl Inspect for ratatui::buffer::Buffer {\n\
+             \x20   fn inspect(&self) { let _ = ::core::matches!(self, Self { content, .. }); }\n\
+             }\n\
+             fn main() {}\n",
+        )?;
+    }
     let violations = ScreenCheck::with_allowed(&[]).run(&extern_alias.repo()?);
     let locations: Vec<_> = violations
         .iter()
@@ -608,6 +612,8 @@ fn self_patterns_follow_trait_impl_receivers() -> TestResult {
     assert_eq!(
         locations,
         [
+            (Some(Path::new(flat)), Some(4)),
+            (Some(Path::new(nested)), Some(4)),
             (Some(Path::new(LIB)), Some(10)),
             (Some(Path::new(main)), Some(4)),
         ],
