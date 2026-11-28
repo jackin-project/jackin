@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::Range;
 use std::path::Path;
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Tok, Token, leading_segment, lex_rust};
+use crate::lex::{Tok, Token, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -92,6 +92,7 @@ impl Check for ScreenCheck {
             let tokens = lex_rust(file.text()).tokens;
             let types = TypeScopes::collect(&tokens, file.path() == Path::new(SCREEN_LIB));
             violations.extend(import_violations(file.path(), &tokens));
+            violations.extend(types.renamed_imports(file.path()));
             violations.extend(index_violations(file.path(), &tokens));
             violations.extend(silencing_violations(file.path(), &tokens));
             violations.extend(pattern_violations(file.path(), &tokens, &types));
@@ -452,7 +453,11 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
-fn type_alias_violations(path: &Path, tokens: &[Token], types: &TypeScopes<'_>) -> Vec<Violation> {
+fn type_alias_violations<'a>(
+    path: &Path,
+    tokens: &'a [Token],
+    types: &TypeScopes<'a>,
+) -> Vec<Violation> {
     tokens
         .iter()
         .enumerate()
@@ -521,21 +526,22 @@ enum TypeBinding<'a> {
     RatatuiBuffer,
     Nominal,
     InlineModule(usize),
-    CratePath(Vec<&'a str>),
+    Import(ImportPath<'a>),
     Unresolved,
 }
 
-#[derive(PartialEq, Eq)]
-enum BufferOrigin {
-    Ratatui,
-    Distinct,
-    Unresolved,
+struct ImportPath<'a> {
+    segments: Vec<&'a str>,
+    absolute: bool,
 }
 
 #[derive(Default)]
 struct TypeScope<'a> {
     parent: Option<usize>,
+    module: usize,
+    module_parent: Option<usize>,
     bindings: BTreeMap<&'a str, TypeBinding<'a>>,
+    renamed: Vec<(&'a str, u32)>,
     glob_import: bool,
 }
 
@@ -549,13 +555,14 @@ impl<'a> TypeScope<'a> {
 
     fn import(&mut self, tokens: &'a [Token], index: usize) -> usize {
         let mut position = index + 1;
-        if is_path_separator(tokens, position) {
+        let absolute = is_path_separator(tokens, position);
+        if absolute {
             position += 2;
         }
         let mut paths = Vec::new();
         path_tree(tokens, &mut position, &[], &mut paths);
         let attributed = has_outer_attribute(tokens, index);
-        for path in paths {
+        for mut path in paths {
             let segments = path.segments.as_slice();
             let name = match (path.rename, segments) {
                 (Some((name, _)), _) => name,
@@ -568,8 +575,17 @@ impl<'a> TypeScope<'a> {
             };
             let binding = match segments {
                 ["ratatui", "buffer", "Buffer"] => TypeBinding::RatatuiBuffer,
-                ["crate", ..] if name == "Buffer" && !attributed => {
-                    TypeBinding::CratePath(path.segments)
+                _ if !attributed => {
+                    if let Some(rename) = path.rename {
+                        self.renamed.push(rename);
+                    }
+                    if matches!(segments, [_, .., "self"]) {
+                        path.segments.pop();
+                    }
+                    TypeBinding::Import(ImportPath {
+                        segments: path.segments,
+                        absolute,
+                    })
                 }
                 _ => TypeBinding::Unresolved,
             };
@@ -708,6 +724,7 @@ impl<'a> TypeScopes<'a> {
         parent: usize,
     ) -> usize {
         let child = scopes.len();
+        let enclosing_module = scopes[parent].module;
         let module = open
             .checked_sub(2)
             .filter(|&index| tokens[index].is_ident("mod"))
@@ -722,19 +739,22 @@ impl<'a> TypeScopes<'a> {
         }
         scopes.push(TypeScope {
             parent: module.is_none().then_some(parent),
+            module: if module.is_some() {
+                child
+            } else {
+                enclosing_module
+            },
+            module_parent: module.map(|_| enclosing_module),
             ..TypeScope::default()
         });
         child
     }
 
-    fn binding(&self, index: usize, name: &str) -> Option<&TypeBinding<'_>> {
-        let mut scope = match self.enclosing[index]? {
-            ScopePosition::Rust(scope) | ScopePosition::Opaque(scope) => scope,
-        };
+    fn lexical_binding(&self, mut scope: usize, name: &str) -> Option<(usize, &TypeBinding<'a>)> {
         loop {
             let current = &self.scopes[scope];
             if let Some(binding) = current.bindings.get(name) {
-                return Some(binding);
+                return Some((scope, binding));
             }
             if current.glob_import {
                 return None;
@@ -743,101 +763,183 @@ impl<'a> TypeScopes<'a> {
         }
     }
 
-    fn crate_nominal(&self, path: &[&str]) -> bool {
-        let ["crate", modules @ .., name] = path else {
-            return false;
-        };
-        if !self.crate_root {
-            return false;
+    fn super_module(&self, scope: usize, path: &mut VecDeque<&str>) -> Option<usize> {
+        let mut module = self.scopes[scope].module;
+        loop {
+            module = self.scopes[module].module_parent?;
+            if path.front() != Some(&"super") {
+                return Some(module);
+            }
+            path.pop_front();
         }
-        let mut scope = 0;
-        for module in modules {
-            let Some(TypeBinding::InlineModule(child)) = self.scopes[scope].bindings.get(module)
-            else {
-                return false;
-            };
-            scope = *child;
-        }
-        matches!(
-            self.scopes[scope].bindings.get(name),
-            Some(TypeBinding::Nominal)
-        )
     }
 
-    fn buffer_origin(&self, tokens: &[Token], index: usize) -> Option<BufferOrigin> {
-        if !tokens[index].is_ident("Buffer") {
-            return None;
-        }
-        if is_path_separator(tokens, index.wrapping_sub(2)) {
-            return Some(if leading_segment(tokens, index) == Some("ratatui") {
-                BufferOrigin::Ratatui
-            } else {
-                BufferOrigin::Distinct
-            });
-        }
-        Some(
-            match (self.binding(index, "Buffer"), self.enclosing[index]) {
-                (Some(TypeBinding::RatatuiBuffer), _) => BufferOrigin::Ratatui,
-                (Some(TypeBinding::Nominal), Some(ScopePosition::Rust(_))) => {
-                    BufferOrigin::Distinct
-                }
-                (Some(TypeBinding::CratePath(path)), Some(ScopePosition::Rust(_)))
-                    if self.crate_nominal(path) =>
+    fn resolve(
+        &self,
+        scope: usize,
+        segments: impl IntoIterator<Item = &'a str>,
+        absolute: bool,
+    ) -> Option<&TypeBinding<'a>> {
+        let mut path: VecDeque<_> = segments.into_iter().collect();
+        let mut state = Some((scope, absolute, path.len()));
+        let mut current = scope;
+        let mut visited = BTreeSet::new();
+        loop {
+            let (owner, binding) = if let Some((start, absolute, edge_len)) = state.take() {
+                if edge_len == 3
+                    && path
+                        .iter()
+                        .take(edge_len)
+                        .copied()
+                        .eq(["ratatui", "buffer", "Buffer"])
                 {
-                    BufferOrigin::Distinct
+                    return (path.len() == edge_len).then_some(&TypeBinding::RatatuiBuffer);
                 }
-                _ => BufferOrigin::Unresolved,
-            },
+                if absolute {
+                    return None;
+                }
+                match path.pop_front()? {
+                    "crate" if self.crate_root => {
+                        current = 0;
+                        continue;
+                    }
+                    "crate" => return None,
+                    "self" => {
+                        current = self.scopes[start].module;
+                        continue;
+                    }
+                    "super" => {
+                        current = self.super_module(start, &mut path)?;
+                        continue;
+                    }
+                    name => {
+                        let (owner, binding) = self.lexical_binding(start, name)?;
+                        ((owner, name), binding)
+                    }
+                }
+            } else {
+                let name = path.pop_front()?;
+                ((current, name), self.scopes[current].bindings.get(name)?)
+            };
+            match binding {
+                TypeBinding::Import(import) => {
+                    if !visited.insert(owner) {
+                        return None;
+                    }
+                    for segment in import.segments.iter().rev() {
+                        path.push_front(segment);
+                    }
+                    state = Some((owner.0, import.absolute, import.segments.len()));
+                }
+                _ if path.is_empty() => return Some(binding),
+                TypeBinding::InlineModule(child) => current = *child,
+                _ => return None,
+            }
+        }
+    }
+
+    fn binding_at(&self, tokens: &'a [Token], end: usize) -> Option<&TypeBinding<'a>> {
+        tokens[end].ident()?;
+        let scope = match self.enclosing[end]? {
+            ScopePosition::Rust(scope) | ScopePosition::Opaque(scope) => scope,
+        };
+        let (start, absolute) = path_start(tokens, end);
+        self.resolve(
+            scope,
+            tokens[start..=end]
+                .iter()
+                .step_by(3)
+                .map_while(Token::ident),
+            absolute,
         )
     }
 
-    fn may_be_ratatui_buffer(&self, tokens: &[Token], index: usize) -> bool {
-        matches!(
-            self.buffer_origin(tokens, index),
-            Some(BufferOrigin::Ratatui | BufferOrigin::Unresolved)
-        )
+    fn may_be_ratatui_buffer(&self, tokens: &'a [Token], index: usize) -> bool {
+        match self.binding_at(tokens, index) {
+            Some(TypeBinding::RatatuiBuffer) => true,
+            Some(TypeBinding::Nominal)
+                if matches!(self.enclosing[index], Some(ScopePosition::Rust(_))) =>
+            {
+                false
+            }
+            _ => {
+                tokens[index].is_ident("Buffer")
+                    && !is_path_separator(tokens, index.wrapping_sub(2))
+            }
+        }
+    }
+
+    fn renamed_imports(&self, path: &Path) -> Vec<Violation> {
+        self.scopes
+            .iter()
+            .enumerate()
+            .flat_map(|(scope, bindings)| {
+                bindings
+                    .renamed
+                    .iter()
+                    .filter(move |&&(name, _)| {
+                        matches!(
+                            self.resolve(scope, [name], false),
+                            Some(TypeBinding::RatatuiBuffer)
+                        )
+                    })
+                    .map(move |&(_, line)| {
+                        Violation::at_line(CiStep::Screen, path, line, BUFFER_RENAME)
+                    })
+            })
+            .collect()
     }
 }
 
-fn buffer_pattern_open(tokens: &[Token], index: usize, aliases: &TypeScopes<'_>) -> Option<usize> {
-    if aliases.may_be_ratatui_buffer(tokens, index) {
+fn path_start(tokens: &[Token], end: usize) -> (usize, bool) {
+    let mut start = end;
+    while is_path_separator(tokens, start.wrapping_sub(2)) {
+        let preceding = start.checked_sub(3).and_then(|at| tokens[at].ident());
+        if preceding.is_none_or(|name| KEYWORDS_BEFORE_PATH.contains(&name)) {
+            return (start, true);
+        }
+        start -= 3;
+    }
+    (start, false)
+}
+
+fn buffer_pattern_open<'a>(
+    tokens: &'a [Token],
+    index: usize,
+    types: &TypeScopes<'a>,
+) -> Option<usize> {
+    if tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
+        && types.may_be_ratatui_buffer(tokens, index)
+    {
         return Some(index + 1);
     }
-    if is_path_separator(tokens, index.wrapping_sub(2)) || !is_path_separator(tokens, index + 1) {
+    if !is_path_separator(tokens, index + 1)
+        || !tokens
+            .get(index + 3)
+            .is_some_and(|token| token.is_punct('<'))
+    {
         return None;
     }
-    let TypeBinding::Projection(slot) = aliases.binding(index, tokens[index].ident()?)? else {
+    let TypeBinding::Projection(slot) = types.binding_at(tokens, index)? else {
         return None;
     };
     let (slots, open) = generic_slots(tokens, index + 3)?;
-    let slot = slots.get(*slot)?.clone();
-    let argument = &tokens[slot.clone()];
-    if let [buffer] = argument {
-        return (buffer.is_ident("Buffer")
-            && aliases.buffer_origin(tokens, slot.start) == Some(BufferOrigin::Ratatui))
-        .then_some(open);
-    }
-    let arg = if is_path_separator(argument, 0) {
-        &argument[2..]
-    } else {
-        argument
-    };
-    match arg {
-        [root, _, _, module, _, _, buffer]
-            if root.is_ident("ratatui")
-                && module.is_ident("buffer")
-                && buffer.is_ident("Buffer")
-                && is_path_separator(arg, 1)
-                && is_path_separator(arg, 4)
-                && aliases.buffer_origin(tokens, slot.end - 1) == Some(BufferOrigin::Ratatui) =>
-        {
-            Some(open)
-        }
-        _ => None,
-    }
+    let slot = slots.get(*slot)?;
+    let end = slot.end.checked_sub(1)?;
+    let (start, absolute) = path_start(tokens, end);
+    (start.checked_sub(if absolute { 2 } else { 0 })? == slot.start
+        && matches!(
+            types.binding_at(tokens, end),
+            Some(TypeBinding::RatatuiBuffer)
+        ))
+    .then_some(open)
 }
 
-fn pattern_violations(path: &Path, tokens: &[Token], aliases: &TypeScopes<'_>) -> Vec<Violation> {
+fn pattern_violations<'a>(
+    path: &Path,
+    tokens: &'a [Token],
+    aliases: &TypeScopes<'a>,
+) -> Vec<Violation> {
     let tests = test_modules(tokens);
     (1..tokens.len())
         .filter_map(|index| {

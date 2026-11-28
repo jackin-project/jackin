@@ -306,17 +306,3 @@ impl Lexer {
         }
     }
 }
-
-pub(crate) fn leading_segment(tokens: &[Token], item: usize) -> Option<&str> {
-    let mut at = item;
-    let mut first = None;
-    while at >= 3
-        && tokens[at - 1].is_punct(':')
-        && tokens[at - 2].is_punct(':')
-        && let Some(name) = tokens[at - 3].ident()
-    {
-        first = Some(name);
-        at -= 3;
-    }
-    first
-}

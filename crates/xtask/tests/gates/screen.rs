@@ -488,12 +488,29 @@ fn bare_buffer_checks_use_provenance() -> TestResult {
          \x20   use crate::bridge::*;\n\
          \x20   type Screen = Buffer;\n\
          \x20   fn check(b: Buffer) { let Buffer { content, .. } = b; }\n\
+         }\n\
+         mod explicit {\n\
+         \x20   use crate::bridge::Buffer as Cells;\n\
+         \x20   fn check(b: Cells) { let Cells { content, .. } = b; }\n\
+         }\n\
+         mod local {\n\
+         \x20   mod bridge { pub use crate::model::Buffer; }\n\
+         \x20   use self::bridge::Buffer as Cells;\n\
+         \x20   fn check(b: Cells) { let Cells { value } = b; }\n\
+         }\n\
+         mod editing {\n\
+         \x20   use self::Buffer as Pending;\n\
+         \x20   use self::Pending as Buffer;\n\
+         \x20   type Screen = Buffer;\n\
          }\n",
         &[
             ("C1", 7, "renames"),
             ("C1", 8, "destructures"),
             ("C1", 13, "renames"),
             ("C1", 14, "destructures"),
+            ("C1", 17, "renames"),
+            ("C1", 18, "destructures"),
+            ("C1", 28, "renames"),
         ],
     )
 }
@@ -521,11 +538,26 @@ fn destructuring_an_identity_alias_of_ratatui_buffer_fails() -> TestResult {
          \x20   use crate::model::Buffer;\n\
          \x20   let Identity::<Buffer> { value } = buf;\n\
          }\n\
-         fn in_macro(buf: Buffer) -> bool { matches!(buf, Identity::<Buffer> { .. }) }\n",
+         fn in_macro(buf: Buffer) -> bool { matches!(buf, Identity::<Buffer> { .. }) }\n\
+         mod projection { pub type Identity<T> = T; }\n\
+         fn qualified(a: Buffer, b: crate::model::Buffer) {\n\
+         \x20   let self::Identity::<Buffer> { content, .. } = a;\n\
+         \x20   let crate::projection::Identity::<Buffer> { content, .. } = a;\n\
+         \x20   let self::Identity::<crate::model::Buffer> { value } = b;\n\
+         \x20   let crate::projection::Identity::<crate::model::Buffer> { value } = b;\n\
+         }\n\
+         mod nested_super {\n\
+         \x20   fn check(a: super::Buffer) {\n\
+         \x20       let super::Identity::<super::Buffer> { content, .. } = a;\n\
+         \x20   }\n\
+         }\n",
         &[
             ("C1", 6, "destructures"),
             ("C1", 14, "destructures"),
             ("C1", 21, "destructures"),
+            ("C1", 24, "destructures"),
+            ("C1", 25, "destructures"),
+            ("C1", 31, "destructures"),
         ],
     )
 }
